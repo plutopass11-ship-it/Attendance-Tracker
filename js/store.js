@@ -169,6 +169,25 @@ const Store = {
     deleteLeaveType: (id) => {
         const data = Store.getLeaveTypes().filter(t => t.id !== id);
         localStorage.setItem('leaveTypes', JSON.stringify(data));
+    },
+
+    syncWithBackend: async () => {
+        try {
+            const res = await fetch('/api/sync/store');
+            if (!res.ok) return;
+            const data = await res.json();
+            
+            // Sync all major tables into localStorage to keep the app working
+            if (data.users) localStorage.setItem('users', JSON.stringify(data.users));
+            if (data.leaveTypes) localStorage.setItem('leaveTypes', JSON.stringify(data.leaveTypes));
+            if (data.leaves) localStorage.setItem('leaves', JSON.stringify(data.leaves));
+            if (data.attendance) localStorage.setItem('attendance', JSON.stringify(data.attendance));
+            if (data.holidays) localStorage.setItem('holidays', JSON.stringify(data.holidays));
+            
+            console.log('Store synced with backend successfully');
+        } catch (err) {
+            console.error('Failed to sync store with backend:', err);
+        }
     }
 };
 

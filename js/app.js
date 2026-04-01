@@ -101,12 +101,14 @@ document.addEventListener('DOMContentLoaded', () => {
             return;
         }
 
-        // Initialize Tabs Data
-        updateAttendanceUI();
-        renderLeaveBalances();
-        renderLeaveHistory();
-        renderHolidays();
-        renderUserCalendar();
+        // --- NEW: Sync with backend before rendering ---
+        Store.syncWithBackend().then(() => {
+            updateAttendanceUI();
+            renderLeaveBalances();
+            renderLeaveHistory();
+            renderHolidays();
+            renderUserCalendar();
+        });
     }
 
     function switchTab(targetId) {
