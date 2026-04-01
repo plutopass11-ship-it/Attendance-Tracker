@@ -101,14 +101,16 @@ document.addEventListener('DOMContentLoaded', () => {
             return;
         }
 
-        // --- NEW: Sync with backend before rendering ---
-        Store.syncWithBackend().then(() => {
-            updateAttendanceUI();
-            renderLeaveBalances();
-            renderLeaveHistory();
-            renderHolidays();
-            renderUserCalendar();
-        });
+        // Sync with backend, then render. If sync fails, still render from localStorage.
+        Store.syncWithBackend()
+            .catch(err => console.error('Sync failed, using local data:', err))
+            .finally(() => {
+                updateAttendanceUI();
+                renderLeaveBalances();
+                renderLeaveHistory();
+                renderHolidays();
+                renderUserCalendar();
+            });
     }
 
     function switchTab(targetId) {
