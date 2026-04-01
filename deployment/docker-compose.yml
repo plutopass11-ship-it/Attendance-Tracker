@@ -1,0 +1,60 @@
+version: '3.8'
+
+services:
+  attendance-db:
+    image: postgres:16-alpine
+    container_name: attendance-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    volumes:
+      - ./postgres_data:/var/lib/postgresql/data
+      - ./init.sql:/docker-entrypoint-initdb.d/init.sql
+    ports:
+      - "5434:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  attendance-web:
+    image: nginx:alpine
+    container_name: attendance-web
+    restart: unless-stopped
+    ports:
+      - "3500:80"
+    volumes:
+      - ../index.html:/usr/share/nginx/html/index.html:ro
+      - ../js:/usr/share/nginx/html/js:ro
+      - ../css:/usr/share/nginx/html/css:ro
+      - ./nginx.conf:/etc/nginx/conf.d/default.conf:ro
+    depends_on:
+      attendance-db:
+        condition: service_healthy
+        
+  attendance-backend:
+    build: ./backend
+    container_name: attendance-backend
+    restart: unless-stopped
+    ports:
+      - "4000:4000"
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_HOST: attendance-db
+      KITSU_URL: http://cgwire:80
+    networks:
+      - default
+      - kitsu
+    depends_on:
+      attendance-db:
+        condition: service_healthy
+
+networks:
+  kitsu:
+    external: true
+    name: kitsu_kitsu-network
