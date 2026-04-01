@@ -253,11 +253,21 @@ window.AdminUI = {
 
     syncKitsuUsers: async function() {
         try {
-            const res = await fetch(`/api/data/persons`, {
-                headers: { 'Authorization': `Bearer ${this.currentUser.token}` }
-            });
+            const res = await fetch('/api/sync/store');
             if(res.ok) {
-                this.kitsuPersons = await res.json();
+                const data = await res.json();
+                // Map DB users to the format the dashboard expects
+                this.kitsuPersons = (data.users || []).map(u => {
+                    const nameParts = (u.name || '').split(' ');
+                    return {
+                        id: u.id,
+                        first_name: nameParts[0] || '',
+                        last_name: nameParts.slice(1).join(' ') || '',
+                        email: u.id,
+                        role: u.role,
+                        active: true
+                    };
+                });
                 this.renderDashboard();
             }
         } catch(e) { console.error('Error syncing users:', e); }
