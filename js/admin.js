@@ -5,16 +5,18 @@ window.AdminUI = {
     kitsuPersons: [],
     attendanceChartInstance: null,
     
-    init: function(user) {
+    init: async function(user) {
         try {
             Store.autoCheckoutMissing();
             
             this.currentUser = user;
             
-            this.syncKitsuUsers();
-
             document.getElementById('admin-greeting').textContent = 'Hello, ' + user.name;
             this.setupEventListeners();
+
+            // Sync with backend DB first, then render
+            await Store.syncWithBackend();
+            this.syncKitsuUsers();
             this.renderDashboard();
         } catch(e) {
             document.getElementById('admin-greeting').textContent = "CRASH: " + e.message;

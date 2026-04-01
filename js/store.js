@@ -148,25 +148,41 @@ const Store = {
     },
     
     // Holiday Admin & Optional
-    addHoliday: (h) => {
+    addHoliday: async (h) => {
         const data = Store.getHolidays();
         data.push(h);
         data.sort((a,b) => new Date(a.date) - new Date(b.date));
         localStorage.setItem('holidays', JSON.stringify(data));
+        try {
+            await fetch('/api/holidays', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(h)
+            });
+        } catch (err) { console.error('Holiday sync error:', err); }
     },
-    deleteHoliday: function(date) {
+    deleteHoliday: async function(date) {
         let holidays = this.getHolidays();
         holidays = holidays.filter(h => h.date !== date);
         localStorage.setItem('holidays', JSON.stringify(holidays));
+        try {
+            await fetch(`/api/holidays/${date}`, { method: 'DELETE' });
+        } catch (err) { console.error('Holiday delete sync error:', err); }
     },
-
-    updateHoliday: function(oldDate, updatedHoliday) {
+    updateHoliday: async function(oldDate, updatedHoliday) {
         let holidays = this.getHolidays();
         const index = holidays.findIndex(h => h.date === oldDate);
         if(index !== -1) {
             holidays[index] = updatedHoliday;
             localStorage.setItem('holidays', JSON.stringify(holidays));
         }
+        try {
+            await fetch('/api/holidays', {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ oldDate, ...updatedHoliday })
+            });
+        } catch (err) { console.error('Holiday update sync error:', err); }
     },
     claimOptionalHoliday: (userId, holiday) => {
         // Automatically create an approved leave
@@ -197,24 +213,41 @@ const Store = {
     },
 
     // Dynamic Leave Types
-    updateLeaveType: (id, name, limit, cycle) => {
+    updateLeaveType: async (id, name, limit, cycle) => {
         const data = Store.getLeaveTypes();
-        const type = data.find(t => t.id === id);
+        const type = data.find(t => t.id === id || t.id == id);
         if(type) {
             type.name = name;
             type.limit = limit;
             type.cycle = cycle;
         }
         localStorage.setItem('leaveTypes', JSON.stringify(data));
+        try {
+            await fetch(`/api/policies/${id}`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ name, limit, cycle })
+            });
+        } catch (err) { console.error('Policy update sync error:', err); }
     },
-    addLeaveType: (typeObj) => {
+    addLeaveType: async (typeObj) => {
         const data = Store.getLeaveTypes();
         data.push(typeObj);
         localStorage.setItem('leaveTypes', JSON.stringify(data));
+        try {
+            await fetch('/api/policies', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ name: typeObj.name, limit: typeObj.limit, cycle: typeObj.cycle })
+            });
+        } catch (err) { console.error('Policy add sync error:', err); }
     },
-    deleteLeaveType: (id) => {
-        const data = Store.getLeaveTypes().filter(t => t.id !== id);
+    deleteLeaveType: async (id) => {
+        const data = Store.getLeaveTypes().filter(t => t.id !== id && t.id != id);
         localStorage.setItem('leaveTypes', JSON.stringify(data));
+        try {
+            await fetch(`/api/policies/${id}`, { method: 'DELETE' });
+        } catch (err) { console.error('Policy delete sync error:', err); }
     },
 
     syncWithBackend: async () => {

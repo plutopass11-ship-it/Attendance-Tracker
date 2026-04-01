@@ -141,16 +141,38 @@ app.post('/api/auth/login', async (req, res) => {
 // 2. Data Retrieval endpoints (Admin Dashboard / Load Store)
 app.get('/api/sync/store', async (req, res) => {
   try {
-    // Fetches all needed state at once for the app to function without complex UI rewrites
     const users = await pool.query('SELECT user_id as id, name, role FROM users;');
-    const leaves = await pool.query('SELECT id, user_id as "userId", type, start_date as "startDate", end_date as "endDate", reason, status FROM leave_requests ORDER BY id DESC;');
-    const policies = await pool.query('SELECT id, type as name, quota as limit, cycle FROM leave_policies;');
-    const dates = await pool.query('SELECT date, name, type FROM holidays ORDER BY date ASC;');
-    const attendance = await pool.query('SELECT user_id as "userId", CAST(date as text), check_in_time as "checkInTime", check_out_time as "checkOutTime" FROM attendance;');
+    const leaves = await pool.query(`
+      SELECT id::text, user_id as "userId", type, 
+             CAST(start_date as text) as "startDate", 
+             CAST(end_date as text) as "endDate", 
+             reason, status 
+      FROM leave_requests ORDER BY id DESC;
+    `);
+    const policies = await pool.query(`
+      SELECT id::text, label as name, quota as limit, cycle 
+      FROM leave_policies;
+    `);
+    const dates = await pool.query(`
+      SELECT CAST(date as text), name, 
+             CASE WHEN type='public' THEN 'Public' WHEN type='optional' THEN 'Optional' ELSE type END as type 
+      FROM holidays ORDER BY date ASC;
+    `);
+    const attendance = await pool.query(`
+      SELECT user_id as "userId", CAST(date as text), 
+             check_in_time as "checkInTime", check_out_time as "checkOutTime" 
+      FROM attendance;
+    `);
+
+    // Capitalize status for frontend compatibility
+    const formattedLeaves = leaves.rows.map(l => ({
+      ...l,
+      status: l.status ? l.status.charAt(0).toUpperCase() + l.status.slice(1) : l.status
+    }));
 
     res.json({
         users: users.rows,
-        leaves: leaves.rows,
+        leaves: formattedLeaves,
         leaveTypes: policies.rows,
         holidays: dates.rows,
         attendance: attendance.rows.map(a => ({
@@ -190,26 +212,28 @@ app.post('/api/attendance', async (req, res) => {
 });
 
 
-// 4. Submit Leave Request
+// 4. Submit Leave Request  (status stored lowercase for DB constraint)
 app.post('/api/leaves', async (req, res) => {
-    const { userId, type, startDate, endDate, reason, status } = req.body;
+    const { userId, type, startDate, endDate, reason, status, isHalfDay } = req.body;
     try {
+        const dbStatus = (status || 'Pending').toLowerCase();
         await pool.query(
             `INSERT INTO leave_requests (user_id, type, start_date, end_date, reason, status)
              VALUES ($1, $2, $3, $4, $5, $6)`,
-             [userId, type, startDate, endDate, reason, status || 'Pending']
+             [userId, type, startDate, endDate, reason, dbStatus]
         );
         res.json({ success: true });
     } catch(err) {
-        console.error(err);
-        res.status(500).json({ success: false });
+        console.error('Leave insert error:', err);
+        res.status(500).json({ success: false, message: err.message });
     }
 });
 
 app.put('/api/leaves/:id', async (req, res) => {
    const { status } = req.body;
    try {
-       await pool.query('UPDATE leave_requests SET status = $1 WHERE id = $2', [status, req.params.id]);
+       const dbStatus = (status || 'pending').toLowerCase();
+       await pool.query('UPDATE leave_requests SET status = $1 WHERE id = $2', [dbStatus, req.params.id]);
        res.json({ success: true });
    } catch(err) {
        console.error(err);
@@ -217,13 +241,97 @@ app.put('/api/leaves/:id', async (req, res) => {
    }
 });
 
-// 5. Delete User
+
+// 5. Leave Policy CRUD
+app.post('/api/policies', async (req, res) => {
+    const { name, limit, cycle } = req.body;
+    try {
+        const slug = name.toLowerCase().replace(/\s+/g, '_');
+        const result = await pool.query(
+            `INSERT INTO leave_policies (type, label, quota, cycle) VALUES ($1, $2, $3, $4)
+             ON CONFLICT (type) DO UPDATE SET label=$2, quota=$3, cycle=$4
+             RETURNING id::text, label as name, quota as limit, cycle`,
+            [slug, name, limit, cycle || 'yearly']
+        );
+        res.json({ success: true, policy: result.rows[0] });
+    } catch(err) {
+        console.error('Policy add error:', err);
+        res.status(500).json({ success: false, message: err.message });
+    }
+});
+
+app.put('/api/policies/:id', async (req, res) => {
+    const { name, limit, cycle } = req.body;
+    try {
+        await pool.query(
+            'UPDATE leave_policies SET label=$1, quota=$2, cycle=$3 WHERE id=$4',
+            [name, limit, cycle, req.params.id]
+        );
+        res.json({ success: true });
+    } catch(err) {
+        console.error('Policy update error:', err);
+        res.status(500).json({ success: false });
+    }
+});
+
+app.delete('/api/policies/:id', async (req, res) => {
+    try {
+        await pool.query('DELETE FROM leave_policies WHERE id=$1', [req.params.id]);
+        res.json({ success: true });
+    } catch(err) {
+        console.error('Policy delete error:', err);
+        res.status(500).json({ success: false });
+    }
+});
+
+
+// 6. Holiday CRUD
+app.post('/api/holidays', async (req, res) => {
+    const { date, name, type } = req.body;
+    try {
+        const dbType = (type || 'Public').toLowerCase();
+        await pool.query(
+            `INSERT INTO holidays (date, name, type) VALUES ($1, $2, $3)
+             ON CONFLICT (date) DO UPDATE SET name=$2, type=$3`,
+            [date, name, dbType]
+        );
+        res.json({ success: true });
+    } catch(err) {
+        console.error('Holiday add error:', err);
+        res.status(500).json({ success: false });
+    }
+});
+
+app.put('/api/holidays', async (req, res) => {
+    const { oldDate, date, name, type } = req.body;
+    try {
+        const dbType = (type || 'Public').toLowerCase();
+        await pool.query(
+            'UPDATE holidays SET date=$1, name=$2, type=$3 WHERE date=$4',
+            [date, name, dbType, oldDate]
+        );
+        res.json({ success: true });
+    } catch(err) {
+        console.error('Holiday update error:', err);
+        res.status(500).json({ success: false });
+    }
+});
+
+app.delete('/api/holidays/:date', async (req, res) => {
+    try {
+        await pool.query('DELETE FROM holidays WHERE date=$1', [req.params.date]);
+        res.json({ success: true });
+    } catch(err) {
+        console.error('Holiday delete error:', err);
+        res.status(500).json({ success: false });
+    }
+});
+
+
+// 7. Delete User
 app.delete('/api/users/:id', async (req, res) => {
     const userId = req.params.id;
     try {
-        // We delete from users, related records in attendance and leaves 
-        // should ideally be deleted or linked to a 'deleted user' record.
-        // For simplicity, we delete them all.
         await pool.query('DELETE FROM attendance WHERE user_id = $1', [userId]);
         await pool.query('DELETE FROM leave_requests WHERE user_id = $1', [userId]);
         await pool.query('DELETE FROM users WHERE user_id = $1', [userId]);
