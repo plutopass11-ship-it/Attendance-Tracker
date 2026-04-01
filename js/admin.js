@@ -525,34 +525,35 @@ window.AdminUI = {
         `;
         
         try {
-            const token = window.AdminUI.currentUser.token;
-            const res = await fetch(`/api/data/persons`, {
-                headers: { 'Authorization': `Bearer ${token}` }
-            });
+            const res = await fetch('/api/sync/store');
             const data = await res.json();
-            const activePersons = data.filter(p => p.active);
-            window.AdminUI._cachedUsers = activePersons;
+            
+            // In postgres we only store active users generally, so we show all rows
+            const dbUsers = data.users || [];
+            window.AdminUI._cachedUsers = dbUsers;
             
             const grantUserSelect = document.getElementById('grant-leave-user');
             if(grantUserSelect) {
-                grantUserSelect.innerHTML = activePersons.map(p => `<option value="${p.id}">${p.first_name} ${p.last_name}</option>`).join('');
+                grantUserSelect.innerHTML = dbUsers.map(p => `<option value="${p.id}">${p.name}</option>`).join('');
             }
             
             tbody.innerHTML = '';
-            // Only show active persons
             
-            activePersons.forEach(p => {
+            dbUsers.forEach(p => {
                 const tr = document.createElement('tr');
-                const fullName = `${p.first_name} ${p.last_name}`;
-                const appAccess = ['admin', 'studio manager'].includes(p.role?.toLowerCase()) ? 'Super Admin' : 'Normal User';
-                const extra = Store.getExtraOff(p.id);
+                const fullName = p.name;
+                const email = p.id;
+                // Treat users with role 'admin' as having Super Admin app access
+                const appAccess = p.role === 'admin' ? 'Super Admin' : 'Normal User';
+                
+                const extra = Store.getExtraOff(p.id) || { leaves: 0, wfh: 0 };
                 const extraText = `+${extra.leaves} L / +${extra.wfh} WFH`;
                 
                 tr.innerHTML = `
                     <td><strong>${fullName}</strong></td>
-                    <td>${p.email}</td>
-                    <td><span class="badge" style="background:#475569; color:white">${p.role}</span></td>
-                    <td><span class="badge" style="background: ${p.role==='studio manager'?'var(--primary)':'var(--glass-border)'}; color:${p.role==='studio manager'?'white':'var(--text-main)'}">${appAccess}</span></td>
+                    <td>${email}</td>
+                    <td><span class="badge" style="background:#475569; color:white">Standard</span></td>
+                    <td><span class="badge" style="background: ${p.role==='admin'?'var(--primary)':'var(--glass-border)'}; color:${p.role==='admin'?'white':'var(--text-main)'}">${appAccess}</span></td>
                     <td>
                         <span style="font-size:12px; margin-right:8px; color:var(--text-muted);">${extraText}</span>
                         <button class="btn-small btn-primary" onclick="window.AdminUI.openExtraOffModal('${p.id}', ${extra.leaves}, ${extra.wfh})">Edit</button>
@@ -562,7 +563,7 @@ window.AdminUI = {
             });
         } catch(e) {
             console.error(e);
-            tbody.innerHTML = '<tr><td colspan="4" style="text-align:center; color:var(--danger)">Failed to sync with Kitsu API.</td></tr>';
+            tbody.innerHTML = '<tr><td colspan="5" style="text-align:center; color:var(--danger)">Failed to sync users with Backend.</td></tr>';
         }
     },
 
