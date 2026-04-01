@@ -556,7 +556,8 @@ window.AdminUI = {
                     <td><span class="badge" style="background: ${p.role==='admin'?'var(--primary)':'var(--glass-border)'}; color:${p.role==='admin'?'white':'var(--text-main)'}">${appAccess}</span></td>
                     <td>
                         <span style="font-size:12px; margin-right:8px; color:var(--text-muted);">${extraText}</span>
-                        <button class="btn-small btn-primary" onclick="window.AdminUI.openExtraOffModal('${p.id}', ${extra.leaves}, ${extra.wfh})">Edit</button>
+                        <button class="btn-small btn-primary" style="margin-right:4px;" onclick="window.AdminUI.openExtraOffModal('${p.id}', ${extra.leaves}, ${extra.wfh})">Edit Off</button>
+                        ${p.id !== this.currentUser.id ? `<button class="btn-small btn-reject" onclick="window.AdminUI.deleteUser('${p.id}')">Remove</button>` : ''}
                     </td>
                 `;
                 tbody.appendChild(tr);
@@ -574,11 +575,22 @@ window.AdminUI = {
         document.getElementById('extra-off-modal').classList.remove('hidden');
     },
 
-    deleteUser: function(id) {
+    deleteUser: async function(id) {
         if(confirm(`Are you sure you want to remove user: ${id}?`)) {
-            Store.deleteUser(id);
-            this.renderUsers();
-            this.renderDashboard();
+            try {
+                const res = await fetch(`/api/users/${id}`, { method: 'DELETE' });
+                const data = await res.json();
+                if (data.success) {
+                    alert('User removed successfully.');
+                    this.renderUsers();
+                    this.renderDashboard();
+                } else {
+                    alert('Failed to remove user: ' + (data.message || 'Unknown error'));
+                }
+            } catch (err) {
+                console.error('Delete error:', err);
+                alert('Error connecting to backend.');
+            }
         }
     },
 

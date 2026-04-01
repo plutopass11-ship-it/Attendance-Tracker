@@ -217,6 +217,23 @@ app.put('/api/leaves/:id', async (req, res) => {
    }
 });
 
+// 5. Delete User
+app.delete('/api/users/:id', async (req, res) => {
+    const userId = req.params.id;
+    try {
+        // We delete from users, related records in attendance and leaves 
+        // should ideally be deleted or linked to a 'deleted user' record.
+        // For simplicity, we delete them all.
+        await pool.query('DELETE FROM attendance WHERE user_id = $1', [userId]);
+        await pool.query('DELETE FROM leave_requests WHERE user_id = $1', [userId]);
+        await pool.query('DELETE FROM users WHERE user_id = $1', [userId]);
+        res.json({ success: true });
+    } catch (err) {
+        console.error('Delete user error:', err);
+        res.status(500).json({ success: false, message: 'Delete failed' });
+    }
+});
+
 
 // Startup
 const PORT = process.env.PORT || 4000;
