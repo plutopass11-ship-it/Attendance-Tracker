@@ -110,7 +110,7 @@ app.post('/api/auth/login', async (req, res) => {
 
   // Format the user
   const fullName = `${kitsuUser.first_name || ''} ${kitsuUser.last_name || ''}`.trim();
-  const role = ['admin', 'manager', 'studio_manager'].includes(kitsuUser.role) ? 'admin' : 'user';
+  const role = ['admin', 'studio_manager'].includes(kitsuUser.role) ? 'admin' : 'user';
 
   // Upsert user into purely local Postgres Database to sync them natively
   try {
