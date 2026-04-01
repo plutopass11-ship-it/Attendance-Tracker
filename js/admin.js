@@ -357,8 +357,7 @@ window.AdminUI = {
                         }]
                     },
                     options: {
-                        responsive: true,
-                        maintainAspectRatio: false,
+                        responsive: false,
                         plugins: {
                             legend: { position: 'right', labels: { color: '#e2e8f0', usePointStyle: true } }
                         }
@@ -410,7 +409,7 @@ window.AdminUI = {
                         { label: 'On Leave', data: leaveData, borderColor: '#8b5cf6', backgroundColor: '#8b5cf6', tension: 0.3 }
                     ]
                 },
-                options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { labels: { color: '#e2e8f0'} } }, scales: { y: { beginAtZero: true, ticks: {color: '#94a3b8', stepSize:1}, grid:{color:'rgba(255,255,255,0.05)'} }, x: { ticks: {color: '#94a3b8'}, grid:{color:'rgba(255,255,255,0.05)'} } } }
+                options: { responsive: false, plugins: { legend: { labels: { color: '#e2e8f0'} } }, scales: { y: { beginAtZero: true, ticks: {color: '#94a3b8', stepSize:1}, grid:{color:'rgba(255,255,255,0.05)'} }, x: { ticks: {color: '#94a3b8'}, grid:{color:'rgba(255,255,255,0.05)'} } } }
             });
         }
 
@@ -430,7 +429,7 @@ window.AdminUI = {
                     labels: Object.keys(typeCounts).length ? Object.keys(typeCounts) : ['No Leaves'],
                     datasets: [{ data: Object.keys(typeCounts).length ? Object.values(typeCounts) : [1], backgroundColor: Object.keys(typeCounts).length ? bgColors.slice(0, Object.keys(typeCounts).length) : ['#334155'], borderWidth:0 }]
                 },
-                options: { responsive:true, maintainAspectRatio:false, plugins: { legend: { position: 'right', labels: {color: '#e2e8f0', usePointStyle: true} } } }
+                options: { responsive:false, plugins: { legend: { position: 'right', labels: {color: '#e2e8f0', usePointStyle: true} } } }
             });
         }
 
@@ -455,7 +454,7 @@ window.AdminUI = {
                     labels: tkLabels.length ? tkLabels : ['None'],
                     datasets: [{ label: 'Approved Requests', data: tkData.length ? tkData : [0], backgroundColor: '#f43f5e', borderRadius:4 }]
                 },
-                options: { indexAxis: 'y', responsive:true, maintainAspectRatio:false, plugins: { legend: { display:false } }, scales: { y: { ticks: {color: '#94a3b8'}, grid:{display:false} }, x: { ticks: {color: '#94a3b8', stepSize:1}, grid:{color:'rgba(255,255,255,0.05)'} } } }
+                options: { indexAxis: 'y', responsive:false, plugins: { legend: { display:false } }, scales: { y: { ticks: {color: '#94a3b8'}, grid:{display:false} }, x: { ticks: {color: '#94a3b8', stepSize:1}, grid:{color:'rgba(255,255,255,0.05)'} } } }
             });
         }
     },

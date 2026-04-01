@@ -131,33 +131,33 @@
                                     </tbody>
                                 </table>
                             </div>
-                            <div class="glass-panel" style="width: 350px; flex-shrink: 0;">
+                            <div class="glass-panel" style="width: 350px; flex-shrink: 0; overflow: hidden;">
                                 <h3 class="section-subtitle">Today's Overview</h3>
-                                <div style="position: relative; height: 300px; width: 100%;">
-                                    <canvas id="attendanceChart"></canvas>
+                                <div style="position: relative; width: 100%; height: 280px; overflow: hidden;">
+                                    <canvas id="attendanceChart" width="300" height="280"></canvas>
                                 </div>
                             </div>
                         </div>
 
                         <div style="display: flex; gap: 24px; margin-top: 24px; flex-wrap: wrap;">
-                            <div class="glass-panel" style="flex: 1; min-width: 400px;">
+                            <div class="glass-panel" style="flex: 1; min-width: 400px; overflow: hidden;">
                                 <h3 class="section-subtitle">7-Day Attendance Trend</h3>
-                                <div style="position: relative; height: 300px; width: 100%;">
-                                    <canvas id="trendChart"></canvas>
+                                <div style="position: relative; width: 100%; height: 280px; overflow: hidden;">
+                                    <canvas id="trendChart" width="600" height="280"></canvas>
                                 </div>
                             </div>
                         </div>
                         <div style="display: flex; gap: 24px; margin-top: 24px; flex-wrap: wrap;">
-                            <div class="glass-panel" style="flex: 1; min-width: 400px;">
+                            <div class="glass-panel" style="flex: 1; min-width: 400px; overflow: hidden;">
                                 <h3 class="section-subtitle">Top Leave Takers</h3>
-                                <div style="position: relative; height: 300px; width: 100%;">
-                                    <canvas id="topTakersChart"></canvas>
+                                <div style="position: relative; width: 100%; height: 280px; overflow: hidden;">
+                                    <canvas id="topTakersChart" width="600" height="280"></canvas>
                                 </div>
                             </div>
-                            <div class="glass-panel" style="width: 350px; flex-shrink: 0;">
+                            <div class="glass-panel" style="width: 350px; flex-shrink: 0; overflow: hidden;">
                                 <h3 class="section-subtitle">Leave Types Distribution</h3>
-                                <div style="position: relative; height: 300px; width: 100%;">
-                                    <canvas id="leaveDistChart"></canvas>
+                                <div style="position: relative; width: 100%; height: 280px; overflow: hidden;">
+                                    <canvas id="leaveDistChart" width="300" height="280"></canvas>
                                 </div>
                             </div>
                         </div>
@@ -608,10 +608,10 @@
     </div>
 
     <!-- Scripts -->
-    <script src="js/store.js?v=7"></script>
-    <script src="js/auth.js?v=7"></script>
-    <script src="js/app.js?v=7"></script>
-    <script src="js/admin.js?v=7"></script>
+    <script src="js/store.js?v=8"></script>
+    <script src="js/auth.js?v=8"></script>
+    <script src="js/app.js?v=8"></script>
+    <script src="js/admin.js?v=8"></script>
     
     <!-- Edit Holiday Modal -->
     <div id="edit-holiday-modal" class="modal hidden">
