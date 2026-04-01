@@ -47,17 +47,45 @@ const Store = {
             localStorage.setItem('attendance', JSON.stringify(data));
         }
     },
-    addAttendance: (record) => {
+    addAttendance: async (record) => {
         const data = Store.getAttendance();
         data.push(record);
         localStorage.setItem('attendance', JSON.stringify(data));
+        
+        // Sync to backend
+        try {
+            await fetch('/api/attendance', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    userId: record.userId,
+                    date: record.date,
+                    time: record.checkInTime,
+                    isCheckOut: false
+                })
+            });
+        } catch (err) { console.error('Attendance sync error:', err); }
     },
-    updateAttendance: (updatedRecord) => {
+    updateAttendance: async (updatedRecord) => {
         const data = Store.getAttendance();
         const index = data.findIndex(r => r.userId === updatedRecord.userId && r.date === updatedRecord.date);
         if (index > -1) {
             data[index] = updatedRecord;
             localStorage.setItem('attendance', JSON.stringify(data));
+            
+            // Sync to backend
+            try {
+                await fetch('/api/attendance', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        userId: updatedRecord.userId,
+                        date: updatedRecord.date,
+                        time: updatedRecord.checkOutTime,
+                        isCheckOut: true
+                    })
+                });
+            } catch (err) { console.error('Attendance sync error:', err); }
         }
     },
     getAttendanceToday: (userId, dateStr) => {
@@ -65,11 +93,20 @@ const Store = {
     },
     
     // Leaves
-    addLeaveRequest: (request) => {
+    addLeaveRequest: async (request) => {
         const data = Store.getLeaves();
         request.id = Date.now().toString();
         data.push(request);
         localStorage.setItem('leaves', JSON.stringify(data));
+        
+        // Sync to backend
+        try {
+            await fetch('/api/leaves', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(request)
+            });
+        } catch (err) { console.error('Leave sync error:', err); }
     },
     getUserLeaves: (userId) => {
         return Store.getLeaves().filter(l => l.userId === userId).sort((a, b) => b.id - a.id);
@@ -83,12 +120,21 @@ const Store = {
     getAllLeaves: () => {
         return Store.getLeaves().sort((a, b) => b.id - a.id);
     },
-    updateLeaveStatus: (leaveId, status) => {
+    updateLeaveStatus: async (leaveId, status) => {
         const data = Store.getLeaves();
         const index = data.findIndex(l => l.id == leaveId);
         if(index > -1) {
             data[index].status = status;
             localStorage.setItem('leaves', JSON.stringify(data));
+            
+            // Sync to backend
+            try {
+                await fetch(`/api/leaves/${leaveId}`, {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ status })
+                });
+            } catch (err) { console.error('Leave status sync error:', err); }
         }
     },
     addUser: (userObj) => {
