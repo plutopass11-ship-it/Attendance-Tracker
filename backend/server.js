@@ -16,7 +16,36 @@ const pool = new Pool({
 
 const KITSU_URL = process.env.KITSU_URL || 'http://host.docker.internal:3002';
 
-// Utility to execute Kitsu login
+// --- Service Account (Admin Token Cache) ---
+// Uses a dedicated Kitsu admin account to fetch person data,
+// since non-admin Kitsu users can't access /api/data/persons.
+const KITSU_ADMIN_EMAIL = process.env.KITSU_ADMIN_EMAIL || '';
+const KITSU_ADMIN_PASSWORD = process.env.KITSU_ADMIN_PASSWORD || '';
+let cachedAdminToken = null;
+let adminTokenExpiry = 0;
+
+async function getAdminToken() {
+  // Return cached token if still valid (refresh every 30 min)
+  if (cachedAdminToken && Date.now() < adminTokenExpiry) {
+    return cachedAdminToken;
+  }
+  if (!KITSU_ADMIN_EMAIL || !KITSU_ADMIN_PASSWORD) {
+    console.error('KITSU_ADMIN_EMAIL or KITSU_ADMIN_PASSWORD not set!');
+    return null;
+  }
+  console.log('Refreshing Kitsu admin token...');
+  const token = await loginToKitsu(KITSU_ADMIN_EMAIL, KITSU_ADMIN_PASSWORD);
+  if (token) {
+    cachedAdminToken = token;
+    adminTokenExpiry = Date.now() + 30 * 60 * 1000; // 30 minutes
+    console.log('Admin token cached successfully.');
+  } else {
+    console.error('Failed to obtain admin token from Kitsu!');
+  }
+  return token;
+}
+
+// Utility to execute Kitsu login (verifies any user's credentials)
 async function loginToKitsu(email, password) {
   try {
     const response = await fetch(`${KITSU_URL}/api/auth/login`, {
@@ -26,20 +55,30 @@ async function loginToKitsu(email, password) {
     });
     if (!response.ok) return null;
     const data = await response.json();
-    return data.access_token; // returns JWT if valid
+    return data.access_token;
   } catch (error) {
     console.error('Kitsu Login Error:', error);
     return null;
   }
 }
 
-// Utility to get user info from Kitsu using token
-async function getKitsuUser(token, email) {
+// Utility to get user info from Kitsu using the ADMIN token
+async function getKitsuUser(email) {
   try {
+    const adminToken = await getAdminToken();
+    if (!adminToken) {
+      console.error('No admin token available to fetch persons');
+      return null;
+    }
     const response = await fetch(`${KITSU_URL}/api/data/persons`, {
-      headers: { 'Authorization': `Bearer ${token}` }
+      headers: { 'Authorization': `Bearer ${adminToken}` }
     });
-    if (!response.ok) return null;
+    if (!response.ok) {
+      console.error('Kitsu persons API returned:', response.status);
+      // Force token refresh on next attempt
+      cachedAdminToken = null;
+      return null;
+    }
     const persons = await response.json(); 
     return persons.find(p => p.email === email);
   } catch (err) {
@@ -50,21 +89,21 @@ async function getKitsuUser(token, email) {
 
 // 1. Authentication Endpoint (Kitsu Proxy)
 app.post('/api/auth/login', async (req, res) => {
-  const { userId: email, password } = req.body; // Using email as userId for Kitsu
+  const { userId: email, password } = req.body;
 
   // --- Bypass for SuperAdmin default ---
   if(email === 'admin1' && password === 'password') {
        return res.json({ success: true, user: { id: 'admin1', name: 'Super Admin', role: 'admin' }});
   }
 
-  // Send credentials to Kitsu
-  const token = await loginToKitsu(email, password);
-  if (!token) {
+  // Step 1: Verify the user's OWN credentials against Kitsu
+  const userToken = await loginToKitsu(email, password);
+  if (!userToken) {
     return res.status(401).json({ success: false, message: 'Invalid Kitsu credentials' });
   }
 
-  // Get user profile from Kitsu
-  const kitsuUser = await getKitsuUser(token, email);
+  // Step 2: Use the ADMIN service account to fetch the user's profile
+  const kitsuUser = await getKitsuUser(email);
   if (!kitsuUser) {
     return res.status(500).json({ success: false, message: 'Failed to fetch Kitsu profile' });
   }
