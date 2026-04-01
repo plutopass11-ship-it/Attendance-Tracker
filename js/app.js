@@ -36,9 +36,12 @@ document.addEventListener('DOMContentLoaded', () => {
     // State
     let currentUser = null;
     let timerInterval = null;
+    let currentCalDate = new Date();
 
     // --- INIT ---
     function init() {
+        Store.autoCheckoutMissing();
+        
         if (Auth.isAuthenticated()) {
             currentUser = Auth.getCurrentUser();
             showApp();
@@ -46,6 +49,34 @@ document.addEventListener('DOMContentLoaded', () => {
             showLogin();
         }
         startClock();
+        
+        // Single Day Toggle Init
+        const singleDayToggle = document.getElementById('single-day-toggle');
+        const halfDayToggle = document.getElementById('half-day-toggle');
+        const endDateWrapper = document.getElementById('end-date-wrapper');
+        const leaveEndInput = document.getElementById('leave-end');
+        if (singleDayToggle) {
+            singleDayToggle.addEventListener('change', (e) => {
+                if (e.target.checked) {
+                    endDateWrapper.classList.add('hidden');
+                    leaveEndInput.removeAttribute('required');
+                    if(halfDayToggle) halfDayToggle.disabled = false;
+                } else {
+                    endDateWrapper.classList.remove('hidden');
+                    leaveEndInput.setAttribute('required', 'true');
+                    if(halfDayToggle) {
+                        halfDayToggle.checked = false;
+                        halfDayToggle.disabled = true;
+                    }
+                }
+            });
+            // trigger init explicitly
+            if (singleDayToggle.checked) {
+                leaveEndInput.removeAttribute('required');
+            } else if (halfDayToggle) {
+                halfDayToggle.disabled = true;
+            }
+        }
     }
 
     // --- NAVIGATION ---
@@ -75,6 +106,7 @@ document.addEventListener('DOMContentLoaded', () => {
         renderLeaveBalances();
         renderLeaveHistory();
         renderHolidays();
+        renderUserCalendar();
     }
 
     function switchTab(targetId) {
@@ -91,6 +123,7 @@ document.addEventListener('DOMContentLoaded', () => {
         });
         
         if(targetId === 'tab-attendance') updateAttendanceUI();
+        if(targetId === 'tab-calendar') renderUserCalendar();
         if(targetId === 'tab-leaves') renderLeaveHistory();
         if(targetId === 'tab-holidays') renderHolidays();
     }
@@ -161,8 +194,10 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // --- LEAVE LOGIC ---
     function renderLeaveBalances() {
-        const types = Store.getLeaveTypes();
+        // Exclude WFH from standard dynamic leave types
+        const types = Store.getLeaveTypes().filter(t => !t.name.toLowerCase().includes('wfh') && !t.name.toLowerCase().includes('work from home'));
         const userLeaves = Store.getUserLeaves(currentUser.id).filter(l => l.status === 'Approved');
+        const extraOff = Store.getExtraOff(currentUser.id) || { leaves: 0, wfh: 0 };
         
         const select = document.getElementById('leave-type');
         select.innerHTML = '';
@@ -173,6 +208,13 @@ document.addEventListener('DOMContentLoaded', () => {
         const now = new Date();
         const currMonthStr = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}`;
 
+        let leavesLimit = extraOff.leaves;
+        let leavesRemaining = extraOff.leaves;
+        let wfhLimit = extraOff.wfh;
+        let wfhRemaining = extraOff.wfh;
+        
+        let typesHtml = '';
+
         types.forEach(t => {
             select.innerHTML += `<option value="${t.name}">${t.name}</option>`;
             
@@ -182,27 +224,56 @@ document.addEventListener('DOMContentLoaded', () => {
             relevantLeaves.forEach(l => {
                 const sDate = new Date(l.startDate);
                 const eDate = new Date(l.endDate);
-                
                 if(t.cycle === 'Monthly') {
-                    if (l.startDate.startsWith(currMonthStr)) taken += 1;
+                    if (l.startDate.startsWith(currMonthStr)) {
+                        taken += l.isHalfDay ? 0.5 : 1;
+                    }
                 } else {
                     const diffTimes = eDate - sDate;
                     const diffDays = Math.ceil(diffTimes / (1000 * 60 * 60 * 24)) + 1;
-                    taken += diffDays;
+                    taken += l.isHalfDay ? 0.5 : diffDays;
                 }
             });
             
-            const remaining = Math.max(0, t.limit - taken);
+            const remainingForType = Math.max(0, t.limit - taken);
+            leavesLimit += t.limit;
+            leavesRemaining += remainingForType;
             
-            grid.innerHTML += `
-                <div class="glass-panel" style="padding:12px; text-align:center;">
-                    <div style="font-size:11px; color:var(--text-muted); margin-bottom:4px;">${t.name}</div>
-                    <div style="font-size:18px; font-weight:700; color: ${remaining>0 ? 'var(--text-main)' : 'var(--danger)'}">
-                        ${remaining} <span style="font-size:12px; font-weight:400; color:var(--text-muted)">/ ${t.limit}</span>
-                    </div>
+            typesHtml += `
+                <div style="display:flex; justify-content:space-between; padding:8px 12px; border-bottom:1px solid rgba(255,255,255,0.05); font-size:13px;">
+                    <span style="color:var(--text-muted)">${t.name}</span>
+                    <strong style="color: ${remainingForType>0 ? 'var(--text-main)' : 'var(--danger)'}">${remainingForType} / ${t.limit}</strong>
                 </div>
             `;
         });
+        
+        let wfhTaken = 0;
+        const wfhRequests = userLeaves.filter(l => l.type === 'Work From Home');
+        wfhRequests.forEach(l => {
+            const diffTimes = new Date(l.endDate) - new Date(l.startDate);
+            const diffDays = Math.ceil(diffTimes / (1000 * 60 * 60 * 24)) + 1;
+            wfhTaken += l.isHalfDay ? 0.5 : diffDays;
+        });
+        wfhRemaining -= wfhTaken;
+
+        grid.innerHTML = `
+            <div class="glass-panel" style="padding:16px; text-align:center;">
+                <div style="font-size:12px; color:var(--text-muted); margin-bottom:6px;">Extra Leaves</div>
+                <div style="font-size:24px; font-weight:700; color: ${extraOff.leaves>0 ? 'var(--text-main)' : 'var(--danger)'}">
+                    ${extraOff.leaves}
+                </div>
+            </div>
+            <div class="glass-panel" style="padding:16px; text-align:center;">
+                <div style="font-size:12px; color:var(--text-muted); margin-bottom:6px;">Remaining WFH</div>
+                <div style="font-size:24px; font-weight:700; color: ${wfhRemaining>0 ? 'var(--text-main)' : 'var(--danger)'}">
+                    ${wfhRemaining} <span style="font-size:12px; font-weight:400; color:var(--text-muted)">/ ${wfhLimit}</span>
+                </div>
+            </div>
+            <div class="glass-panel" style="grid-column: span 2; padding:16px;">
+                <h4 style="margin-top:0; margin-bottom:12px; font-size:14px; color:var(--text-main);">Leave Breakdown</h4>
+                ${typesHtml}
+            </div>
+        `;
     }
 
     function renderLeaveHistory() {
@@ -219,7 +290,7 @@ document.addEventListener('DOMContentLoaded', () => {
             li.className = 'history-card';
             li.innerHTML = `
                 <div class="card-main">
-                    <span class="card-title">${leave.type}</span>
+                    <span class="card-title">${leave.type} ${leave.isHalfDay ? '<span class="badge" style="background:var(--warning); color:white; font-size:10px; margin-left:6px;">Half Day</span>' : ''}</span>
                     <span class="card-sub">${leave.startDate} to ${leave.endDate}</span>
                 </div>
                 <span class="badge ${leave.status.toLowerCase()}">${leave.status}</span>
@@ -310,18 +381,99 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
+    // --- CALENDAR LOGIC ---
+    function renderUserCalendar() {
+        const year = currentCalDate.getFullYear();
+        const month = currentCalDate.getMonth();
+        const monthName = currentCalDate.toLocaleString('default', { month: 'long', year: 'numeric' });
+        
+        const titleEl = document.getElementById('user-cal-month-title');
+        if(titleEl) titleEl.textContent = monthName;
+        
+        const calContainer = document.getElementById('user-calendar-grid');
+        if(!calContainer) return;
+        calContainer.innerHTML = '';
+        
+        const firstDay = new Date(year, month, 1).getDay();
+        const daysInMonth = new Date(year, month + 1, 0).getDate();
+        
+        const myLeaves = Store.getUserLeaves(currentUser.id).filter(l => l.status === 'Approved');
+        const myAttendance = Store.getAttendance().filter(r => r.userId === currentUser.id);
+        const holidays = Store.getHolidays();
+        
+        for(let i=0; i<firstDay; i++) {
+            calContainer.innerHTML += `<div class="calendar-day empty"></div>`;
+        }
+        
+        for(let day=1; day <= daysInMonth; day++) {
+            const dateStr = `${year}-${String(month+1).padStart(2,'0')}-${String(day).padStart(2,'0')}`;
+            const isOnLeave = myLeaves.some(l => l.startDate <= dateStr && l.endDate >= dateStr);
+            const attendanceRecord = myAttendance.find(a => a.date === dateStr);
+            const holiday = holidays.find(h => h.date === dateStr);
+            
+            let badgesHTML = '';
+            if (isOnLeave) {
+                const leaveRecord = myLeaves.find(l => l.startDate <= dateStr && l.endDate >= dateStr);
+                const isOpt = leaveRecord.type === 'Optional Holiday';
+                const isWfh = leaveRecord.type?.toLowerCase().includes('wfh') || leaveRecord.type?.toLowerCase().includes('work from home');
+                let badgeClass = '';
+                if(isOpt) badgeClass = 'opt';
+                else if(isWfh) badgeClass = 'wfh';
+                
+                badgesHTML += `<div class="cal-leave-badge ${badgeClass}">${leaveRecord.type} ${leaveRecord.isHalfDay ? '(Half)' : ''}</div>`;
+            } else if (holiday && holiday.type !== 'Optional') {
+                badgesHTML += `<div class="cal-leave-badge holiday">${holiday.name}</div>`;
+            } else if (attendanceRecord) {
+                if (attendanceRecord.checkOutTime) {
+                    badgesHTML += `<div class="cal-leave-badge present">Present</div>`;
+                } else {
+                    badgesHTML += `<div class="cal-leave-badge working">Working</div>`;
+                }
+            } else if (new Date(dateStr) < new Date(getTodayDateString()) && new Date(dateStr).getDay() !== 0 && new Date(dateStr).getDay() !== 6) {
+                badgesHTML += `<div class="cal-leave-badge absent">Absent</div>`;
+            }
+            
+            // Mark Sundays for User Calendar too
+            if (new Date(year, month, day).getDay() === 0) {
+                badgesHTML += `<div class="cal-leave-badge holiday">Sunday</div>`;
+            }
+            
+            const isTodayStr = (dateStr === getTodayDateString()) ? ' today' : '';
+
+            calContainer.innerHTML += `
+                <div class="calendar-day${isTodayStr}">
+                    <div class="cal-date">${day}</div>
+                    <div class="cal-badges">${badgesHTML}</div>
+                </div>
+            `;
+        }
+    }
+
     // --- EVENT LISTENERS ---
+
     loginForm.addEventListener('submit', async (e) => {
         e.preventDefault();
-        const userId = document.getElementById('username').value;
+        const id = document.getElementById('username').value; // email
         const pass = document.getElementById('password').value;
         
-        if(await Auth.login(userId, pass)) {
-            loginError.textContent = '';
-            init(); // Reinitialize with auth
-            document.getElementById('password').value = '';
+        const loginBtn = loginForm.querySelector('button[type="submit"]');
+        const origText = loginBtn.textContent;
+        loginBtn.textContent = 'Connecting to Kitsu...';
+        loginBtn.disabled = true;
+
+        const user = await Auth.login(id, pass);
+        
+        loginBtn.textContent = origText;
+        loginBtn.disabled = false;
+
+        if (user) {
+            currentUser = user;
+            showApp();
         } else {
-            loginError.textContent = 'Invalid User ID or Password';
+            const errBox = document.getElementById('login-error');
+            errBox.textContent = 'Invalid credentials or Server error. Check console for details.';
+            errBox.style.display = 'block';
+            errBox.classList.remove('hidden');
         }
     });
 
@@ -335,6 +487,16 @@ document.addEventListener('DOMContentLoaded', () => {
         nav.addEventListener('click', () => {
             switchTab(nav.dataset.target);
         });
+    });
+
+    document.getElementById('user-cal-prev-btn')?.addEventListener('click', () => {
+        currentCalDate.setMonth(currentCalDate.getMonth() - 1);
+        renderUserCalendar();
+    });
+    
+    document.getElementById('user-cal-next-btn')?.addEventListener('click', () => {
+        currentCalDate.setMonth(currentCalDate.getMonth() + 1);
+        renderUserCalendar();
     });
 
     mainActionBtn.addEventListener('click', () => {
@@ -364,12 +526,30 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     });
 
-    leaveForm.addEventListener('submit', (e) => {
+    document.querySelectorAll('input[name="reqType"]').forEach(radio => {
+        radio.addEventListener('change', (e) => {
+            document.getElementById('leave-type-group').style.display = e.target.value === 'WFH' ? 'none' : 'flex';
+            document.getElementById('leave-type').required = e.target.value === 'Leave';
+        });
+    });
+
+    document.getElementById('apply-leave-form')?.addEventListener('submit', (e) => {
         e.preventDefault();
-        const start = document.getElementById('leave-start').value;
-        const end = document.getElementById('leave-end').value;
-        const type = document.getElementById('leave-type').value;
+        const reqVal = document.querySelector('input[name="reqType"]:checked').value;
+        const type = reqVal === 'WFH' ? 'Work From Home' : document.getElementById('leave-type').value;
+        
+        const startStr = document.getElementById('leave-start').value;
+        const endStr = document.getElementById('leave-end').value;
         const reason = document.getElementById('leave-reason').value;
+        const isSingleDay = document.getElementById('single-day-toggle')?.checked;
+        const isHalfDay = document.getElementById('half-day-toggle')?.checked;
+        
+        let start = startStr;
+        let end = endStr;
+
+        if (isSingleDay) {
+            end = start;
+        }
         
         if (new Date(start) > new Date(end)) {
             alert('End date cannot be before start date.');
@@ -382,14 +562,16 @@ document.addEventListener('DOMContentLoaded', () => {
             startDate: start,
             endDate: end,
             reason: reason,
-            status: 'Pending'
+            status: 'Pending',
+            isHalfDay: isHalfDay
         });
 
-        leaveForm.reset();
+        e.target.reset();
         renderLeaveHistory();
+        renderLeaveBalances();
         
         // Form submit feedback
-        const btn = leaveForm.querySelector('button');
+        const btn = e.target.querySelector('button[type="submit"]');
         const origText = btn.textContent;
         btn.textContent = "Request Sent ✓";
         btn.style.background = "var(--success)";

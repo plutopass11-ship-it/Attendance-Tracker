@@ -1,46 +1,22 @@
 // store.js
 const INITIAL_DATA_KEY = 'attendance_app_v2';
 
-// Sample default data
-const defaultLeaveTypes = [
-    { id: '1', name: 'Casual Leave', limit: 10, cycle: 'Yearly' },
-    { id: '2', name: 'Sick Leave', limit: 5, cycle: 'Yearly' },
-    { id: '3', name: 'Earned Leave', limit: 15, cycle: 'Yearly' },
-    { id: '4', name: 'Work From Home', limit: 4, cycle: 'Monthly' }
-];
-
-const defaultUsers = [
-    { id: 'user1', password: 'password', name: 'John Doe', role: 'user' },
-    { id: 'admin1', password: 'password', name: 'Super Admin', role: 'admin' }
-];
-
-const defaultHolidays = [
-    { date: '2026-01-01', name: 'New Year\'s Day', type: 'Public' },
-    { date: '2026-01-26', name: 'Republic Day', type: 'Public' },
-    { date: '2026-05-01', name: 'Labor Day', type: 'Public' },
-    { date: '2026-08-15', name: 'Independence Day', type: 'Public' },
-    { date: '2026-10-02', name: 'Gandhi Jayanti', type: 'Public' },
-    { date: '2026-12-25', name: 'Christmas Day', type: 'Public' },
-    { date: '2026-11-01', name: 'Diwali (Optional)', type: 'Optional' },
-    { date: '2026-03-15', name: 'Holi (Optional)', type: 'Optional' },
-    { date: '2026-09-05', name: 'Local Festival (Optional)', type: 'Optional' }
-];
-
+// No dummy data needed
+const defaultLeaveTypes = [];
+const defaultUsers = [];
+const defaultHolidays = [];
 const GLOBAL_QUOTA = 3;
-
-const defaultLeaves = [
-    { id: '1', userId: 'user1', type: 'Casual Leave', startDate: '2026-04-10', endDate: '2026-04-12', reason: 'Family event', status: 'Approved' },
-    { id: '2', userId: 'user1', type: 'Sick Leave', startDate: '2026-02-15', endDate: '2026-02-16', reason: 'Fever', status: 'Approved' }
-];
+const defaultLeaves = [];
 
 function initDB() {
-    if (!localStorage.getItem('v3_wfh')) {
+    if (!localStorage.getItem('v4_wfh_clear')) {
         localStorage.setItem('users', JSON.stringify(defaultUsers));
         localStorage.setItem('holidays', JSON.stringify(defaultHolidays));
         localStorage.setItem('attendance', JSON.stringify([]));
         localStorage.setItem('leaves', JSON.stringify(defaultLeaves));
         localStorage.setItem('leaveTypes', JSON.stringify(defaultLeaveTypes));
-        localStorage.setItem('v3_wfh', 'true');
+        localStorage.setItem('extraOff', JSON.stringify({}));
+        localStorage.setItem('v4_wfh_clear', 'true');
     }
 }
 
@@ -56,6 +32,21 @@ const Store = {
     getUserById: (id) => Store.getUsers().find(u => u.id === id),
     
     // Attendance
+    autoCheckoutMissing: () => {
+        const data = Store.getAttendance();
+        const now = new Date();
+        const todayStr = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}-${String(now.getDate()).padStart(2,'0')}`;
+        let modified = false;
+        data.forEach(r => {
+            if (!r.checkOutTime && r.date !== todayStr) {
+                r.checkOutTime = "20:00 (Auto)";
+                modified = true;
+            }
+        });
+        if(modified) {
+            localStorage.setItem('attendance', JSON.stringify(data));
+        }
+    },
     addAttendance: (record) => {
         const data = Store.getAttendance();
         data.push(record);
@@ -117,9 +108,19 @@ const Store = {
         data.sort((a,b) => new Date(a.date) - new Date(b.date));
         localStorage.setItem('holidays', JSON.stringify(data));
     },
-    deleteHoliday: (dateStr) => {
-        const data = Store.getHolidays().filter(h => h.date !== dateStr);
-        localStorage.setItem('holidays', JSON.stringify(data));
+    deleteHoliday: function(date) {
+        let holidays = this.getHolidays();
+        holidays = holidays.filter(h => h.date !== date);
+        localStorage.setItem('holidays', JSON.stringify(holidays));
+    },
+
+    updateHoliday: function(oldDate, updatedHoliday) {
+        let holidays = this.getHolidays();
+        const index = holidays.findIndex(h => h.date === oldDate);
+        if(index !== -1) {
+            holidays[index] = updatedHoliday;
+            localStorage.setItem('holidays', JSON.stringify(holidays));
+        }
     },
     claimOptionalHoliday: (userId, holiday) => {
         // Automatically create an approved leave
@@ -138,11 +139,35 @@ const Store = {
         return Math.max(0, GLOBAL_QUOTA - claimed);
     },
 
+    // Extra Off Admin Feature
+    getExtraOff: (userId) => {
+        const data = JSON.parse(localStorage.getItem('extraOff')) || {};
+        return data[userId] || { leaves: 0, wfh: 0 };
+    },
+    updateExtraOff: (userId, leaves, wfh) => {
+        const data = JSON.parse(localStorage.getItem('extraOff')) || {};
+        data[userId] = { leaves: parseInt(leaves, 10), wfh: parseInt(wfh, 10) };
+        localStorage.setItem('extraOff', JSON.stringify(data));
+    },
+
     // Dynamic Leave Types
-    updateLeaveTypeLimit: (id, newLimit) => {
+    updateLeaveType: (id, name, limit, cycle) => {
         const data = Store.getLeaveTypes();
         const type = data.find(t => t.id === id);
-        if(type) type.limit = newLimit;
+        if(type) {
+            type.name = name;
+            type.limit = limit;
+            type.cycle = cycle;
+        }
+        localStorage.setItem('leaveTypes', JSON.stringify(data));
+    },
+    addLeaveType: (typeObj) => {
+        const data = Store.getLeaveTypes();
+        data.push(typeObj);
+        localStorage.setItem('leaveTypes', JSON.stringify(data));
+    },
+    deleteLeaveType: (id) => {
+        const data = Store.getLeaveTypes().filter(t => t.id !== id);
         localStorage.setItem('leaveTypes', JSON.stringify(data));
     }
 };
