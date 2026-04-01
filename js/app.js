@@ -461,13 +461,13 @@ document.addEventListener('DOMContentLoaded', () => {
         loginBtn.textContent = 'Connecting to Kitsu...';
         loginBtn.disabled = true;
 
-        const user = await Auth.login(id, pass);
+        const success = await Auth.login(id, pass);
         
         loginBtn.textContent = origText;
         loginBtn.disabled = false;
 
-        if (user) {
-            currentUser = user;
+        if (success) {
+            currentUser = Auth.getCurrentUser();
             showApp();
         } else {
             const errBox = document.getElementById('login-error');
