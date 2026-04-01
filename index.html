@@ -133,24 +133,32 @@
                             </div>
                             <div class="glass-panel" style="width: 350px; flex-shrink: 0;">
                                 <h3 class="section-subtitle">Today's Overview</h3>
-                                <canvas id="attendanceChart" width="300" height="300"></canvas>
+                                <div style="position: relative; height: 300px; width: 100%;">
+                                    <canvas id="attendanceChart"></canvas>
+                                </div>
                             </div>
                         </div>
 
                         <div style="display: flex; gap: 24px; margin-top: 24px; flex-wrap: wrap;">
                             <div class="glass-panel" style="flex: 1; min-width: 400px;">
                                 <h3 class="section-subtitle">7-Day Attendance Trend</h3>
-                                <canvas id="trendChart" height="250"></canvas>
+                                <div style="position: relative; height: 300px; width: 100%;">
+                                    <canvas id="trendChart"></canvas>
+                                </div>
                             </div>
                         </div>
                         <div style="display: flex; gap: 24px; margin-top: 24px; flex-wrap: wrap;">
                             <div class="glass-panel" style="flex: 1; min-width: 400px;">
                                 <h3 class="section-subtitle">Top Leave Takers</h3>
-                                <canvas id="topTakersChart" height="250"></canvas>
+                                <div style="position: relative; height: 300px; width: 100%;">
+                                    <canvas id="topTakersChart"></canvas>
+                                </div>
                             </div>
                             <div class="glass-panel" style="width: 350px; flex-shrink: 0;">
                                 <h3 class="section-subtitle">Leave Types Distribution</h3>
-                                <canvas id="leaveDistChart" width="300" height="300"></canvas>
+                                <div style="position: relative; height: 300px; width: 100%;">
+                                    <canvas id="leaveDistChart"></canvas>
+                                </div>
                             </div>
                         </div>
                     </section>
@@ -600,10 +608,10 @@
     </div>
 
     <!-- Scripts -->
-    <script src="js/store.js?v=6"></script>
-    <script src="js/auth.js?v=6"></script>
-    <script src="js/app.js?v=6"></script>
-    <script src="js/admin.js?v=6"></script>
+    <script src="js/store.js?v=7"></script>
+    <script src="js/auth.js?v=7"></script>
+    <script src="js/app.js?v=7"></script>
+    <script src="js/admin.js?v=7"></script>
     
     <!-- Edit Holiday Modal -->
     <div id="edit-holiday-modal" class="modal hidden">
