@@ -177,8 +177,8 @@ app.get('/api/sync/store', async (req, res) => {
         holidays: dates.rows,
         attendance: attendance.rows.map(a => ({
           ...a,
-          checkInTime: a.checkInTime ? new Date(a.checkInTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : null,
-          checkOutTime: a.checkOutTime ? new Date(a.checkOutTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : null
+          checkInTime: a.checkInTime ? new Date(a.checkInTime).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Kolkata' }) : null,
+          checkOutTime: a.checkOutTime ? new Date(a.checkOutTime).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Kolkata' }) : null
         }))
     });
   } catch (err) {

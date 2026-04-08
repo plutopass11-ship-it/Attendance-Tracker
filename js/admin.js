@@ -285,8 +285,9 @@ window.AdminUI = {
         const attendance = Store.getAllAttendanceToday(today);
         const leaves = Store.getAllLeaves();
         
-        const presentCount = attendance.length;
-        const activePersons = this.kitsuPersons.filter(p => p.active);
+        // Exclude super-admins (founders) from all headcount calculations
+        const activePersons = this.kitsuPersons.filter(p => p.active && p.role !== 'admin');
+        const presentCount = attendance.filter(r => activePersons.some(p => p.id === r.userId)).length;
         const totalUsers = activePersons.length > 0 ? activePersons.length : '-';
         document.getElementById('stat-present').textContent = `${presentCount} / ${totalUsers}`;
         
@@ -388,6 +389,7 @@ window.AdminUI = {
                 let dayLeaveCount = 0;
                 let dayWfhCount = 0;
                 
+                // Only count non-admin employees in trend
                 activePersons.forEach(user => {
                     const actL = leaves.find(l => l.userId === user.id && l.status === 'Approved' && l.startDate <= dStr && l.endDate >= dStr);
                     if(actL) {
