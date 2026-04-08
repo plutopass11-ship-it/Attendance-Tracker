@@ -16,7 +16,7 @@ window.AdminUI = {
 
             // Sync with backend DB first, then render
             await Store.syncWithBackend();
-            this.syncKitsuUsers();
+            await this.syncKitsuUsers();
             this.renderDashboard();
         } catch(e) {
             document.getElementById('admin-greeting').textContent = "CRASH: " + e.message;
@@ -286,7 +286,7 @@ window.AdminUI = {
         const leaves = Store.getAllLeaves();
         
         // Exclude super-admins (founders) from all headcount calculations
-        const activePersons = this.kitsuPersons.filter(p => p.active && p.role !== 'admin');
+        const activePersons = this.kitsuPersons.filter(p => p.active && (p.role || '').toLowerCase() !== 'admin');
         const presentCount = attendance.filter(r => activePersons.some(p => p.id === r.userId)).length;
         const totalUsers = activePersons.length > 0 ? activePersons.length : '-';
         document.getElementById('stat-present').textContent = `${presentCount} / ${totalUsers}`;
