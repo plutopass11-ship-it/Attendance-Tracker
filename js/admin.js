@@ -288,7 +288,7 @@ window.AdminUI = {
         // Exclude super-admins (founders) from all headcount calculations
         const activePersons = this.kitsuPersons.filter(p => p.active && (p.role || '').toLowerCase() !== 'admin');
         const presentCount = attendance.filter(r => activePersons.some(p => p.id === r.userId)).length;
-        const totalUsers = activePersons.length > 0 ? activePersons.length : 0;
+        const totalUsers = activePersons.length > 0 ? activePersons.length : '-';
         document.getElementById('stat-present').textContent = `${presentCount} / ${totalUsers}`;
         
         const pendingCount = leaves.filter(l => l.status === 'Pending').length;
@@ -342,9 +342,9 @@ window.AdminUI = {
         });
 
         // 1. Render Main Chart
-        const absentCount = totalUsers > 0 ? Math.max(0, totalUsers - presentCount - onLeaveCount - wfhCount) : 0;
+        const absentCount = totalUsers !== '-' ? Math.max(0, totalUsers - presentCount - onLeaveCount - wfhCount) : 0;
         const ctx = document.getElementById('attendanceChart');
-        if(ctx) {
+        if(ctx && totalUsers !== '-') {
             try {
                 if(window.AdminUI.attendanceChartInstance) {
                     window.AdminUI.attendanceChartInstance.destroy();
@@ -352,10 +352,10 @@ window.AdminUI = {
                 window.AdminUI.attendanceChartInstance = new Chart(ctx, {
                     type: 'doughnut',
                     data: {
-                        labels: totalUsers > 0 ? ['Office', 'WFH', 'On Leave', 'Absent'] : ['No Data'],
+                        labels: ['Office', 'WFH', 'On Leave', 'Absent'],
                         datasets: [{
-                            data: totalUsers > 0 ? [presentCount, wfhCount, onLeaveCount, absentCount] : [1],
-                            backgroundColor: totalUsers > 0 ? ['#10b981', '#3b82f6', '#8b5cf6', '#ef4444'] : ['#334155'],
+                            data: [presentCount, wfhCount, onLeaveCount, absentCount],
+                            backgroundColor: ['#10b981', '#3b82f6', '#8b5cf6', '#ef4444'],
                             borderWidth: 0
                         }]
                     },
@@ -371,7 +371,7 @@ window.AdminUI = {
 
         // 2. Trend Chart (7 days)
         const trendCtx = document.getElementById('trendChart');
-        if(trendCtx) {
+        if(trendCtx && totalUsers !== '-') {
             if(window.AdminUI.trendChartInstance) window.AdminUI.trendChartInstance.destroy();
             
             const labels = [];
@@ -439,7 +439,7 @@ window.AdminUI = {
 
         // 4. Top Takers
         const takersCtx = document.getElementById('topTakersChart');
-        if(takersCtx) {
+        if(takersCtx && totalUsers !== '-') {
             if(window.AdminUI.takersChartInstance) window.AdminUI.takersChartInstance.destroy();
             const userTotals = {};
             leaves.filter(l => l.status === 'Approved').forEach(l => {

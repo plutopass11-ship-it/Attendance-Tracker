@@ -1,2 +1,0 @@
-time="2026-04-01T15:37:04+05:30" level=warning msg="D:\\AI\\Attendence Tracker\\deployment\\docker-compose.yml: the attribute `version` is obsolete, it will be ignored, please remove it to avoid potential confusion"
-network kitsu_kitsu-network declared as external, but could not be found
