@@ -228,14 +228,17 @@ document.addEventListener('DOMContentLoaded', () => {
             relevantLeaves.forEach(l => {
                 const sDate = new Date(l.startDate);
                 const eDate = new Date(l.endDate);
-                if(t.cycle === 'Monthly') {
+                if(t.cycle && t.cycle.toLowerCase() === 'monthly') {
                     if (l.startDate.startsWith(currMonthStr)) {
                         taken += l.isHalfDay ? 0.5 : 1;
                     }
                 } else {
-                    const diffTimes = eDate - sDate;
-                    const diffDays = Math.ceil(diffTimes / (1000 * 60 * 60 * 24)) + 1;
-                    taken += l.isHalfDay ? 0.5 : diffDays;
+                    // Yearly reset: Only subtract leaves taken in the current year
+                    if (sDate.getFullYear() === now.getFullYear() || eDate.getFullYear() === now.getFullYear()) {
+                        const diffTimes = eDate - sDate;
+                        const diffDays = Math.ceil(diffTimes / (1000 * 60 * 60 * 24)) + 1;
+                        taken += l.isHalfDay ? 0.5 : diffDays;
+                    }
                 }
             });
             
@@ -252,11 +255,14 @@ document.addEventListener('DOMContentLoaded', () => {
         });
         
         let wfhTaken = 0;
-        const wfhRequests = userLeaves.filter(l => l.type === 'Work From Home');
+        const wfhRequests = userLeaves.filter(l => l.type.toLowerCase().includes('wfh') || l.type.toLowerCase() === 'work from home');
         wfhRequests.forEach(l => {
-            const diffTimes = new Date(l.endDate) - new Date(l.startDate);
-            const diffDays = Math.ceil(diffTimes / (1000 * 60 * 60 * 24)) + 1;
-            wfhTaken += l.isHalfDay ? 0.5 : diffDays;
+            // WFH is generally monthly
+            if (l.startDate.startsWith(currMonthStr)) {
+                const diffTimes = new Date(l.endDate) - new Date(l.startDate);
+                const diffDays = Math.ceil(diffTimes / (1000 * 60 * 60 * 24)) + 1;
+                wfhTaken += l.isHalfDay ? 0.5 : diffDays;
+            }
         });
         wfhRemaining -= wfhTaken;
 
