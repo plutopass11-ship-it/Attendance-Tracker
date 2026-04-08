@@ -16,8 +16,8 @@ window.AdminUI = {
 
             // Sync with backend DB first, then render
             await Store.syncWithBackend();
-            await this.syncKitsuUsers();
-            this.renderDashboard();
+            this.renderDashboard(); // initial render with cached data
+            this.syncKitsuUsers();  // async: updates kitsuPersons and re-renders when ready
         } catch(e) {
             document.getElementById('admin-greeting').textContent = "CRASH: " + e.message;
             console.error(e);
