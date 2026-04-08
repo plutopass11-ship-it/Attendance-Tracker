@@ -1,0 +1,529 @@
+diff --git "a/d:\\AI\\Attendence Tracker\\index.html" "b/D:\\AI\\Attendence Tracker\\Attendence Tracker\\index.html"
+index 24ee358..b1ea033 100644
+--- "a/d:\\AI\\Attendence Tracker\\index.html"	
++++ "b/D:\\AI\\Attendence Tracker\\Attendence Tracker\\index.html"	
+@@ -11,7 +11,18 @@
+     <link rel="stylesheet" href="css/admin.css">
+     <!-- Ionicons for modern icons -->
+     <script type="module" src="https://unpkg.com/ionicons@7.1.0/dist/ionicons/ionicons.esm.js"></script>
+-    <script nomodule src="https://unpkg.com/ionicons@7.1.0/dist/ionicons/ionicons.js"></script>
++    <script src="https://unpkg.com/ionicons@7.1.0/dist/ionicons/ionicons.js"></script>
++    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
++    <script>
++        window.addEventListener('error', function(event) {
++            alert('CRASH: ' + event.message + ' at ' + event.filename + ':' + event.lineno);
++            document.body.innerHTML = '<h1>Global Crash: ' + event.message + '</h1>';
++        });
++        window.addEventListener('unhandledrejection', function(event) {
++            alert('ASYNC CRASH: ' + event.reason);
++            document.body.innerHTML = '<h1>Async Crash: ' + event.reason + '</h1>';
++        });
++    </script>
+ </head>
+ <body>
+     <div id="app-container">
+@@ -26,11 +37,11 @@
+                 <form id="login-form">
+                     <div class="input-group">
+                         <ion-icon name="person-outline"></ion-icon>
+-                        <input type="text" id="username" placeholder="User ID (try user1)" required>
++                        <input type="email" id="username" placeholder="Kitsu Email Account" required>
+                     </div>
+                     <div class="input-group">
+                         <ion-icon name="lock-closed-outline"></ion-icon>
+-                        <input type="password" id="password" placeholder="Password (try password)" required>
++                        <input type="password" id="password" placeholder="Kitsu Password" required>
+                     </div>
+                     <button type="submit" class="btn-primary">Sign In</button>
+                     <div id="login-error" class="error-msg"></div>
+@@ -78,6 +89,16 @@
+                 <div class="admin-content-area">
+                     <!-- Dashboard Tab -->
+                     <section id="admin-tab-dashboard" class="admin-tab active">
++                        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:20px;">
++                            <h2 class="section-title" style="margin:0;">Dashboard Overview</h2>
++                            <div style="display:flex; gap: 10px;">
++                                <button id="btn-export-data" class="btn-small btn-primary" style="margin:0; width:auto; padding:8px 16px;">Export Backup</button>
++                                <label class="btn-small btn-neutral" style="margin:0; width:auto; padding:8px 16px; cursor:pointer;" title="Import JSON Backup">
++                                    Import Backup
++                                    <input type="file" id="file-import-data" accept=".json" style="display:none;">
++                                </label>
++                            </div>
++                        </div>
+                         <div class="stats-grid">
+                             <div class="stat-card">
+                                 <h3>Present Today</h3>
+@@ -88,32 +109,75 @@
+                                 <div class="stat-value" id="stat-pending">0</div>
+                             </div>
+                         </div>
+-                        <h3 class="section-title" style="margin-top:30px">Live Attendance Feed</h3>
++                        <div class="glass-panel" style="margin-top:20px; display:none;">
++                            <!-- Removed duplicate -->
++                        </div>
++                        <h3 class="section-title" style="margin-top:30px">Live Feed & Analytics</h3>
++                        
++                        <div style="display: flex; gap: 24px; flex-wrap: wrap;">
++                            <div class="glass-panel" style="flex: 1; min-width: 400px; overflow-x:auto;">
++                                <h3 class="section-subtitle">Live Attendance Feed</h3>
++                                <table class="admin-table">
++                                    <thead>
++                                        <tr>
++                                            <th>User</th>
++                                            <th>Status</th>
++                                            <th>Check In</th>
++                                            <th>Check Out</th>
++                                        </tr>
++                                    </thead>
++                                    <tbody id="live-attendance-tbody">
++                                        <!-- Populated via JS -->
++                                    </tbody>
++                                </table>
++                            </div>
++                            <div class="glass-panel" style="width: 350px; flex-shrink: 0;">
++                                <h3 class="section-subtitle">Today's Overview</h3>
++                                <canvas id="attendanceChart" width="300" height="300"></canvas>
++                            </div>
++                        </div>
++
++                        <div style="display: flex; gap: 24px; margin-top: 24px; flex-wrap: wrap;">
++                            <div class="glass-panel" style="flex: 1; min-width: 400px;">
++                                <h3 class="section-subtitle">7-Day Attendance Trend</h3>
++                                <canvas id="trendChart" height="250"></canvas>
++                            </div>
++                        </div>
++                        <div style="display: flex; gap: 24px; margin-top: 24px; flex-wrap: wrap;">
++                            <div class="glass-panel" style="flex: 1; min-width: 400px;">
++                                <h3 class="section-subtitle">Top Leave Takers</h3>
++                                <canvas id="topTakersChart" height="250"></canvas>
++                            </div>
++                            <div class="glass-panel" style="width: 350px; flex-shrink: 0;">
++                                <h3 class="section-subtitle">Leave Types Distribution</h3>
++                                <canvas id="leaveDistChart" width="300" height="300"></canvas>
++                            </div>
++                        </div>
++                    </section>
++                    <!-- Leaves Tab -->
++                    <section id="admin-tab-leaves" class="admin-tab hidden">
++                        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom: 20px;">
++                            <h2 class="section-title" style="margin:0">Leave Requests</h2>
++                            <button class="btn-primary" onclick="document.getElementById('grant-leave-modal').classList.remove('hidden')" style="width:auto; padding:8px 16px; margin:0;">+ Grant Leave</button>
++                        </div>
+                         <div class="glass-panel" style="overflow-x:auto;">
+                             <table class="admin-table">
+                                 <thead>
+                                     <tr>
+-                                        <th>User</th>
+-                                        <th>Status</th>
+-                                        <th>Check In</th>
+-                                        <th>Check Out</th>
++                                        <th>User Name</th>
++                                        <th>Leave Type</th>
++                                        <th>Dates</th>
++                                        <th>Reason</th>
++                                        <th>Actions</th>
+                                     </tr>
+                                 </thead>
+-                                <tbody id="live-attendance-tbody">
++                                <tbody id="admin-leaves-tbody">
+                                     <!-- Populated by JS -->
+                                 </tbody>
+                             </table>
+                         </div>
+                     </section>
+ 
+-                    <!-- Leaves Tab -->
+-                    <section id="admin-tab-leaves" class="admin-tab hidden">
+-                        <h2 class="section-title">Leave Requests</h2>
+-                        <div id="admin-leaves-list" class="history-list">
+-                            <!-- Populated by JS -->
+-                        </div>
+-                    </section>
+-
+                     <!-- Calendar Tab -->
+                     <section id="admin-tab-calendar" class="admin-tab hidden">
+                         <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom: 20px;">
+@@ -124,27 +188,29 @@
+                             </div>
+                         </div>
+                         <div class="calendar-wrapper">
+-                            <div class="calendar-header-row">
+-                                <div>Sun</div><div>Mon</div><div>Tue</div><div>Wed</div><div>Thu</div><div>Fri</div><div>Sat</div>
++                            <div class="calendar-inner">
++                                <div class="calendar-header-row">
++                                    <div>Sun</div><div>Mon</div><div>Tue</div><div>Wed</div><div>Thu</div><div>Fri</div><div>Sat</div>
++                                </div>
++                                <div id="admin-calendar-grid" class="calendar-grid"></div>
+                             </div>
+-                            <div id="admin-calendar-grid" class="calendar-grid"></div>
+                         </div>
+                     </section>
+ 
+                     <!-- Users Tab -->
+                     <section id="admin-tab-users" class="admin-tab hidden">
+                         <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom: 20px;">
+-                            <h2 class="section-title" style="margin:0">User Management</h2>
+-                            <button id="add-user-btn" class="btn-primary" style="width:auto; padding:8px 16px; margin:0;">+ Add User</button>
++                            <h2 class="section-title" style="margin:0">Studio Team (Synced from Kitsu)</h2>
+                         </div>
+                         <div class="glass-panel" style="overflow-x:auto;">
+                             <table class="admin-table">
+                                 <thead>
+                                     <tr>
+-                                        <th>User ID</th>
+-                                        <th>Name</th>
+-                                        <th>Role</th>
+-                                        <th>Actions</th>
++                                        <th>Full Name</th>
++                                        <th>Email</th>
++                                        <th>Kitsu Role</th>
++                                        <th>App Access</th>
++                                        <th>Extra Off</th>
+                                     </tr>
+                                 </thead>
+                                 <tbody id="admin-users-tbody">
+@@ -157,6 +223,7 @@
+                     <section id="admin-tab-policies" class="admin-tab hidden">
+                         <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom: 20px;">
+                             <h2 class="section-title" style="margin:0">Leave Policies & WFH Limits</h2>
++                            <button id="add-policy-btn" class="btn-primary" style="width:auto; padding:8px 16px; margin:0;">+ Add Leave Type</button>
+                         </div>
+                         <div class="glass-panel" style="overflow-x:auto;">
+                             <table class="admin-table">
+@@ -250,39 +317,78 @@
+                     </div>
+                 </section>
+ 
++                <!-- TAB: Calendar -->
++                <section id="tab-calendar" class="tab-content">
++                    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom: 20px;">
++                        <h2 class="section-title" style="margin:0"><span id="user-cal-month-title"></span> Calendar</h2>
++                        <div>
++                            <button class="btn-small btn-neutral" id="user-cal-prev-btn" style="margin:0; width:auto;">&lt;</button>
++                            <button class="btn-small btn-neutral" id="user-cal-next-btn" style="margin:0; width:auto;">&gt;</button>
++                        </div>
++                    </div>
++                    <div class="calendar-wrapper" style="background: var(--glass-bg); border-radius: 12px; padding: 10px;">
++                        <div class="calendar-inner">
++                            <div class="calendar-header-row">
++                                <div>Sun</div><div>Mon</div><div>Tue</div><div>Wed</div><div>Thu</div><div>Fri</div><div>Sat</div>
++                            </div>
++                            <div id="user-calendar-grid" class="calendar-grid"></div>
++                        </div>
++                    </div>
++                </section>
++
+                 <!-- TAB: Leaves -->
+-                <section id="tab-leaves" class="tab-content hidden">
++                <section id="tab-leaves" class="tab-content">
+                     <h2 class="section-title">Leave Balances</h2>
+                     <div id="user-balances-grid" style="display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-bottom:24px;">
+                         <!-- Populated by JS -->
+                     </div>
+ 
+-                    <h2 class="section-title">Apply for Leave</h2>
+-                    <div class="glass-panel">
+-                        <form id="leave-form">
+-                            <div class="input-group">
+-                                <label>Leave / WFH Type</label>
+-                                <select id="leave-type" required>
+-                                    <!-- Populated via JS -->
+-                                </select>
+-                            </div>
+-                            <div class="date-row">
+-                                <div class="input-group">
+-                                    <label>Start Date</label>
+-                                    <input type="date" id="leave-start" required>
+-                                </div>
+-                                <div class="input-group">
+-                                    <label>End Date</label>
+-                                    <input type="date" id="leave-end" required>
+-                                </div>
++                    <h3 class="section-title">Apply for Time Off</h3>
++                    <form id="apply-leave-form" class="card" style="padding: 24px; display: flex; flex-direction: column; gap: 16px;">
++                        <div class="input-group">
++                            <label>Request Type</label>
++                            <div class="toggle-group" style="margin-top: 5px;">
++                                <input type="radio" id="req-leave" name="reqType" value="Leave" checked>
++                                <label for="req-leave">Leave</label>
++                                
++                                <input type="radio" id="req-wfh" name="reqType" value="WFH">
++                                <label for="req-wfh">Work From Home</label>
+                             </div>
++                        </div>
++                        <div class="input-group" id="leave-type-group">
++                            <label>Leave Type</label>
++                            <select id="leave-type" required>
++                                <!-- Populated dynamically -->
++                            </select>
++                        </div>
++                        <div style="display: flex; gap: 24px; margin-bottom: 8px;">
++                            <label class="modern-toggle">
++                                <input type="checkbox" id="single-day-toggle" checked />
++                                <span class="slider"></span>
++                                <span class="label-text">Single Day Leave</span>
++                            </label>
++                            <label class="modern-toggle" id="half-day-toggle-wrapper">
++                                <input type="checkbox" id="half-day-toggle" />
++                                <span class="slider"></span>
++                                <span class="label-text">Half Day</span>
++                            </label>
++                        </div>
++                        <div class="date-row">
+                             <div class="input-group">
+-                                <label>Reason</label>
+-                                <textarea id="leave-reason" rows="3" placeholder="Explain your reason briefly..." required></textarea>
++                                <label>Start Date</label>
++                                <input type="date" id="leave-start" onclick="if(typeof this.showPicker === 'function') this.showPicker();" required>
+                             </div>
+-                            <button type="submit" class="btn-primary">Submit Request</button>
+-                        </form>
+-                    </div>
++                            <div class="input-group hidden" id="end-date-wrapper">
++                                <label>End Date</label>
++                                <input type="date" id="leave-end" onclick="if(typeof this.showPicker === 'function') this.showPicker();">
++                            </div>
++                        </div>
++                        <div class="input-group">
++                            <label>Reason</label>
++                            <textarea id="leave-reason" rows="3" placeholder="Explain your reason briefly..." required></textarea>
++                        </div>
++                        <button type="submit" class="btn-primary">Submit Request</button>
++                    </form>
+                     
+                     <h3 class="section-subtitle">Recent Requests</h3>
+                     <ul id="leave-history-list" class="history-list">
+@@ -317,6 +423,10 @@
+                     <ion-icon name="home-outline"></ion-icon>
+                     <span>Home</span>
+                 </button>
++                <button class="nav-item" data-target="tab-calendar">
++                    <ion-icon name="calendar-number-outline"></ion-icon>
++                    <span>Calendar</span>
++                </button>
+                 <button class="nav-item" data-target="tab-leaves">
+                     <ion-icon name="calendar-outline"></ion-icon>
+                     <span>Leaves</span>
+@@ -329,42 +439,200 @@
+         </div>
+     </div>
+ 
+-    <!-- Modals -->
+-    <div id="admin-user-modal" class="modal hidden">
+-        <div class="modal-content glass-panel" style="width:90%; max-width:400px; padding:30px;">
+-            <h2 style="margin-bottom:20px; font-weight:600;">Add / Edit User</h2>
+-            <form id="admin-user-form">
++    <!-- Admin Modals -->
++    <div id="holiday-modal" class="modal hidden">
++        <div class="modal-overlay"></div>
++        <div class="modal-content glass-panel">
++            <h3 style="margin-top:0; margin-bottom:20px;">Add New Holiday</h3>
++            <form id="holiday-form">
+                 <div class="input-group">
+-                    <label>User ID</label>
+-                    <input type="text" id="modal-user-id" required>
++                    <label>Date</label>
++                    <input type="date" id="holiday-date-input" onclick="if(typeof this.showPicker === 'function') this.showPicker();" required>
+                 </div>
+                 <div class="input-group">
+-                    <label>Full Name</label>
+-                    <input type="text" id="modal-user-name" required>
++                    <label>Name</label>
++                    <input type="text" id="holiday-name-input" placeholder="e.g. Summer Break" required>
+                 </div>
+                 <div class="input-group">
+-                    <label>Password</label>
+-                    <input type="password" id="modal-user-pass" required>
++                    <label>Type</label>
++                    <select id="holiday-type-input" required>
++                        <option value="Public">Public</option>
++                        <option value="Optional">Optional</option>
++                    </select>
++                </div>
++                <div class="modal-actions" style="display:flex; gap:10px; margin-top:20px;">
++                    <button type="button" class="btn-neutral" style="flex:1" id="close-holiday-modal">Cancel</button>
++                    <button type="submit" class="btn-primary" style="flex:1">Save Holiday</button>
+                 </div>
++            </form>
++        </div>
++    </div>
++
++    <div id="leave-type-modal" class="modal hidden">
++        <div class="modal-overlay"></div>
++        <div class="modal-content glass-panel">
++            <h3 style="margin-top:0; margin-bottom:20px;">Add Leave Type</h3>
++            <form id="leave-type-form">
+                 <div class="input-group">
+-                    <label>Role</label>
+-                    <select id="modal-user-role">
+-                        <option value="user">Normal User</option>
+-                        <option value="admin">Super Admin</option>
++                    <label>Leave Name</label>
++                    <input type="text" id="leave-name-input" placeholder="e.g. Bereavement Leave" required>
++                </div>
++                <div class="input-group">
++                    <label>Limit (Days)</label>
++                    <input type="number" id="leave-limit-input" min="1" required>
++                </div>
++                <div class="input-group">
++                    <label>Cycle</label>
++                    <select id="leave-cycle-input" required>
++                        <option value="Yearly">Yearly</option>
++                        <option value="Monthly">Monthly</option>
+                     </select>
+                 </div>
+-                <div style="display:flex; gap:10px; margin-top:20px;">
+-                    <button type="submit" class="btn-primary" style="flex:1; margin:0">Save</button>
+-                    <button type="button" class="btn-neutral" id="modal-user-cancel" style="padding:16px; border-radius:12px; font-weight:600; color:white; border:none; cursor:pointer;">Cancel</button>
++                <div class="modal-actions" style="display:flex; gap:10px; margin-top:20px;">
++                    <button type="button" class="btn-neutral" style="flex:1" id="close-leave-type-modal">Cancel</button>
++                    <button type="submit" class="btn-primary" style="flex:1">Save Leave</button>
++                </div>
++            </form>
++        </div>
++    </div>
++
++    <div id="edit-leave-type-modal" class="modal hidden">
++        <div class="modal-overlay"></div>
++        <div class="modal-content glass-panel">
++            <h3 style="margin-top:0; margin-bottom:20px;">Edit Leave Type</h3>
++            <form id="edit-leave-type-form">
++                <input type="hidden" id="edit-leave-id">
++                <div class="input-group">
++                    <label>Leave Name</label>
++                    <input type="text" id="edit-leave-name-input" required>
++                </div>
++                <div class="input-group">
++                    <label>Limit (Days)</label>
++                    <input type="number" id="edit-leave-limit-input" min="1" required>
++                </div>
++                <div class="input-group">
++                    <label>Cycle</label>
++                    <select id="edit-leave-cycle-input" required>
++                        <option value="Yearly">Yearly</option>
++                        <option value="Monthly">Monthly</option>
++                    </select>
++                </div>
++                <div class="modal-actions" style="display:flex; gap:10px; margin-top:20px;">
++                    <button type="button" class="btn-neutral" style="flex:1" id="close-edit-leave-type-modal">Cancel</button>
++                    <button type="submit" class="btn-primary" style="flex:1">Save Changes</button>
++                </div>
++            </form>
++        </div>
++    </div>
++
++    <div id="extra-off-modal" class="modal hidden">
++        <div class="modal-overlay"></div>
++        <div class="modal-content glass-panel">
++            <h3 style="margin-top:0; margin-bottom:20px;">Edit Extra Off Allowances</h3>
++            <form id="extra-off-form">
++                <input type="hidden" id="extra-off-userid">
++                <div class="input-group">
++                    <label>Extra Leaves (Days)</label>
++                    <input type="number" id="extra-leaves-input" min="0" required>
++                </div>
++                <div class="input-group">
++                    <label>Extra WFH (Days)</label>
++                    <input type="number" id="extra-wfh-input" min="0" required>
++                </div>
++                <div class="modal-actions" style="display:flex; gap:10px; margin-top:20px;">
++                    <button type="button" class="btn-neutral" style="flex:1" id="close-extra-off-modal">Cancel</button>
++                    <button type="submit" class="btn-primary" style="flex:1">Save Allowance</button>
++                </div>
++            </form>
++        </div>
++    </div>
++
++    <div id="grant-leave-modal" class="modal hidden">
++        <div class="modal-overlay"></div>
++        <div class="modal-content glass-panel">
++            <h3 style="margin-top:0; margin-bottom:20px;">Grant Leave to User</h3>
++            <form id="grant-leave-form">
++                <div class="input-group">
++                    <label>User</label>
++                    <select id="grant-leave-user" required></select>
++                </div>
++                <div class="input-group">
++                    <label>Request Type</label>
++                    <div class="toggle-group" style="margin-top: 5px;">
++                        <input type="radio" id="admin-req-leave" name="adminReqType" value="Leave" checked>
++                        <label for="admin-req-leave">Leave</label>
++                        
++                        <input type="radio" id="admin-req-wfh" name="adminReqType" value="WFH">
++                        <label for="admin-req-wfh">Work From Home</label>
++                    </div>
++                </div>
++                <div class="input-group" id="admin-leave-type-group">
++                    <label>Leave Type</label>
++                    <select id="grant-leave-type" required></select>
++                </div>
++                <div style="display:flex; gap:16px; margin-bottom: 16px;">
++                    <label class="modern-toggle">
++                        <input type="checkbox" id="grant-half-day-toggle" />
++                        <span class="slider"></span>
++                        <span class="label-text">Half Day</span>
++                    </label>
++                </div>
++                <div class="date-row">
++                    <div class="input-group">
++                        <label>Start Date</label>
++                        <input type="date" id="grant-leave-start" onclick="if(typeof this.showPicker === 'function') this.showPicker();" required>
++                    </div>
++                    <div class="input-group">
++                        <label>End Date</label>
++                        <input type="date" id="grant-leave-end" onclick="if(typeof this.showPicker === 'function') this.showPicker();" required>
++                    </div>
++                </div>
++                <div class="input-group">
++                    <label>Reason / Note</label>
++                    <textarea id="grant-leave-reason" rows="2" required></textarea>
++                </div>
++                <div class="modal-actions" style="display:flex; gap:10px; margin-top:20px;">
++                    <button type="button" class="btn-neutral" style="flex:1" id="close-grant-leave-modal">Cancel</button>
++                    <button type="submit" class="btn-primary" style="flex:1">Grant Leave</button>
+                 </div>
+             </form>
+         </div>
+     </div>
+ 
+     <!-- Scripts -->
+-    <script src="js/store.js"></script>
+-    <script src="js/auth.js"></script>
+-    <script src="js/app.js"></script>
+-    <script src="js/admin.js"></script>
++    <script src="js/store.js?v=2"></script>
++    <script src="js/auth.js?v=2"></script>
++    <script src="js/app.js?v=2"></script>
++    <script src="js/admin.js?v=2"></script>
++    
++    <!-- Edit Holiday Modal -->
++    <div id="edit-holiday-modal" class="modal hidden">
++        <div class="modal-content">
++            <h2 class="section-title">Edit Holiday</h2>
++            <form id="edit-holiday-form">
++                <input type="hidden" id="edit-holiday-old-date">
++                <div class="input-group">
++                    <label>Date</label>
++                    <input type="date" id="edit-holiday-date-input" required>
++                </div>
++                <div class="input-group">
++                    <label>Name</label>
++                    <input type="text" id="edit-holiday-name-input" required>
++                </div>
++                <div class="input-group">
++                    <label>Type</label>
++                    <select id="edit-holiday-type-input">
++                        <option value="Public">Public Holiday</option>
++                        <option value="Optional">Optional Holiday</option>
++                    </select>
++                </div>
++                <div style="display:flex; gap:10px; margin-top:20px;">
++                    <button type="submit" class="btn-primary">Save Changes</button>
++                    <button type="button" class="btn-primary" style="background:var(--danger)" id="close-edit-holiday-modal">Cancel</button>
++                </div>
++            </form>
++        </div>
++    </div>
++    
+ </body>
+ </html>
