@@ -4,6 +4,17 @@ window.AdminUI = {
     currentCalDate: new Date(),
     kitsuPersons: [],
     attendanceChartInstance: null,
+    wfhMonthlyChartInstance: null,
+    leaveVsWfhChartInstance: null,
+
+    _isWfh: function(type) {
+        return type?.toLowerCase().includes('wfh') || type?.toLowerCase().includes('work from home');
+    },
+    _calcDays: function(leave) {
+        if (leave.isHalfDay) return 0.5;
+        const s = new Date(leave.startDate), e = new Date(leave.endDate);
+        return Math.max(1, Math.ceil(Math.abs(e - s) / (1000*60*60*24)) + 1);
+    },
     
     init: async function(user) {
         try {
@@ -435,6 +446,12 @@ window.AdminUI = {
             tbody.appendChild(tr);
         });
 
+        // Update WFH & On Leave stats
+        const onLeaveEl = document.getElementById('stat-on-leave');
+        const wfhEl = document.getElementById('stat-wfh');
+        if (onLeaveEl) onLeaveEl.textContent = onLeaveCount;
+        if (wfhEl) wfhEl.textContent = wfhCount;
+
         // 1. Render Main Chart
         const absentCount = totalUsers > 0 ? Math.max(0, totalUsers - presentCount - onLeaveCount - wfhCount) : 0;
         const ctx = document.getElementById('attendanceChart');
@@ -555,6 +572,50 @@ window.AdminUI = {
                 options: { indexAxis: 'y', responsive:false, plugins: { legend: { display:false } }, scales: { y: { ticks: {color: '#94a3b8'}, grid:{display:false} }, x: { ticks: {color: '#94a3b8', stepSize:1}, grid:{color:'rgba(255,255,255,0.05)'} } } }
             });
         }
+
+        // 5. WFH Monthly Usage Chart
+        const wfhMonthlyCtx = document.getElementById('wfhMonthlyChart');
+        if (wfhMonthlyCtx) {
+            if (this.wfhMonthlyChartInstance) this.wfhMonthlyChartInstance.destroy();
+            const wfhMonthLabels = [];
+            const wfhMonthData = [];
+            const now = new Date();
+            for (let m = 5; m >= 0; m--) {
+                const d = new Date(now.getFullYear(), now.getMonth() - m, 1);
+                const mStr = d.toLocaleString('default', { month: 'short', year: '2-digit' });
+                wfhMonthLabels.push(mStr);
+                const mStart = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-01`;
+                const mEnd = new Date(d.getFullYear(), d.getMonth()+1, 0);
+                const mEndStr = `${mEnd.getFullYear()}-${String(mEnd.getMonth()+1).padStart(2,'0')}-${String(mEnd.getDate()).padStart(2,'0')}`;
+                let wfhDays = 0;
+                leaves.filter(l => l.status === 'Approved' && this._isWfh(l.type)).forEach(l => {
+                    if (l.endDate >= mStart && l.startDate <= mEndStr) wfhDays += this._calcDays(l);
+                });
+                wfhMonthData.push(wfhDays);
+            }
+            this.wfhMonthlyChartInstance = new Chart(wfhMonthlyCtx, {
+                type: 'bar',
+                data: { labels: wfhMonthLabels, datasets: [{ label: 'WFH Days', data: wfhMonthData, backgroundColor: '#3b82f6', borderRadius: 6 }] },
+                options: { responsive: false, plugins: { legend: { labels: { color: '#e2e8f0' } } }, scales: { y: { beginAtZero: true, ticks: { color: '#94a3b8', stepSize: 1 }, grid: { color: 'rgba(255,255,255,0.05)' } }, x: { ticks: { color: '#94a3b8' }, grid: { color: 'rgba(255,255,255,0.05)' } } } }
+            });
+        }
+
+        // 6. Leave vs WFH Split Chart
+        const lvwCtx = document.getElementById('leaveVsWfhChart');
+        if (lvwCtx) {
+            if (this.leaveVsWfhChartInstance) this.leaveVsWfhChartInstance.destroy();
+            const approvedLeaves = leaves.filter(l => l.status === 'Approved');
+            const totalWfhDays = approvedLeaves.filter(l => this._isWfh(l.type)).reduce((a, l) => a + this._calcDays(l), 0);
+            const totalLeaveDays = approvedLeaves.filter(l => !this._isWfh(l.type)).reduce((a, l) => a + this._calcDays(l), 0);
+            this.leaveVsWfhChartInstance = new Chart(lvwCtx, {
+                type: 'doughnut',
+                data: {
+                    labels: (totalWfhDays + totalLeaveDays) > 0 ? ['Leaves', 'WFH'] : ['No Data'],
+                    datasets: [{ data: (totalWfhDays + totalLeaveDays) > 0 ? [totalLeaveDays, totalWfhDays] : [1], backgroundColor: (totalWfhDays + totalLeaveDays) > 0 ? ['#8b5cf6', '#3b82f6'] : ['#334155'], borderWidth: 0 }]
+                },
+                options: { responsive: false, plugins: { legend: { position: 'right', labels: { color: '#e2e8f0', usePointStyle: true } } } }
+            });
+        }
     },
 
     renderLeaves: function() {
@@ -662,7 +723,7 @@ window.AdminUI = {
                     <td><span class="badge" style="background:#475569; color:white">Standard</span></td>
                     <td><span class="badge" style="background: ${p.role==='admin'?'var(--primary)':'var(--glass-border)'}; color:${p.role==='admin'?'white':'var(--text-main)'}">${appAccess}</span></td>
                     <td>
-                        <span style="font-size:12px; margin-right:8px; color:var(--text-muted);">${extraText}</span>
+                        <button class="btn-small" style="background:#3b82f6; color:white; margin-right:4px;" onclick="window.AdminUI.openUserDetail('${p.id}')">View</button>
                         <button class="btn-small btn-primary" style="margin-right:4px;" onclick="window.AdminUI.openExtraOffModal('${p.id}', ${extra.leaves}, ${extra.wfh})">Edit Off</button>
                         ${p.id !== this.currentUser.id ? `<button class="btn-small btn-reject" onclick="window.AdminUI.deleteUser('${p.id}')">Remove</button>` : ''}
                     </td>
@@ -673,6 +734,163 @@ window.AdminUI = {
             console.error(e);
             tbody.innerHTML = '<tr><td colspan="5" style="text-align:center; color:var(--danger)">Failed to sync users with Backend.</td></tr>';
         }
+    },
+
+    openUserDetail: function(userId) {
+        const users = this._cachedUsers || [];
+        const user = users.find(u => u.id === userId);
+        if (!user) return;
+
+        const allLeaves = Store.getAllLeaves().filter(l => l.userId === userId);
+        const leaveTypes = Store.getLeaveTypes();
+        const extra = Store.getExtraOff(userId);
+
+        // Separate WFH and Leaves
+        const wfhRequests = allLeaves.filter(l => this._isWfh(l.type));
+        const leaveRequests = allLeaves.filter(l => !this._isWfh(l.type));
+
+        // --- WFH Balance ---
+        const wfhPolicy = leaveTypes.find(t => this._isWfh(t.name));
+        const wfhLimit = wfhPolicy ? parseInt(wfhPolicy.limit) : 0;
+        const wfhCycle = wfhPolicy ? wfhPolicy.cycle : 'monthly';
+        let wfhUsed = 0;
+        const now = new Date();
+        wfhRequests.filter(l => l.status === 'Approved').forEach(l => {
+            // For monthly cycle, only count current month
+            if (wfhCycle === 'monthly' || wfhCycle === 'Monthly') {
+                const mStart = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}-01`;
+                const mEnd = new Date(now.getFullYear(), now.getMonth()+1, 0);
+                const mEndStr = `${mEnd.getFullYear()}-${String(mEnd.getMonth()+1).padStart(2,'0')}-${String(mEnd.getDate()).padStart(2,'0')}`;
+                if (l.endDate >= mStart && l.startDate <= mEndStr) wfhUsed += this._calcDays(l);
+            } else {
+                wfhUsed += this._calcDays(l);
+            }
+        });
+        const wfhExtra = extra.wfh || 0;
+        const wfhRemaining = Math.max(0, wfhLimit + wfhExtra - wfhUsed);
+
+        // --- Leave Balances per type (excluding WFH) ---
+        const leaveBalances = leaveTypes.filter(t => !this._isWfh(t.name)).map(t => {
+            const used = leaveRequests.filter(l => l.type === t.name && l.status === 'Approved')
+                .reduce((a, l) => a + this._calcDays(l), 0);
+            const limit = parseInt(t.limit);
+            return { name: t.name, limit, cycle: t.cycle, used, remaining: Math.max(0, limit - used) };
+        });
+
+        // Add extra leaves to the first leave type or show as a separate card
+        const extraLeaves = extra.leaves || 0;
+
+        // --- Populate Modal ---
+        document.getElementById('user-detail-name').textContent = user.name;
+        document.getElementById('user-detail-email').textContent = userId;
+
+        // Leave balance cards
+        const balancesDiv = document.getElementById('user-detail-leave-balances');
+        balancesDiv.innerHTML = '';
+        leaveBalances.forEach(b => {
+            const pct = b.limit > 0 ? Math.min(100, (b.used / b.limit) * 100) : 0;
+            const barColor = pct > 80 ? '#ef4444' : pct > 50 ? '#f59e0b' : '#10b981';
+            balancesDiv.innerHTML += `
+                <div style="background:var(--glass-bg); border:1px solid var(--glass-border); border-radius:10px; padding:14px;">
+                    <div style="display:flex; justify-content:space-between; margin-bottom:6px;">
+                        <strong style="font-size:13px;">${b.name}</strong>
+                        <span style="font-size:12px; color:var(--text-muted);">${b.cycle}</span>
+                    </div>
+                    <div style="display:flex; justify-content:space-between; font-size:12px; color:var(--text-muted); margin-bottom:6px;">
+                        <span>Used: <strong style="color:var(--text-main)">${b.used}</strong></span>
+                        <span>Left: <strong style="color:${barColor}">${b.remaining}</strong> / ${b.limit}</span>
+                    </div>
+                    <div style="background:rgba(255,255,255,0.08); border-radius:4px; height:6px; overflow:hidden;">
+                        <div style="width:${pct}%; height:100%; background:${barColor}; border-radius:4px; transition:width 0.3s;"></div>
+                    </div>
+                </div>
+            `;
+        });
+        if (extraLeaves > 0) {
+            balancesDiv.innerHTML += `
+                <div style="background:var(--glass-bg); border:1px solid var(--glass-border); border-radius:10px; padding:14px;">
+                    <strong style="font-size:13px;">Extra Leave Allowance</strong>
+                    <div style="font-size:22px; font-weight:700; color:#10b981; margin-top:8px;">+${extraLeaves} days</div>
+                </div>
+            `;
+        }
+
+        // WFH balance card
+        const wfhDiv = document.getElementById('user-detail-wfh-balance');
+        const wfhPct = wfhLimit > 0 ? Math.min(100, (wfhUsed / (wfhLimit + wfhExtra)) * 100) : 0;
+        const wfhBarColor = wfhPct > 80 ? '#ef4444' : wfhPct > 50 ? '#f59e0b' : '#3b82f6';
+        wfhDiv.innerHTML = `
+            <div style="background:rgba(59,130,246,0.08); border:1px solid rgba(59,130,246,0.25); border-radius:10px; padding:16px;">
+                <div style="display:flex; justify-content:space-between; margin-bottom:8px;">
+                    <strong style="font-size:14px;">Work From Home</strong>
+                    <span style="font-size:12px; color:var(--text-muted);">${wfhCycle}${wfhExtra > 0 ? ' (+' + wfhExtra + ' extra)' : ''}</span>
+                </div>
+                <div style="display:flex; gap:24px; margin-bottom:8px;">
+                    <div><span style="font-size:24px; font-weight:700; color:#3b82f6;">${wfhUsed}</span> <span style="font-size:12px; color:var(--text-muted);">used</span></div>
+                    <div><span style="font-size:24px; font-weight:700; color:${wfhBarColor};">${wfhRemaining}</span> <span style="font-size:12px; color:var(--text-muted);">remaining</span></div>
+                    <div><span style="font-size:24px; font-weight:700; color:var(--text-muted);">${wfhLimit + wfhExtra}</span> <span style="font-size:12px; color:var(--text-muted);">total</span></div>
+                </div>
+                <div style="background:rgba(255,255,255,0.08); border-radius:4px; height:6px; overflow:hidden;">
+                    <div style="width:${wfhPct}%; height:100%; background:${wfhBarColor}; border-radius:4px; transition:width 0.3s;"></div>
+                </div>
+            </div>
+        `;
+
+        // History table
+        this._userDetailRequests = allLeaves;
+        this._renderUserDetailHistory('all');
+
+        // Filter buttons
+        document.querySelectorAll('.user-detail-filter').forEach(btn => {
+            btn.onclick = () => {
+                document.querySelectorAll('.user-detail-filter').forEach(b => { b.classList.remove('active'); b.classList.remove('btn-primary'); b.classList.add('btn-neutral'); });
+                btn.classList.add('active'); btn.classList.remove('btn-neutral'); btn.classList.add('btn-primary');
+                this._renderUserDetailHistory(btn.dataset.filter);
+            };
+        });
+
+        // Close modal handler
+        document.getElementById('close-user-detail-modal').onclick = () => document.getElementById('user-detail-modal').classList.add('hidden');
+        document.getElementById('user-detail-modal').querySelector('.modal-overlay').onclick = () => document.getElementById('user-detail-modal').classList.add('hidden');
+
+        document.getElementById('user-detail-modal').classList.remove('hidden');
+    },
+
+    _renderUserDetailHistory: function(filter) {
+        const tbody = document.getElementById('user-detail-history-tbody');
+        if (!tbody) return;
+
+        let requests = this._userDetailRequests || [];
+        if (filter === 'wfh') requests = requests.filter(l => this._isWfh(l.type));
+        else if (filter === 'leave') requests = requests.filter(l => !this._isWfh(l.type));
+
+        if (requests.length === 0) {
+            tbody.innerHTML = '<tr><td colspan="5" style="text-align:center; color:var(--text-muted); padding:20px;">No records found.</td></tr>';
+            return;
+        }
+
+        tbody.innerHTML = '';
+        requests.forEach(l => {
+            const days = this._calcDays(l);
+            const isW = this._isWfh(l.type);
+            const catBadge = isW
+                ? '<span class="badge" style="background:#3b82f6; color:white;">WFH</span>'
+                : '<span class="badge" style="background:#8b5cf6; color:white;">Leave</span>';
+            let statusBadge = '';
+            if (l.status === 'Approved') statusBadge = '<span class="badge approved">Approved</span>';
+            else if (l.status === 'Pending') statusBadge = '<span class="badge pending">Pending</span>';
+            else statusBadge = `<span class="badge rejected">${l.status}</span>`;
+
+            const tr = document.createElement('tr');
+            tr.innerHTML = `
+                <td>${l.type}${l.isHalfDay ? ' <small style="color:var(--warning);">(Half)</small>' : ''}</td>
+                <td>${catBadge}</td>
+                <td>${l.startDate}${l.startDate !== l.endDate ? ' → ' + l.endDate : ''}</td>
+                <td>${days}</td>
+                <td>${statusBadge}</td>
+            `;
+            tbody.appendChild(tr);
+        });
     },
 
     openExtraOffModal: function(uid, currLeaves, currWfh) {

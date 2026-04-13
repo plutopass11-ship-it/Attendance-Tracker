@@ -101,13 +101,21 @@
                                 </label>
                             </div>
                         </div>
-                        <div class="stats-grid">
+                        <div class="stats-grid" style="grid-template-columns: repeat(4, 1fr);">
                             <div class="stat-card">
                                 <h3>Present Today</h3>
                                 <div class="stat-value" id="stat-present">0 / 0</div>
                             </div>
                             <div class="stat-card">
-                                <h3>Pending Leaves</h3>
+                                <h3>On Leave</h3>
+                                <div class="stat-value" id="stat-on-leave" style="color:#8b5cf6">0</div>
+                            </div>
+                            <div class="stat-card">
+                                <h3>WFH Today</h3>
+                                <div class="stat-value" id="stat-wfh" style="color:#3b82f6">0</div>
+                            </div>
+                            <div class="stat-card">
+                                <h3>Pending Requests</h3>
                                 <div class="stat-value" id="stat-pending">0</div>
                             </div>
                         </div>
@@ -160,6 +168,20 @@
                                 <h3 class="section-subtitle">Leave Types Distribution</h3>
                                 <div style="position: relative; width: 100%; height: 280px; overflow: hidden;">
                                     <canvas id="leaveDistChart" width="300" height="280"></canvas>
+                                </div>
+                            </div>
+                        </div>
+                        <div style="display: flex; gap: 24px; margin-top: 24px; flex-wrap: wrap;">
+                            <div class="glass-panel" style="flex: 1; min-width: 400px; overflow: hidden;">
+                                <h3 class="section-subtitle">WFH Monthly Usage</h3>
+                                <div style="position: relative; width: 100%; height: 280px; overflow: hidden;">
+                                    <canvas id="wfhMonthlyChart" width="600" height="280"></canvas>
+                                </div>
+                            </div>
+                            <div class="glass-panel" style="width: 350px; flex-shrink: 0; overflow: hidden;">
+                                <h3 class="section-subtitle">Leave vs WFH Split</h3>
+                                <div style="position: relative; width: 100%; height: 280px; overflow: hidden;">
+                                    <canvas id="leaveVsWfhChart" width="300" height="280"></canvas>
                                 </div>
                             </div>
                         </div>
@@ -696,6 +718,46 @@
                     <button type="submit" class="btn-primary" style="flex:1">Grant Leave</button>
                 </div>
             </form>
+        </div>
+    </div>
+
+    <!-- User Detail Modal -->
+    <div id="user-detail-modal" class="modal hidden">
+        <div class="modal-overlay"></div>
+        <div class="modal-content glass-panel" style="max-width:750px; max-height:85vh; overflow-y:auto; width:90%;">
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:24px;">
+                <div>
+                    <h3 id="user-detail-name" style="margin:0; font-size:20px;">User Name</h3>
+                    <small id="user-detail-email" style="color:var(--text-muted);">email@example.com</small>
+                </div>
+                <button class="btn-small btn-neutral" id="close-user-detail-modal" style="margin:0; width:auto; padding:6px 14px;">✕</button>
+            </div>
+
+            <h4 style="margin:0 0 12px; color:var(--text-main); font-size:15px;">📋 Leave Balances</h4>
+            <div id="user-detail-leave-balances" style="display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-bottom:24px;"></div>
+
+            <h4 style="margin:0 0 12px; color:#3b82f6; font-size:15px;">🏠 WFH Balance</h4>
+            <div id="user-detail-wfh-balance" style="margin-bottom:24px;"></div>
+
+            <div style="display:flex; gap:10px; margin-bottom:12px;">
+                <button class="btn-small btn-primary user-detail-filter active" data-filter="all" style="margin:0; width:auto; padding:6px 14px;">All</button>
+                <button class="btn-small btn-neutral user-detail-filter" data-filter="leave" style="margin:0; width:auto; padding:6px 14px;">Leaves Only</button>
+                <button class="btn-small btn-neutral user-detail-filter" data-filter="wfh" style="margin:0; width:auto; padding:6px 14px;">WFH Only</button>
+            </div>
+            <div style="overflow-x:auto; max-height:320px; overflow-y:auto;">
+                <table class="admin-table">
+                    <thead>
+                        <tr>
+                            <th>Type</th>
+                            <th>Category</th>
+                            <th>Dates</th>
+                            <th>Days</th>
+                            <th>Status</th>
+                        </tr>
+                    </thead>
+                    <tbody id="user-detail-history-tbody"></tbody>
+                </table>
+            </div>
         </div>
     </div>
 
