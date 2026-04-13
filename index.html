@@ -74,6 +74,9 @@
                     <button class="admin-nav-item" data-target="admin-tab-holidays">
                         <ion-icon name="calendar-number-outline"></ion-icon> Holidays
                     </button>
+                    <button class="admin-nav-item" data-target="admin-tab-migration">
+                        <ion-icon name="cloud-upload-outline"></ion-icon> Migrate History
+                    </button>
                 </nav>
                 <button id="admin-logout-btn" class="btn-primary" style="margin:20px; width:calc(100% - 40px); background:var(--danger)">Logout</button>
             </aside>
@@ -265,6 +268,96 @@
                                 </thead>
                                 <tbody id="admin-holidays-tbody">
                                     <!-- Populated by JS -->
+                                </tbody>
+                            </table>
+                        </div>
+                    </section>
+
+                    <!-- Migration History Tab -->
+                    <section id="admin-tab-migration" class="admin-tab hidden">
+                        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom: 20px;">
+                            <h2 class="section-title" style="margin:0">Migrate Historical Data</h2>
+                        </div>
+
+                        <div class="glass-panel" style="padding:24px; margin-bottom:24px;">
+                            <p style="color:var(--text-muted); font-size:13px; margin-top:0;">
+                                <ion-icon name="information-circle-outline" style="vertical-align:middle; font-size:16px; margin-right:4px;"></ion-icon>
+                                Use this tool to import historical leave &amp; WFH records from your old system. All entries are auto-approved and flagged as historical data.
+                            </p>
+
+                            <!-- User Selection -->
+                            <div class="input-group" style="margin-bottom:16px;">
+                                <label>Select User</label>
+                                <select id="migration-user-select" required>
+                                    <!-- Populated by JS -->
+                                </select>
+                            </div>
+
+                            <!-- Entry Form -->
+                            <div style="display:flex; gap:12px; flex-wrap:wrap; align-items:flex-end; margin-bottom:16px; padding:16px; border:1px solid var(--glass-border); border-radius:10px; background:rgba(255,255,255,0.02);">
+                                <div class="input-group" style="flex:1; min-width:100px;">
+                                    <label>Type</label>
+                                    <select id="migration-type-select">
+                                        <option value="WFH">Work From Home</option>
+                                        <!-- Leave types populated by JS -->
+                                    </select>
+                                </div>
+                                <div class="input-group" style="flex:1; min-width:130px;">
+                                    <label>Start Date</label>
+                                    <input type="date" id="migration-start-date" onclick="if(typeof this.showPicker === 'function') this.showPicker();" required>
+                                </div>
+                                <div class="input-group" style="flex:1; min-width:130px;">
+                                    <label>End Date</label>
+                                    <input type="date" id="migration-end-date" onclick="if(typeof this.showPicker === 'function') this.showPicker();" required>
+                                </div>
+                                <div class="input-group" style="flex:2; min-width:180px;">
+                                    <label>Reason <span style="color:var(--text-muted); font-weight:400;">(optional)</span></label>
+                                    <input type="text" id="migration-reason" placeholder="e.g. Sick leave from old records">
+                                </div>
+                                <button type="button" id="migration-add-row-btn" class="btn-primary" style="width:auto; padding:10px 20px; margin:0; white-space:nowrap;">+ Add to Batch</button>
+                            </div>
+
+                            <!-- Batch Preview Table -->
+                            <div style="overflow-x:auto; max-height:360px; overflow-y:auto; margin-bottom:16px;">
+                                <table class="admin-table" id="migration-batch-table">
+                                    <thead>
+                                        <tr>
+                                            <th>#</th>
+                                            <th>Type</th>
+                                            <th>Start</th>
+                                            <th>End</th>
+                                            <th>Reason</th>
+                                            <th>Remove</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="migration-batch-tbody">
+                                        <tr id="migration-empty-row">
+                                            <td colspan="6" style="text-align:center; color:var(--text-muted); padding:24px;">No records added yet. Use the form above to add entries.</td>
+                                        </tr>
+                                    </tbody>
+                                </table>
+                            </div>
+
+                            <!-- Actions -->
+                            <div style="display:flex; gap:10px; justify-content:flex-end;">
+                                <button type="button" id="migration-clear-btn" class="btn-neutral" style="width:auto; padding:10px 20px; margin:0;">Clear All</button>
+                                <button type="button" id="migration-submit-btn" class="btn-primary" style="width:auto; padding:10px 24px; margin:0; background:var(--success);">Sync History (0 records)</button>
+                            </div>
+                        </div>
+
+                        <!-- Previously synced records -->
+                        <h3 class="section-subtitle">Previously Migrated Records</h3>
+                        <div class="glass-panel" style="overflow-x:auto;">
+                            <table class="admin-table">
+                                <thead>
+                                    <tr>
+                                        <th>User</th>
+                                        <th>Migrated Records</th>
+                                        <th>Actions</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="migration-history-tbody">
+                                    <tr><td colspan="3" style="text-align:center; color:var(--text-muted);">Loading...</td></tr>
                                 </tbody>
                             </table>
                         </div>

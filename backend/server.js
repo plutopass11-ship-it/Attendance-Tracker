@@ -146,7 +146,8 @@ app.get('/api/sync/store', async (req, res) => {
       SELECT id::text, user_id as "userId", type, 
              CAST(start_date as text) as "startDate", 
              CAST(end_date as text) as "endDate", 
-             reason, status 
+             reason, status,
+             COALESCE(is_historical, false) as "isHistorical"
       FROM leave_requests ORDER BY id DESC;
     `);
     const policies = await pool.query(`
@@ -343,8 +344,95 @@ app.delete('/api/users/:id', async (req, res) => {
 });
 
 
+// 8. Batch Migration History (Admin-only, AI-agent ready)
+app.post('/api/admin/migration/history', async (req, res) => {
+    const { records } = req.body;
+
+    if (!Array.isArray(records) || records.length === 0) {
+        return res.status(400).json({ success: false, message: 'No records provided. Expected { records: [...] }' });
+    }
+
+    const results = { added: 0, failed: 0, errors: [] };
+    const client = await pool.connect();
+
+    try {
+        await client.query('BEGIN');
+
+        for (let i = 0; i < records.length; i++) {
+            const r = records[i];
+            try {
+                if (!r.userId || !r.type || !r.startDate || !r.endDate) {
+                    results.failed++;
+                    results.errors.push({ index: i, message: 'Missing required fields (userId, type, startDate, endDate)', record: r });
+                    continue;
+                }
+
+                const dbStatus = (r.status || 'approved').toLowerCase();
+                const reason = r.reason || 'Migrated from old system';
+
+                await client.query(
+                    `INSERT INTO leave_requests (user_id, type, start_date, end_date, reason, status, is_historical)
+                     VALUES ($1, $2, $3, $4, $5, $6, true)`,
+                    [r.userId, r.type, r.startDate, r.endDate, reason, dbStatus]
+                );
+                results.added++;
+            } catch (rowErr) {
+                results.failed++;
+                results.errors.push({ index: i, message: rowErr.message, record: r });
+            }
+        }
+
+        await client.query('COMMIT');
+        res.json({ success: true, summary: results });
+    } catch (err) {
+        await client.query('ROLLBACK');
+        console.error('Migration batch error:', err);
+        res.status(500).json({ success: false, message: 'Transaction failed', error: err.message });
+    } finally {
+        client.release();
+    }
+});
+
+// 9. Delete all historical (migrated) records for a user
+app.delete('/api/admin/migration/history/:userId', async (req, res) => {
+    try {
+        const result = await pool.query(
+            'DELETE FROM leave_requests WHERE user_id = $1 AND is_historical = true',
+            [req.params.userId]
+        );
+        res.json({ success: true, deletedCount: result.rowCount });
+    } catch (err) {
+        console.error('Migration delete error:', err);
+        res.status(500).json({ success: false, message: err.message });
+    }
+});
+
+
+// --- Database auto-migration on startup ---
+async function runMigrations() {
+    try {
+        // Add is_historical column to leave_requests if it doesn't exist
+        await pool.query(`
+            DO $$
+            BEGIN
+                IF NOT EXISTS (
+                    SELECT 1 FROM information_schema.columns
+                    WHERE table_name = 'leave_requests' AND column_name = 'is_historical'
+                ) THEN
+                    ALTER TABLE leave_requests ADD COLUMN is_historical BOOLEAN DEFAULT false;
+                END IF;
+            END $$;
+        `);
+        console.log('DB migrations completed.');
+    } catch (err) {
+        console.error('Migration error:', err);
+    }
+}
+
 // Startup
 const PORT = process.env.PORT || 4000;
-app.listen(PORT, () => {
-  console.log(`Backend running on port ${PORT}`);
+runMigrations().then(() => {
+    app.listen(PORT, () => {
+        console.log(`Backend running on port ${PORT}`);
+    });
 });

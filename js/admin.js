@@ -46,6 +46,7 @@ window.AdminUI = {
                 if(target === 'admin-tab-users') this.renderUsers();
                 if(target === 'admin-tab-policies') this.renderPolicies();
                 if(target === 'admin-tab-holidays') this.renderHolidays();
+                if(target === 'admin-tab-migration') this.renderMigrationTab();
             });
         });
 
@@ -250,6 +251,99 @@ window.AdminUI = {
                 }
             };
             reader.readAsText(file);
+        });
+
+        // --- Migration Tab Event Listeners ---
+        this._migrationBatch = [];
+
+        document.getElementById('migration-add-row-btn')?.addEventListener('click', () => {
+            const typeSelect = document.getElementById('migration-type-select');
+            const startDate = document.getElementById('migration-start-date').value;
+            const endDate = document.getElementById('migration-end-date').value;
+            const reason = document.getElementById('migration-reason').value;
+
+            if (!startDate || !endDate) {
+                alert('Please fill in both Start and End dates.');
+                return;
+            }
+            if (new Date(startDate) > new Date(endDate)) {
+                alert('End date cannot be before start date.');
+                return;
+            }
+
+            const type = typeSelect.value === 'WFH' ? 'Work From Home' : typeSelect.options[typeSelect.selectedIndex].text;
+
+            this._migrationBatch.push({
+                type,
+                startDate,
+                endDate,
+                reason: reason || 'Migrated from old system'
+            });
+
+            // Clear date inputs for next entry
+            document.getElementById('migration-start-date').value = '';
+            document.getElementById('migration-end-date').value = '';
+            document.getElementById('migration-reason').value = '';
+
+            this._renderMigrationBatch();
+        });
+
+        document.getElementById('migration-clear-btn')?.addEventListener('click', () => {
+            this._migrationBatch = [];
+            this._renderMigrationBatch();
+        });
+
+        document.getElementById('migration-submit-btn')?.addEventListener('click', async () => {
+            if (this._migrationBatch.length === 0) {
+                alert('No records to submit. Add entries first.');
+                return;
+            }
+
+            const userId = document.getElementById('migration-user-select').value;
+            if (!userId) {
+                alert('Please select a user.');
+                return;
+            }
+
+            const records = this._migrationBatch.map(r => ({
+                userId,
+                type: r.type,
+                startDate: r.startDate,
+                endDate: r.endDate,
+                reason: r.reason,
+                status: 'approved'
+            }));
+
+            const btn = document.getElementById('migration-submit-btn');
+            btn.textContent = 'Syncing...';
+            btn.disabled = true;
+
+            try {
+                const res = await fetch('/api/admin/migration/history', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ records })
+                });
+                const data = await res.json();
+
+                if (data.success) {
+                    const s = data.summary;
+                    alert(`Migration complete!\n\nAdded: ${s.added}\nFailed: ${s.failed}${s.errors.length ? '\n\nErrors:\n' + s.errors.map(e => `Row ${e.index+1}: ${e.message}`).join('\n') : ''}`);
+                    this._migrationBatch = [];
+                    this._renderMigrationBatch();
+                    // Re-sync store so new leaves appear everywhere
+                    await Store.syncWithBackend();
+                    this.renderMigrationHistory();
+                } else {
+                    alert('Migration failed: ' + (data.message || 'Unknown error'));
+                }
+            } catch (err) {
+                console.error('Migration submit error:', err);
+                alert('Error connecting to backend.');
+            } finally {
+                btn.disabled = false;
+                btn.textContent = `Sync History (${this._migrationBatch.length} records)`;
+            }
         });
     },
 
@@ -751,6 +845,137 @@ window.AdminUI = {
         if(confirm(`Remove holiday on ${dateStr}?`)) {
             Store.deleteHoliday(dateStr);
             this.renderHolidays();
+        }
+    },
+
+    // --- Migration Tab ---
+    _migrationBatch: [],
+
+    renderMigrationTab: async function() {
+        // Populate user dropdown
+        try {
+            const res = await fetch('/api/sync/store');
+            const data = await res.json();
+            const dbUsers = data.users || [];
+
+            const userSelect = document.getElementById('migration-user-select');
+            if (userSelect) {
+                userSelect.innerHTML = dbUsers.map(p => `<option value="${p.id}">${p.name} (${p.id})</option>`).join('');
+            }
+
+            // Populate type dropdown with leave types + WFH
+            const typeSelect = document.getElementById('migration-type-select');
+            if (typeSelect) {
+                const types = Store.getLeaveTypes();
+                let options = '<option value="WFH">Work From Home</option>';
+                types.forEach(t => {
+                    if (!t.name.toLowerCase().includes('wfh') && !t.name.toLowerCase().includes('work from home')) {
+                        options += `<option value="${t.name}">${t.name}</option>`;
+                    }
+                });
+                typeSelect.innerHTML = options;
+            }
+        } catch (e) {
+            console.error('Error populating migration dropdowns:', e);
+        }
+
+        this._renderMigrationBatch();
+        this.renderMigrationHistory();
+    },
+
+    _renderMigrationBatch: function() {
+        const tbody = document.getElementById('migration-batch-tbody');
+        const submitBtn = document.getElementById('migration-submit-btn');
+        if (!tbody) return;
+
+        if (this._migrationBatch.length === 0) {
+            tbody.innerHTML = '<tr id="migration-empty-row"><td colspan="6" style="text-align:center; color:var(--text-muted); padding:24px;">No records added yet. Use the form above to add entries.</td></tr>';
+            if (submitBtn) submitBtn.textContent = 'Sync History (0 records)';
+            return;
+        }
+
+        tbody.innerHTML = '';
+        this._migrationBatch.forEach((r, i) => {
+            const tr = document.createElement('tr');
+            tr.innerHTML = `
+                <td>${i + 1}</td>
+                <td>${r.type}</td>
+                <td>${r.startDate}</td>
+                <td>${r.endDate}</td>
+                <td style="max-width:200px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${r.reason}</td>
+                <td><button class="btn-small btn-reject" onclick="window.AdminUI.removeMigrationRow(${i})">✕</button></td>
+            `;
+            tbody.appendChild(tr);
+        });
+
+        if (submitBtn) submitBtn.textContent = `Sync History (${this._migrationBatch.length} record${this._migrationBatch.length !== 1 ? 's' : ''})`;
+    },
+
+    removeMigrationRow: function(index) {
+        this._migrationBatch.splice(index, 1);
+        this._renderMigrationBatch();
+    },
+
+    renderMigrationHistory: async function() {
+        const tbody = document.getElementById('migration-history-tbody');
+        if (!tbody) return;
+
+        try {
+            const res = await fetch('/api/sync/store');
+            const data = await res.json();
+            const allLeaves = data.leaves || [];
+            const dbUsers = data.users || [];
+
+            // Count migrated records per user using the isHistorical flag from API
+            const userMigrationCounts = {};
+            allLeaves.forEach(l => {
+                if (l.isHistorical) {
+                    userMigrationCounts[l.userId] = (userMigrationCounts[l.userId] || 0) + 1;
+                }
+            });
+
+            tbody.innerHTML = '';
+            const usersWithHistory = Object.keys(userMigrationCounts);
+
+            if (usersWithHistory.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="3" style="text-align:center; color:var(--text-muted);">No migrated records found.</td></tr>';
+                return;
+            }
+
+            usersWithHistory.forEach(uid => {
+                const user = dbUsers.find(u => u.id === uid);
+                const displayName = user ? user.name : uid;
+                const count = userMigrationCounts[uid];
+                const tr = document.createElement('tr');
+                tr.innerHTML = `
+                    <td><strong>${displayName}</strong><br><small style="color:var(--text-muted)">${uid}</small></td>
+                    <td><span class="badge" style="background:var(--primary); color:white;">${count} record${count !== 1 ? 's' : ''}</span></td>
+                    <td><button class="btn-small btn-reject" onclick="window.AdminUI.clearMigrationHistory('${uid}', '${displayName}')">Clear History</button></td>
+                `;
+                tbody.appendChild(tr);
+            });
+        } catch (e) {
+            console.error('Error rendering migration history:', e);
+            tbody.innerHTML = '<tr><td colspan="3" style="text-align:center; color:var(--danger);">Failed to load.</td></tr>';
+        }
+    },
+
+    clearMigrationHistory: async function(userId, displayName) {
+        if (!confirm(`Are you sure you want to delete ALL migrated records for ${displayName}?\n\nThis cannot be undone.`)) return;
+
+        try {
+            const res = await fetch(`/api/admin/migration/history/${encodeURIComponent(userId)}`, { method: 'DELETE' });
+            const data = await res.json();
+            if (data.success) {
+                alert(`Deleted ${data.deletedCount} migrated record(s) for ${displayName}.`);
+                await Store.syncWithBackend();
+                this.renderMigrationHistory();
+            } else {
+                alert('Failed: ' + (data.message || 'Unknown error'));
+            }
+        } catch (err) {
+            console.error('Clear migration error:', err);
+            alert('Error connecting to backend.');
         }
     }
 };
