@@ -817,21 +817,29 @@ window.AdminUI = {
 
         // WFH balance card
         const wfhDiv = document.getElementById('user-detail-wfh-balance');
-        const wfhPct = wfhLimit > 0 ? Math.min(100, (wfhUsed / (wfhLimit + wfhExtra)) * 100) : 0;
+        const wfhAllTime = wfhRequests.filter(l => l.status === 'Approved').reduce((a, l) => a + this._calcDays(l), 0);
+        const wfhPct = (wfhLimit + wfhExtra) > 0 ? Math.min(100, (wfhUsed / (wfhLimit + wfhExtra)) * 100) : 0;
         const wfhBarColor = wfhPct > 80 ? '#ef4444' : wfhPct > 50 ? '#f59e0b' : '#3b82f6';
+        const isMonthly = wfhCycle === 'monthly' || wfhCycle === 'Monthly';
+        const monthName = now.toLocaleString('default', { month: 'long' });
         wfhDiv.innerHTML = `
             <div style="background:rgba(59,130,246,0.08); border:1px solid rgba(59,130,246,0.25); border-radius:10px; padding:16px;">
                 <div style="display:flex; justify-content:space-between; margin-bottom:8px;">
                     <strong style="font-size:14px;">Work From Home</strong>
                     <span style="font-size:12px; color:var(--text-muted);">${wfhCycle}${wfhExtra > 0 ? ' (+' + wfhExtra + ' extra)' : ''}</span>
                 </div>
+                ${isMonthly ? `<div style="font-size:12px; color:var(--text-muted); margin-bottom:10px;">📅 ${monthName} ${now.getFullYear()}</div>` : ''}
                 <div style="display:flex; gap:24px; margin-bottom:8px;">
-                    <div><span style="font-size:24px; font-weight:700; color:#3b82f6;">${wfhUsed}</span> <span style="font-size:12px; color:var(--text-muted);">used</span></div>
+                    <div><span style="font-size:24px; font-weight:700; color:#3b82f6;">${wfhUsed}</span> <span style="font-size:12px; color:var(--text-muted);">used ${isMonthly ? 'this month' : ''}</span></div>
                     <div><span style="font-size:24px; font-weight:700; color:${wfhBarColor};">${wfhRemaining}</span> <span style="font-size:12px; color:var(--text-muted);">remaining</span></div>
-                    <div><span style="font-size:24px; font-weight:700; color:var(--text-muted);">${wfhLimit + wfhExtra}</span> <span style="font-size:12px; color:var(--text-muted);">total</span></div>
+                    <div><span style="font-size:24px; font-weight:700; color:var(--text-muted);">${wfhLimit + wfhExtra}</span> <span style="font-size:12px; color:var(--text-muted);">limit</span></div>
                 </div>
-                <div style="background:rgba(255,255,255,0.08); border-radius:4px; height:6px; overflow:hidden;">
+                <div style="background:rgba(255,255,255,0.08); border-radius:4px; height:6px; overflow:hidden; margin-bottom:12px;">
                     <div style="width:${wfhPct}%; height:100%; background:${wfhBarColor}; border-radius:4px; transition:width 0.3s;"></div>
+                </div>
+                <div style="display:flex; justify-content:space-between; padding-top:10px; border-top:1px solid rgba(255,255,255,0.06);">
+                    <span style="font-size:13px; color:var(--text-muted);">📊 All-Time WFH Total</span>
+                    <strong style="font-size:15px; color:#3b82f6;">${wfhAllTime} day${wfhAllTime !== 1 ? 's' : ''}</strong>
                 </div>
             </div>
         `;
