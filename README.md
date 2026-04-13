@@ -54,7 +54,7 @@ The CRM and management dashboard for HR/Management. Expands to full-desktop widt
 ## 🚢 Deployment (Synology NAS)
 
 The production app is deployed on the Synology NAS at the following location:
-**Path**: `/volume1/docker/Apps/Attendance-Tracker`
+**Path**: `/volume1/docker/Apps/Attendance-Tracker/Attendance-Tracker`
 
 ### How to update the Live Server:
 1. **SSH** into the NAS:
@@ -63,7 +63,7 @@ The production app is deployed on the Synology NAS at the following location:
    ```
 2. **Navigate** to the project:
    ```bash
-   cd /volume1/docker/Apps/Attendance-Tracker
+   cd /volume1/docker/Apps/Attendance-Tracker/Attendance-Tracker
    ```
 3. **Pull** latest logic:
    ```bash

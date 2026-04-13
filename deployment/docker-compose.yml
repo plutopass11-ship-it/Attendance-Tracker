@@ -1,5 +1,6 @@
 version: '3.8'
-# Official deployment path on Synology NAS: /volume1/docker/Apps/Attendance-Tracker
+
+# Official deployment path on Synology NAS: /volume1/docker/Apps/Attendance-Tracker/Attendance-Tracker
 
 services:
   attendance-db:
@@ -16,7 +17,7 @@ services:
     ports:
       - "5434:5432"
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      test: [ "CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}" ]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -35,7 +36,7 @@ services:
     depends_on:
       attendance-db:
         condition: service_healthy
-        
+
   attendance-backend:
     build: ../backend
     container_name: attendance-backend
