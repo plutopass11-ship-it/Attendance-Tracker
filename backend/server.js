@@ -24,6 +24,37 @@ const KITSU_ADMIN_PASSWORD = process.env.KITSU_ADMIN_PASSWORD || '';
 let cachedAdminToken = null;
 let adminTokenExpiry = 0;
 
+async function columnExists(tableName, columnName) {
+  const result = await pool.query(
+    `
+      SELECT 1
+      FROM information_schema.columns
+      WHERE table_schema = 'public'
+        AND table_name = $1
+        AND column_name = $2
+      LIMIT 1;
+    `,
+    [tableName, columnName]
+  );
+
+  return result.rowCount > 0;
+}
+
+async function tableExists(tableName) {
+  const result = await pool.query(
+    `
+      SELECT 1
+      FROM information_schema.tables
+      WHERE table_schema = 'public'
+        AND table_name = $1
+      LIMIT 1;
+    `,
+    [tableName]
+  );
+
+  return result.rowCount > 0;
+}
+
 async function getAdminToken() {
   // Return cached token if still valid (refresh every 30 min)
   if (cachedAdminToken && Date.now() < adminTokenExpiry) {
@@ -141,26 +172,42 @@ app.post('/api/auth/login', async (req, res) => {
 // 2. Data Retrieval endpoints (Admin Dashboard / Load Store)
 app.get('/api/sync/store', async (req, res) => {
   try {
+    const [
+      hasHistoricalLeaves,
+      hasPolicyLabel,
+      hasPolicyQuota,
+      hasPolicyCycle
+    ] = await Promise.all([
+      columnExists('leave_requests', 'is_historical'),
+      columnExists('leave_policies', 'label'),
+      columnExists('leave_policies', 'quota'),
+      columnExists('leave_policies', 'cycle')
+    ]);
+
     const users = await pool.query('SELECT user_id as id, name, role FROM users;');
     const leaves = await pool.query(`
       SELECT id::text, user_id as "userId", type, 
              CAST(start_date as text) as "startDate", 
              CAST(end_date as text) as "endDate", 
              reason, status,
-             COALESCE(is_historical, false) as "isHistorical"
+             ${hasHistoricalLeaves ? 'COALESCE(is_historical, false)' : 'false::boolean'} as "isHistorical"
       FROM leave_requests ORDER BY id DESC;
     `);
     const policies = await pool.query(`
-      SELECT id::text, label as name, quota as limit, cycle 
+      SELECT
+        id::text,
+        ${hasPolicyLabel ? 'label' : 'type'} as "name",
+        ${hasPolicyQuota ? 'quota' : '12'} as "limit",
+        ${hasPolicyCycle ? 'cycle' : "'yearly'"} as "cycle"
       FROM leave_policies;
     `);
     const dates = await pool.query(`
-      SELECT CAST(date as text), name, 
-             CASE WHEN type='public' THEN 'Public' WHEN type='optional' THEN 'Optional' ELSE type END as type 
+      SELECT CAST(date as text) as "date", name, 
+             CASE WHEN type='public' THEN 'Public' WHEN type='optional' THEN 'Optional' ELSE type END as "type" 
       FROM holidays ORDER BY date ASC;
     `);
     const attendance = await pool.query(`
-      SELECT user_id as "userId", CAST(date as text), 
+      SELECT user_id as "userId", CAST(date as text) as "date", 
              check_in_time as "checkInTime", check_out_time as "checkOutTime" 
       FROM attendance;
     `);
@@ -184,7 +231,7 @@ app.get('/api/sync/store', async (req, res) => {
     });
   } catch (err) {
     console.error('Store fetch error:', err);
-    res.status(500).json({ error: 'Database fetch error' });
+    res.status(500).json({ error: 'Database fetch error', details: err.message });
   }
 });
 
@@ -411,18 +458,27 @@ app.delete('/api/admin/migration/history/:userId', async (req, res) => {
 // --- Database auto-migration on startup ---
 async function runMigrations() {
     try {
-        // Add is_historical column to leave_requests if it doesn't exist
-        await pool.query(`
-            DO $$
-            BEGIN
-                IF NOT EXISTS (
-                    SELECT 1 FROM information_schema.columns
-                    WHERE table_name = 'leave_requests' AND column_name = 'is_historical'
-                ) THEN
-                    ALTER TABLE leave_requests ADD COLUMN is_historical BOOLEAN DEFAULT false;
-                END IF;
-            END $$;
-        `);
+        if (await tableExists('leave_requests') && !(await columnExists('leave_requests', 'is_historical'))) {
+            await pool.query('ALTER TABLE leave_requests ADD COLUMN is_historical BOOLEAN DEFAULT false;');
+        }
+
+        if (await tableExists('leave_policies')) {
+            if (!(await columnExists('leave_policies', 'label'))) {
+                await pool.query("ALTER TABLE leave_policies ADD COLUMN label VARCHAR(100) DEFAULT '';");
+                await pool.query("UPDATE leave_policies SET label = type WHERE label = '' OR label IS NULL;");
+                await pool.query('ALTER TABLE leave_policies ALTER COLUMN label SET NOT NULL;');
+            }
+
+            if (!(await columnExists('leave_policies', 'quota'))) {
+                await pool.query('ALTER TABLE leave_policies ADD COLUMN quota INTEGER DEFAULT 12;');
+                await pool.query('ALTER TABLE leave_policies ALTER COLUMN quota SET NOT NULL;');
+            }
+
+            if (!(await columnExists('leave_policies', 'cycle'))) {
+                await pool.query("ALTER TABLE leave_policies ADD COLUMN cycle VARCHAR(20) DEFAULT 'yearly';");
+            }
+        }
+
         console.log('DB migrations completed.');
     } catch (err) {
         console.error('Migration error:', err);
