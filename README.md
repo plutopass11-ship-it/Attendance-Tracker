@@ -50,3 +50,27 @@ The CRM and management dashboard for HR/Management. Expands to full-desktop widt
 │   └── admin.js     # Super Admin UI controllers and dashboard rendering
 └── README.md        # Project documentation
 ```
+
+## 🚢 Deployment (Synology NAS)
+
+The production app is deployed on the Synology NAS at the following location:
+**Path**: `/volume1/docker/Apps/Attendance-Tracker`
+
+### How to update the Live Server:
+1. **SSH** into the NAS:
+   ```bash
+   ssh [username]@[nas-ip]
+   ```
+2. **Navigate** to the project:
+   ```bash
+   cd /volume1/docker/Apps/Attendance-Tracker
+   ```
+3. **Pull** latest logic:
+   ```bash
+   git pull origin main
+   ```
+4. **Rebuild & Restart**:
+   ```bash
+   cd deployment
+   sudo docker-compose up -d --build
+   ```

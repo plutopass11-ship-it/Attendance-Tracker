@@ -1,4 +1,5 @@
 version: '3.8'
+# Official deployment path on Synology NAS: /volume1/docker/Apps/Attendance-Tracker
 
 services:
   attendance-db:
