@@ -345,12 +345,23 @@
                                 Use this tool to import historical leave &amp; WFH records from your old system. All entries are auto-approved and flagged as historical data.
                             </p>
 
-                            <!-- User Selection -->
-                            <div class="input-group" style="margin-bottom:16px;">
-                                <label>Select User</label>
-                                <select id="migration-user-select" required>
-                                    <!-- Populated by JS -->
-                                </select>
+                            <!-- User Selection & Bulk Upload -->
+                            <div style="display:flex; justify-content:space-between; align-items:flex-end; margin-bottom:16px;">
+                                <div class="input-group" style="flex:1; max-width:400px; margin-bottom:0;">
+                                    <label>Select User</label>
+                                    <select id="migration-user-select" required>
+                                        <!-- Populated by JS -->
+                                    </select>
+                                </div>
+                                <div style="display:flex; align-items:center; gap:10px;">
+                                    <label class="btn-neutral" style="margin:0; padding:8px 16px; width:auto; cursor:pointer;" title="Upload JSON records for selected user">
+                                        <ion-icon name="document-text-outline" style="margin-right:4px; vertical-align:middle;"></ion-icon> Upload User JSON
+                                        <input type="file" id="migration-json-upload" accept=".json" style="display:none;">
+                                    </label>
+                                    <button class="btn-small" style="background:transparent; color:var(--text-muted); border:none; padding:4px;" onclick="alert('JSON Format:\\n[\\n  {\\n    \u0022type\u0022: \u0022Sick Leave\u0022,\\n    \u0022startDate\u0022: \u00222026-01-01\u0022,\\n    \u0022endDate\u0022: \u00222026-01-02\u0022,\\n    \u0022reason\u0022: \u0022Flu\u0022\\n  }\\n]')">
+                                        <ion-icon name="help-circle-outline" style="font-size:20px;"></ion-icon>
+                                    </button>
+                                </div>
                             </div>
 
                             <!-- Entry Form -->
@@ -799,10 +810,10 @@
     </div>
 
     <!-- Scripts -->
-    <script src="js/auth.js?v=20"></script>
-    <script src="js/store.js?v=20"></script>
-    <script src="js/app.js?v=20"></script>
-    <script src="js/admin.js?v=20"></script>
+    <script src="js/auth.js?v=21"></script>
+    <script src="js/store.js?v=21"></script>
+    <script src="js/app.js?v=21"></script>
+    <script src="js/admin.js?v=21"></script>
     
     <!-- Edit Holiday Modal -->
     <div id="edit-holiday-modal" class="modal hidden">

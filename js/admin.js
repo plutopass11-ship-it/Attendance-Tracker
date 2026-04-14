@@ -267,6 +267,37 @@ window.AdminUI = {
         // --- Migration Tab Event Listeners ---
         this._migrationBatch = [];
 
+        document.getElementById('migration-json-upload')?.addEventListener('change', (e) => {
+            const file = e.target.files[0];
+            if (!file) return;
+            const reader = new FileReader();
+            reader.onload = (evt) => {
+                try {
+                    const data = JSON.parse(evt.target.result);
+                    if (!Array.isArray(data)) throw new Error('Root must be a JSON array of records.');
+                    
+                    let added = 0;
+                    data.forEach(item => {
+                        if (item.type && item.startDate && item.endDate) {
+                            this._migrationBatch.push({
+                                type: item.type,
+                                startDate: item.startDate,
+                                endDate: item.endDate,
+                                reason: item.reason || 'Migrated via JSON'
+                            });
+                            added++;
+                        }
+                    });
+                    this._renderMigrationBatch();
+                    alert(`Successfully imported \${added} records into the batch. Remember to click "Sync History" to save.`);
+                } catch (err) {
+                    alert('Invalid JSON file:\\n' + err.message + '\\n\\nPlease follow the expected format:\\n[{"type":"...", "startDate":"...", "endDate":"...", "reason":"..."}]');
+                }
+                e.target.value = ''; // Reset input
+            };
+            reader.readAsText(file);
+        });
+
         document.getElementById('migration-add-row-btn')?.addEventListener('click', () => {
             const typeSelect = document.getElementById('migration-type-select');
             const startDate = document.getElementById('migration-start-date').value;
