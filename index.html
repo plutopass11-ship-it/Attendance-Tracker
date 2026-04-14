@@ -220,7 +220,10 @@
                             <select id="leaves-filter-month" onchange="window.AdminUI.applyLeaveFilters()" style="background:var(--glass-bg); color:var(--text-main); border:1px solid var(--glass-border); border-radius:6px; padding:6px 10px; font-size:12px;">
                                 <option value="all">All Months</option>
                             </select>
-                            <button class="btn-small btn-neutral" style="margin:0; width:auto; padding:5px 12px; font-size:11px;" onclick="document.getElementById('leaves-filter-category').value='all'; document.getElementById('leaves-filter-type').value='all'; document.getElementById('leaves-filter-month').value='all'; window.AdminUI.applyLeaveFilters();">Clear</button>
+                            <select id="leaves-filter-user" onchange="window.AdminUI.applyLeaveFilters()" style="background:var(--glass-bg); color:var(--text-main); border:1px solid var(--glass-border); border-radius:6px; padding:6px 10px; font-size:12px;">
+                                <option value="all">All Users</option>
+                            </select>
+                            <button class="btn-small btn-neutral" style="margin:0; width:auto; padding:5px 12px; font-size:11px;" onclick="document.getElementById('leaves-filter-category').value='all'; document.getElementById('leaves-filter-type').value='all'; document.getElementById('leaves-filter-month').value='all'; document.getElementById('leaves-filter-user').value='all'; window.AdminUI.applyLeaveFilters();">Clear</button>
                             <span id="leaves-result-count" style="font-size:12px; color:var(--text-muted); margin-left:auto;">0 results</span>
                         </div>
 
@@ -796,10 +799,10 @@
     </div>
 
     <!-- Scripts -->
-    <script src="js/auth.js?v=19"></script>
-    <script src="js/store.js?v=19"></script>
-    <script src="js/app.js?v=19"></script>
-    <script src="js/admin.js?v=19"></script>
+    <script src="js/auth.js?v=20"></script>
+    <script src="js/store.js?v=20"></script>
+    <script src="js/app.js?v=20"></script>
+    <script src="js/admin.js?v=20"></script>
     
     <!-- Edit Holiday Modal -->
     <div id="edit-holiday-modal" class="modal hidden">

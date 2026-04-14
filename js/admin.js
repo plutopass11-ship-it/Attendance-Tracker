@@ -650,6 +650,19 @@ window.AdminUI = {
             }).join('');
         }
 
+        // Populate user filter dropdown
+        const userSelect = document.getElementById('leaves-filter-user');
+        if (userSelect) {
+            const currentVal = userSelect.value;
+            const userIds = [...new Set(allLeaves.map(l => l.userId))].sort();
+            const persons = this.kitsuPersons || [];
+            userSelect.innerHTML = '<option value="all">All Users</option>' + userIds.map(uid => {
+                const u = persons.find(p => p.id === uid);
+                const name = u ? `${u.first_name} ${u.last_name}` : uid;
+                return `<option value="${uid}"${currentVal === uid ? ' selected' : ''}>${name}</option>`;
+            }).join('');
+        }
+
         this.applyLeaveFilters();
     },
 
@@ -688,6 +701,10 @@ window.AdminUI = {
                 return m === month;
             });
         }
+
+        // User filter
+        const user = document.getElementById('leaves-filter-user')?.value || 'all';
+        if (user !== 'all') leaves = leaves.filter(l => l.userId === user);
 
         // Update result count
         const countEl = document.getElementById('leaves-result-count');
