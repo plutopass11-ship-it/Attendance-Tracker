@@ -511,8 +511,13 @@
 
                 <!-- TAB: Leaves -->
                 <section id="tab-leaves" class="tab-content">
-                    <h2 class="section-title">Leave Balances</h2>
-                    <div id="user-balances-grid" style="display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-bottom:24px;">
+                    <h2 class="section-title">📋 Leave Balances</h2>
+                    <div id="user-balances-grid" style="display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-bottom:16px;">
+                        <!-- Populated by JS (progress bar cards) -->
+                    </div>
+
+                    <h4 style="color:#3b82f6; margin:0 0 10px; font-size:15px;">🏠 WFH Balance</h4>
+                    <div id="user-wfh-balance" style="margin-bottom:24px;">
                         <!-- Populated by JS -->
                     </div>
 
@@ -563,7 +568,17 @@
                         <button type="submit" class="btn-primary">Submit Request</button>
                     </form>
                     
-                    <h3 class="section-subtitle">Recent Requests</h3>
+                    <h3 class="section-subtitle" style="margin-top:24px;">Recent Requests</h3>
+                    <!-- Filters -->
+                    <div style="display:flex; gap:6px; margin-bottom:10px; flex-wrap:wrap;">
+                        <button class="btn-small btn-primary user-req-filter active" data-filter="all" style="margin:0; width:auto; padding:6px 14px;">All</button>
+                        <button class="btn-small btn-neutral user-req-filter" data-filter="Pending" style="margin:0; width:auto; padding:6px 14px;">🕐 Pending</button>
+                        <button class="btn-small btn-neutral user-req-filter" data-filter="Approved" style="margin:0; width:auto; padding:6px 14px;">✅ Approved</button>
+                        <button class="btn-small btn-neutral user-req-filter" data-filter="Rejected" style="margin:0; width:auto; padding:6px 14px;">❌ Rejected</button>
+                        <button class="btn-small btn-neutral user-req-filter" data-filter="leave" style="margin:0; width:auto; padding:6px 14px;">Leaves</button>
+                        <button class="btn-small btn-neutral user-req-filter" data-filter="wfh" style="margin:0; width:auto; padding:6px 14px;">WFH</button>
+                    </div>
+                    <div id="user-req-count" style="font-size:12px; color:var(--text-muted); margin-bottom:8px;">0 requests</div>
                     <ul id="leave-history-list" class="history-list">
                         <!-- Populated by JS -->
                     </ul>
@@ -813,10 +828,10 @@
     </div>
 
     <!-- Scripts -->
-    <script src="js/auth.js?v=22"></script>
-    <script src="js/store.js?v=22"></script>
-    <script src="js/app.js?v=22"></script>
-    <script src="js/admin.js?v=22"></script>
+    <script src="js/auth.js?v=23"></script>
+    <script src="js/store.js?v=23"></script>
+    <script src="js/app.js?v=23"></script>
+    <script src="js/admin.js?v=23"></script>
     
     <!-- Edit Holiday Modal -->
     <div id="edit-holiday-modal" class="modal hidden">

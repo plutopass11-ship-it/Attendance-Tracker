@@ -196,112 +196,171 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
-    // --- LEAVE LOGIC ---
-    function renderLeaveBalances() {
-        // Exclude WFH from standard dynamic leave types
-        const types = Store.getLeaveTypes().filter(t => !t.name.toLowerCase().includes('wfh') && !t.name.toLowerCase().includes('work from home'));
-        const userLeaves = Store.getUserLeaves(currentUser.id).filter(l => l.status === 'Approved');
-        const extraOff = Store.getExtraOff(currentUser.id) || { leaves: 0, wfh: 0 };
-        
-        const select = document.getElementById('leave-type');
-        select.innerHTML = '';
-        
-        const grid = document.getElementById('user-balances-grid');
-        grid.innerHTML = '';
+    function _isWfh(typeName) {
+        if (!typeName) return false;
+        const lower = typeName.toLowerCase();
+        return lower.includes('wfh') || lower === 'work from home';
+    }
 
+    function _calcDays(l) {
+        if (l.isHalfDay) return 0.5;
+        const diff = Math.abs(new Date(l.endDate) - new Date(l.startDate));
+        return Math.ceil(diff / (1000 * 60 * 60 * 24)) + 1;
+    }
+
+    function renderLeaveBalances() {
+        const leaveTypes = Store.getLeaveTypes();
+        const allUserLeaves = Store.getUserLeaves(currentUser.id);
+        const approvedLeaves = allUserLeaves.filter(l => l.status === 'Approved');
+        const extra = Store.getExtraOff(currentUser.id) || { leaves: 0, wfh: 0 };
         const now = new Date();
         const currMonthStr = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}`;
 
-        let leavesLimit = extraOff.leaves;
-        let leavesRemaining = extraOff.leaves;
-        let wfhLimit = extraOff.wfh;
-        let wfhRemaining = extraOff.wfh;
-        
-        let typesHtml = '';
+        // Populate the leave type dropdown (excluding WFH)
+        const select = document.getElementById('leave-type');
+        select.innerHTML = '';
 
-        types.forEach(t => {
+        const grid = document.getElementById('user-balances-grid');
+        grid.innerHTML = '';
+
+        // --- Leave balance cards (excluding WFH) ---
+        const nonWfhTypes = leaveTypes.filter(t => !_isWfh(t.name));
+        nonWfhTypes.forEach(t => {
             select.innerHTML += `<option value="${t.name}">${t.name}</option>`;
             
-            let taken = 0;
-            const relevantLeaves = userLeaves.filter(l => l.type === t.name);
-            
-            relevantLeaves.forEach(l => {
-                const sDate = new Date(l.startDate);
-                const eDate = new Date(l.endDate);
-                if(t.cycle && t.cycle.toLowerCase() === 'monthly') {
-                    if (l.startDate.startsWith(currMonthStr)) {
-                        taken += l.isHalfDay ? 0.5 : 1;
-                    }
+            let used = 0;
+            const relevant = approvedLeaves.filter(l => l.type === t.name);
+            relevant.forEach(l => {
+                if (t.cycle && t.cycle.toLowerCase() === 'monthly') {
+                    if (l.startDate.startsWith(currMonthStr)) used += _calcDays(l);
                 } else {
-                    // Yearly reset: Only subtract leaves taken in the current year
-                    if (sDate.getFullYear() === now.getFullYear() || eDate.getFullYear() === now.getFullYear()) {
-                        const diffTimes = eDate - sDate;
-                        const diffDays = Math.ceil(diffTimes / (1000 * 60 * 60 * 24)) + 1;
-                        taken += l.isHalfDay ? 0.5 : diffDays;
-                    }
+                    // Yearly: count current year only
+                    if (new Date(l.startDate).getFullYear() === now.getFullYear()) used += _calcDays(l);
                 }
             });
-            
-            const remainingForType = Math.max(0, t.limit - taken);
-            leavesLimit += t.limit;
-            leavesRemaining += remainingForType;
-            
-            typesHtml += `
-                <div style="display:flex; justify-content:space-between; padding:8px 12px; border-bottom:1px solid rgba(255,255,255,0.05); font-size:13px;">
-                    <span style="color:var(--text-muted)">${t.name}</span>
-                    <strong style="color: ${remainingForType>0 ? 'var(--text-main)' : 'var(--danger)'}">${remainingForType} / ${t.limit}</strong>
+
+            const limit = parseInt(t.limit);
+            const remaining = Math.max(0, limit - used);
+            const pct = limit > 0 ? Math.min(100, (used / limit) * 100) : 0;
+            const barColor = pct > 80 ? '#ef4444' : pct > 50 ? '#f59e0b' : '#10b981';
+
+            grid.innerHTML += `
+                <div style="background:var(--glass-bg); border:1px solid var(--glass-border); border-radius:10px; padding:14px;">
+                    <div style="display:flex; justify-content:space-between; margin-bottom:6px;">
+                        <strong style="font-size:13px;">${t.name}</strong>
+                        <span style="font-size:12px; color:var(--text-muted);">${t.cycle || 'Yearly'}</span>
+                    </div>
+                    <div style="display:flex; justify-content:space-between; font-size:12px; color:var(--text-muted); margin-bottom:6px;">
+                        <span>Used: <strong style="color:var(--text-main)">${used}</strong></span>
+                        <span>Left: <strong style="color:${barColor}">${remaining}</strong> / ${limit}</span>
+                    </div>
+                    <div style="background:rgba(255,255,255,0.08); border-radius:4px; height:6px; overflow:hidden;">
+                        <div style="width:${pct}%; height:100%; background:${barColor}; border-radius:4px; transition:width 0.3s;"></div>
+                    </div>
                 </div>
             `;
         });
-        
-        let wfhTaken = 0;
-        const wfhRequests = userLeaves.filter(l => l.type.toLowerCase().includes('wfh') || l.type.toLowerCase() === 'work from home');
-        wfhRequests.forEach(l => {
-            // WFH is generally monthly
-            if (l.startDate.startsWith(currMonthStr)) {
-                const diffTimes = new Date(l.endDate) - new Date(l.startDate);
-                const diffDays = Math.ceil(diffTimes / (1000 * 60 * 60 * 24)) + 1;
-                wfhTaken += l.isHalfDay ? 0.5 : diffDays;
+
+        if (extra.leaves > 0) {
+            grid.innerHTML += `
+                <div style="background:var(--glass-bg); border:1px solid var(--glass-border); border-radius:10px; padding:14px;">
+                    <strong style="font-size:13px;">Extra Leave Allowance</strong>
+                    <div style="font-size:22px; font-weight:700; color:#10b981; margin-top:8px;">+${extra.leaves} days</div>
+                </div>
+            `;
+        }
+
+        // --- WFH Balance Card ---
+        const wfhPolicy = leaveTypes.find(t => _isWfh(t.name));
+        const wfhLimit = wfhPolicy ? parseInt(wfhPolicy.limit) : 0;
+        const wfhCycle = wfhPolicy ? wfhPolicy.cycle : 'monthly';
+        const wfhExtra = extra.wfh || 0;
+        const isMonthly = wfhCycle === 'monthly' || wfhCycle === 'Monthly';
+
+        let wfhUsed = 0;
+        const wfhApproved = approvedLeaves.filter(l => _isWfh(l.type));
+        wfhApproved.forEach(l => {
+            if (isMonthly) {
+                if (l.startDate.startsWith(currMonthStr)) wfhUsed += _calcDays(l);
+            } else {
+                if (new Date(l.startDate).getFullYear() === now.getFullYear()) wfhUsed += _calcDays(l);
             }
         });
-        wfhRemaining -= wfhTaken;
 
-        grid.innerHTML = `
-            <div class="glass-panel" style="padding:16px; text-align:center;">
-                <div style="font-size:12px; color:var(--text-muted); margin-bottom:6px;">Extra Leaves</div>
-                <div style="font-size:24px; font-weight:700; color: ${extraOff.leaves>0 ? 'var(--text-main)' : 'var(--danger)'}">
-                    ${extraOff.leaves}
+        const wfhTotalLimit = wfhLimit + wfhExtra;
+        const wfhRemaining = Math.max(0, wfhTotalLimit - wfhUsed);
+        const wfhPct = wfhTotalLimit > 0 ? Math.min(100, (wfhUsed / wfhTotalLimit) * 100) : 0;
+        const wfhBarColor = wfhPct > 80 ? '#ef4444' : wfhPct > 50 ? '#f59e0b' : '#3b82f6';
+        const monthName = now.toLocaleString('default', { month: 'long' });
+
+        const wfhAllTime = wfhApproved.reduce((a, l) => a + _calcDays(l), 0);
+
+        const wfhDiv = document.getElementById('user-wfh-balance');
+        wfhDiv.innerHTML = `
+            <div style="background:rgba(59,130,246,0.08); border:1px solid rgba(59,130,246,0.25); border-radius:10px; padding:16px;">
+                <div style="display:flex; justify-content:space-between; margin-bottom:8px;">
+                    <strong style="font-size:14px;">Work From Home</strong>
+                    <span style="font-size:12px; color:var(--text-muted);">${wfhCycle}${wfhExtra > 0 ? ' (+' + wfhExtra + ' extra)' : ''}</span>
                 </div>
-            </div>
-            <div class="glass-panel" style="padding:16px; text-align:center;">
-                <div style="font-size:12px; color:var(--text-muted); margin-bottom:6px;">Remaining WFH</div>
-                <div style="font-size:24px; font-weight:700; color: ${wfhRemaining>0 ? 'var(--text-main)' : 'var(--danger)'}">
-                    ${wfhRemaining} <span style="font-size:12px; font-weight:400; color:var(--text-muted)">/ ${wfhLimit}</span>
+                ${isMonthly ? `<div style="font-size:12px; color:var(--text-muted); margin-bottom:10px;">📅 ${monthName} ${now.getFullYear()}</div>` : ''}
+                <div style="display:flex; gap:24px; margin-bottom:8px;">
+                    <div><span style="font-size:24px; font-weight:700; color:#3b82f6;">${wfhUsed}</span> <span style="font-size:12px; color:var(--text-muted);">used ${isMonthly ? 'this month' : ''}</span></div>
+                    <div><span style="font-size:24px; font-weight:700; color:${wfhBarColor};">${wfhRemaining}</span> <span style="font-size:12px; color:var(--text-muted);">remaining</span></div>
+                    <div><span style="font-size:24px; font-weight:700; color:var(--text-muted);">${wfhTotalLimit}</span> <span style="font-size:12px; color:var(--text-muted);">limit</span></div>
                 </div>
-            </div>
-            <div class="glass-panel" style="grid-column: span 2; padding:16px;">
-                <h4 style="margin-top:0; margin-bottom:12px; font-size:14px; color:var(--text-main);">Leave Breakdown</h4>
-                ${typesHtml}
+                <div style="background:rgba(255,255,255,0.08); border-radius:4px; height:6px; overflow:hidden; margin-bottom:12px;">
+                    <div style="width:${wfhPct}%; height:100%; background:${wfhBarColor}; border-radius:4px; transition:width 0.3s;"></div>
+                </div>
+                <div style="display:flex; justify-content:space-between; padding-top:10px; border-top:1px solid rgba(255,255,255,0.06);">
+                    <span style="font-size:13px; color:var(--text-muted);">📊 All-Time WFH Total</span>
+                    <strong style="font-size:15px; color:#3b82f6;">${wfhAllTime} day${wfhAllTime !== 1 ? 's' : ''}</strong>
+                </div>
             </div>
         `;
     }
 
-    function renderLeaveHistory() {
-        const leaves = Store.getUserLeaves(currentUser.id);
+    // --- Filter state ---
+    let _userReqFilter = 'all';
+
+    function renderLeaveHistory(filterOverride) {
+        const filter = filterOverride || _userReqFilter;
+        _userReqFilter = filter;
+
+        let leaves = Store.getUserLeaves(currentUser.id);
+
+        // Apply filter
+        if (filter === 'Pending' || filter === 'Approved' || filter === 'Rejected') {
+            leaves = leaves.filter(l => l.status === filter);
+        } else if (filter === 'wfh') {
+            leaves = leaves.filter(l => _isWfh(l.type));
+        } else if (filter === 'leave') {
+            leaves = leaves.filter(l => !_isWfh(l.type));
+        }
+
+        // Update count
+        const countEl = document.getElementById('user-req-count');
+        if (countEl) countEl.textContent = `${leaves.length} request${leaves.length !== 1 ? 's' : ''}`;
+
         leaveHistoryList.innerHTML = '';
         
         if(leaves.length === 0) {
-            leaveHistoryList.innerHTML = '<li style="color:var(--text-muted); font-size: 14px; text-align: center; padding: 20px;">No leave requests.</li>';
+            leaveHistoryList.innerHTML = '<li style="color:var(--text-muted); font-size: 14px; text-align: center; padding: 20px;">No requests found.</li>';
             return;
         }
         
         leaves.forEach(leave => {
+            const isW = _isWfh(leave.type);
+            const days = _calcDays(leave);
+            const catBadge = isW
+                ? '<span class="badge" style="background:#3b82f6;color:white;font-size:10px;margin-left:6px;">WFH</span>'
+                : '<span class="badge" style="background:#8b5cf6;color:white;font-size:10px;margin-left:6px;">Leave</span>';
+
             const li = document.createElement('li');
             li.className = 'history-card';
             li.innerHTML = `
                 <div class="card-main">
-                    <span class="card-title">${leave.type} ${leave.isHalfDay ? '<span class="badge" style="background:var(--warning); color:white; font-size:10px; margin-left:6px;">Half Day</span>' : ''}</span>
-                    <span class="card-sub">${leave.startDate} to ${leave.endDate}</span>
+                    <span class="card-title">${leave.type} ${catBadge} ${leave.isHalfDay ? '<span class="badge" style="background:var(--warning); color:white; font-size:10px; margin-left:6px;">Half Day</span>' : ''}</span>
+                    <span class="card-sub">${leave.startDate}${leave.startDate !== leave.endDate ? ' → ' + leave.endDate : ''} <small style="color:var(--text-muted);">(${days} day${days!==1?'s':''})</small></span>
                 </div>
                 <span class="badge ${leave.status.toLowerCase()}">${leave.status}</span>
             `;
@@ -496,6 +555,19 @@ document.addEventListener('DOMContentLoaded', () => {
     navItems.forEach(nav => {
         nav.addEventListener('click', () => {
             switchTab(nav.dataset.target);
+        });
+    });
+
+    // Request history filter buttons
+    document.querySelectorAll('.user-req-filter').forEach(btn => {
+        btn.addEventListener('click', () => {
+            document.querySelectorAll('.user-req-filter').forEach(b => {
+                b.classList.remove('active', 'btn-primary');
+                b.classList.add('btn-neutral');
+            });
+            btn.classList.add('active', 'btn-primary');
+            btn.classList.remove('btn-neutral');
+            renderLeaveHistory(btn.dataset.filter);
         });
     });
 
