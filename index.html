@@ -192,11 +192,45 @@
                             <h2 class="section-title" style="margin:0">Leave Requests</h2>
                             <button class="btn-primary" onclick="document.getElementById('grant-leave-modal').classList.remove('hidden')" style="width:auto; padding:8px 16px; margin:0;">+ Grant Leave</button>
                         </div>
+
+                        <!-- Sub-tabs -->
+                        <div style="display:flex; gap:6px; margin-bottom:16px; flex-wrap:wrap;">
+                            <button class="btn-small btn-primary leaves-sub-tab active" data-status="Pending" style="margin:0; width:auto; padding:8px 18px; position:relative;" onclick="window.AdminUI.switchLeavesTab('Pending')">
+                                🕐 Pending <span id="leaves-pending-count" style="background:#ef4444; color:white; border-radius:50%; font-size:10px; padding:2px 6px; margin-left:6px; font-weight:700;">0</span>
+                            </button>
+                            <button class="btn-small btn-neutral leaves-sub-tab" data-status="Approved" style="margin:0; width:auto; padding:8px 18px;" onclick="window.AdminUI.switchLeavesTab('Approved')">
+                                ✅ Approved
+                            </button>
+                            <button class="btn-small btn-neutral leaves-sub-tab" data-status="Rejected" style="margin:0; width:auto; padding:8px 18px;" onclick="window.AdminUI.switchLeavesTab('Rejected')">
+                                ❌ Rejected
+                            </button>
+                        </div>
+
+                        <!-- Filters -->
+                        <div class="glass-panel" style="padding:12px 16px; margin-bottom:16px; display:flex; gap:12px; align-items:center; flex-wrap:wrap;">
+                            <span style="font-size:13px; color:var(--text-muted); font-weight:600;">Filters:</span>
+                            <select id="leaves-filter-category" onchange="window.AdminUI.applyLeaveFilters()" style="background:var(--glass-bg); color:var(--text-main); border:1px solid var(--glass-border); border-radius:6px; padding:6px 10px; font-size:12px;">
+                                <option value="all">All Categories</option>
+                                <option value="leave">Leaves Only</option>
+                                <option value="wfh">WFH Only</option>
+                            </select>
+                            <select id="leaves-filter-type" onchange="window.AdminUI.applyLeaveFilters()" style="background:var(--glass-bg); color:var(--text-main); border:1px solid var(--glass-border); border-radius:6px; padding:6px 10px; font-size:12px;">
+                                <option value="all">All Types</option>
+                            </select>
+                            <select id="leaves-filter-month" onchange="window.AdminUI.applyLeaveFilters()" style="background:var(--glass-bg); color:var(--text-main); border:1px solid var(--glass-border); border-radius:6px; padding:6px 10px; font-size:12px;">
+                                <option value="all">All Months</option>
+                            </select>
+                            <button class="btn-small btn-neutral" style="margin:0; width:auto; padding:5px 12px; font-size:11px;" onclick="document.getElementById('leaves-filter-category').value='all'; document.getElementById('leaves-filter-type').value='all'; document.getElementById('leaves-filter-month').value='all'; window.AdminUI.applyLeaveFilters();">Clear</button>
+                            <span id="leaves-result-count" style="font-size:12px; color:var(--text-muted); margin-left:auto;">0 results</span>
+                        </div>
+
+                        <!-- Table -->
                         <div class="glass-panel" style="overflow-x:auto;">
                             <table class="admin-table">
                                 <thead>
                                     <tr>
                                         <th>User Name</th>
+                                        <th>Category</th>
                                         <th>Leave Type</th>
                                         <th>Dates</th>
                                         <th>Reason</th>
@@ -762,10 +796,10 @@
     </div>
 
     <!-- Scripts -->
-    <script src="js/auth.js?v=18"></script>
-    <script src="js/store.js?v=18"></script>
-    <script src="js/app.js?v=18"></script>
-    <script src="js/admin.js?v=18"></script>
+    <script src="js/auth.js?v=19"></script>
+    <script src="js/store.js?v=19"></script>
+    <script src="js/app.js?v=19"></script>
+    <script src="js/admin.js?v=19"></script>
     
     <!-- Edit Holiday Modal -->
     <div id="edit-holiday-modal" class="modal hidden">

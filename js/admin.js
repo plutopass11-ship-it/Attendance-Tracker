@@ -619,49 +619,126 @@ window.AdminUI = {
     },
 
     renderLeaves: function() {
-        const leaves = Store.getAllLeaves();
+        this._leavesActiveTab = this._leavesActiveTab || 'Pending';
+        const allLeaves = Store.getAllLeaves();
+
+        // Update pending count badge
+        const pendingCount = allLeaves.filter(l => l.status === 'Pending').length;
+        const countEl = document.getElementById('leaves-pending-count');
+        if (countEl) { countEl.textContent = pendingCount; countEl.style.display = pendingCount > 0 ? 'inline' : 'none'; }
+
+        // Populate type filter dropdown
+        const typeSelect = document.getElementById('leaves-filter-type');
+        if (typeSelect) {
+            const currentVal = typeSelect.value;
+            const types = [...new Set(allLeaves.map(l => l.type))].sort();
+            typeSelect.innerHTML = '<option value="all">All Types</option>' + types.map(t => `<option value="${t}"${currentVal === t ? ' selected' : ''}>${t}</option>`).join('');
+        }
+
+        // Populate month filter dropdown
+        const monthSelect = document.getElementById('leaves-filter-month');
+        if (monthSelect) {
+            const currentVal = monthSelect.value;
+            const months = [...new Set(allLeaves.map(l => {
+                const d = new Date(l.startDate);
+                return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`;
+            }))].sort().reverse();
+            monthSelect.innerHTML = '<option value="all">All Months</option>' + months.map(m => {
+                const [y, mo] = m.split('-');
+                const label = new Date(y, mo-1).toLocaleString('default', { month: 'long', year: 'numeric' });
+                return `<option value="${m}"${currentVal === m ? ' selected' : ''}>${label}</option>`;
+            }).join('');
+        }
+
+        this.applyLeaveFilters();
+    },
+
+    switchLeavesTab: function(status) {
+        this._leavesActiveTab = status;
+        // Update sub-tab styles
+        document.querySelectorAll('.leaves-sub-tab').forEach(btn => {
+            btn.classList.remove('active', 'btn-primary');
+            btn.classList.add('btn-neutral');
+        });
+        const activeBtn = document.querySelector(`.leaves-sub-tab[data-status="${status}"]`);
+        if (activeBtn) { activeBtn.classList.add('active', 'btn-primary'); activeBtn.classList.remove('btn-neutral'); }
+        this.applyLeaveFilters();
+    },
+
+    applyLeaveFilters: function() {
+        const status = this._leavesActiveTab || 'Pending';
+        const category = document.getElementById('leaves-filter-category')?.value || 'all';
+        const type = document.getElementById('leaves-filter-type')?.value || 'all';
+        const month = document.getElementById('leaves-filter-month')?.value || 'all';
+
+        let leaves = Store.getAllLeaves().filter(l => l.status === status);
+
+        // Category filter
+        if (category === 'wfh') leaves = leaves.filter(l => this._isWfh(l.type));
+        else if (category === 'leave') leaves = leaves.filter(l => !this._isWfh(l.type));
+
+        // Type filter
+        if (type !== 'all') leaves = leaves.filter(l => l.type === type);
+
+        // Month filter
+        if (month !== 'all') {
+            leaves = leaves.filter(l => {
+                const d = new Date(l.startDate);
+                const m = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`;
+                return m === month;
+            });
+        }
+
+        // Update result count
+        const countEl = document.getElementById('leaves-result-count');
+        if (countEl) countEl.textContent = `${leaves.length} result${leaves.length !== 1 ? 's' : ''}`;
+
+        // Render table
         const tbody = document.getElementById('admin-leaves-tbody');
-        if(!tbody) return;
+        if (!tbody) return;
         tbody.innerHTML = '';
-        
-        if(leaves.length === 0) {
-            tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;color:var(--text-muted)">No leaves found.</td></tr>';
+
+        if (leaves.length === 0) {
+            const emptyMsg = status === 'Pending' ? 'No pending requests 🎉' : `No ${status.toLowerCase()} requests found.`;
+            tbody.innerHTML = `<tr><td colspan="6" style="text-align:center;color:var(--text-muted);padding:30px;">${emptyMsg}</td></tr>`;
             return;
         }
-        
-        leaves.forEach(l => {
-            const sDate = l.startDate;
-            const eDate = l.endDate;
-            const diffTime = Math.abs(new Date(eDate).getTime() - new Date(sDate).getTime());
-            const diffDays = l.isHalfDay ? 0.5 : Math.ceil(diffTime / (1000 * 60 * 60 * 24)) + 1;
 
-            const userObj = window.AdminUI.kitsuPersons.find(u => u.id === l.userId);
-            const displayObjName = userObj ? `${userObj.first_name} ${userObj.last_name}` : (l.userName || l.userId || 'Unknown');
+        leaves.forEach(l => {
+            const days = this._calcDays(l);
+            const isW = this._isWfh(l.type);
+            const catBadge = isW
+                ? '<span class="badge" style="background:#3b82f6;color:white;">WFH</span>'
+                : '<span class="badge" style="background:#8b5cf6;color:white;">Leave</span>';
+
+            const userObj = this.kitsuPersons.find(u => u.id === l.userId);
+            const displayName = userObj ? `${userObj.first_name} ${userObj.last_name}` : (l.userName || l.userId || 'Unknown');
 
             const tr = document.createElement('tr');
             tr.innerHTML = `
-                <td><strong>${displayObjName}</strong></td>
-                <td>${l.type} ${l.isHalfDay ? '<span class="badge" style="background:var(--warning); color:white; font-size:10px; margin-left:6px;">Half Day</span>' : ''}</td>
-                <td>${sDate} to ${eDate} (${diffDays} day${diffDays!==1?'s':''})</td>
-                <td>${l.reason}</td>
+                <td><strong>${displayName}</strong></td>
+                <td>${catBadge}</td>
+                <td>${l.type} ${l.isHalfDay ? '<span class="badge" style="background:var(--warning);color:white;font-size:10px;margin-left:6px;">Half Day</span>' : ''}</td>
+                <td>${l.startDate}${l.startDate !== l.endDate ? ' → ' + l.endDate : ''} <small style="color:var(--text-muted);">(${days} day${days!==1?'s':''})</small></td>
+                <td style="max-width:200px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;" title="${(l.reason||'').replace(/"/g, '&quot;')}">${l.reason || '-'}</td>
             `;
 
             let actionHtml = '';
-            if (l.status === 'Pending') {
+            if (status === 'Pending') {
                 actionHtml = `
                     <button class="btn-small btn-approve" onclick="window.AdminUI.updateLeave('${l.id}','Approved')">Approve</button>
                     <button class="btn-small btn-reject" onclick="window.AdminUI.updateLeave('${l.id}','Rejected')">Reject</button>
                 `;
-            } else if (l.status === 'Approved') {
+            } else if (status === 'Approved') {
                 actionHtml = `
-                    <em>Approved</em> <br/>
-                    <button class="btn-small btn-reject" style="margin-top:6px;" onclick="window.AdminUI.updateLeave('${l.id}','Rejected')">Revoke</button>
+                    <button class="btn-small btn-reject" onclick="window.AdminUI.updateLeave('${l.id}','Rejected')">Revoke</button>
                 `;
             } else {
-                actionHtml = `<em>${l.status}</em>`;
+                actionHtml = `
+                    <button class="btn-small btn-approve" onclick="window.AdminUI.updateLeave('${l.id}','Approved')">Re-Approve</button>
+                `;
             }
-            tr.innerHTML += `<td style="min-width: 140px;">${actionHtml}</td>`;
-            
+            tr.innerHTML += `<td style="min-width:140px;">${actionHtml}</td>`;
             tbody.appendChild(tr);
         });
     },
@@ -669,7 +746,7 @@ window.AdminUI = {
     updateLeave: function(leaveId, status) {
         Store.updateLeaveStatus(leaveId, status);
         this.renderLeaves();
-        this.renderDashboard(); // refresh stats
+        this.renderDashboard();
     },
 
     renderUsers: async function() {
