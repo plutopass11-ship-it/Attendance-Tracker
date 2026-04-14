@@ -354,8 +354,11 @@
                                     </select>
                                 </div>
                                 <div style="display:flex; align-items:center; gap:10px;">
+                                    <button class="btn-neutral" style="margin:0; padding:8px 16px; width:auto;" onclick="document.getElementById('paste-json-modal').classList.remove('hidden')">
+                                        <ion-icon name="code-slash-outline" style="margin-right:4px; vertical-align:middle;"></ion-icon> Paste JSON
+                                    </button>
                                     <label class="btn-neutral" style="margin:0; padding:8px 16px; width:auto; cursor:pointer;" title="Upload JSON records for selected user">
-                                        <ion-icon name="document-text-outline" style="margin-right:4px; vertical-align:middle;"></ion-icon> Upload User JSON
+                                        <ion-icon name="document-text-outline" style="margin-right:4px; vertical-align:middle;"></ion-icon> Upload File
                                         <input type="file" id="migration-json-upload" accept=".json" style="display:none;">
                                     </label>
                                     <button class="btn-small" style="background:transparent; color:var(--text-muted); border:none; padding:4px;" onclick="alert('JSON Format:\\n[\\n  {\\n    \u0022type\u0022: \u0022Sick Leave\u0022,\\n    \u0022startDate\u0022: \u00222026-01-01\u0022,\\n    \u0022endDate\u0022: \u00222026-01-02\u0022,\\n    \u0022reason\u0022: \u0022Flu\u0022\\n  }\\n]')">
@@ -810,10 +813,10 @@
     </div>
 
     <!-- Scripts -->
-    <script src="js/auth.js?v=21"></script>
-    <script src="js/store.js?v=21"></script>
-    <script src="js/app.js?v=21"></script>
-    <script src="js/admin.js?v=21"></script>
+    <script src="js/auth.js?v=22"></script>
+    <script src="js/store.js?v=22"></script>
+    <script src="js/app.js?v=22"></script>
+    <script src="js/admin.js?v=22"></script>
     
     <!-- Edit Holiday Modal -->
     <div id="edit-holiday-modal" class="modal hidden">
@@ -841,6 +844,25 @@
                     <button type="button" class="btn-primary" style="background:var(--danger)" id="close-edit-holiday-modal">Cancel</button>
                 </div>
             </form>
+        </div>
+    </div>
+    <!-- Paste JSON Modal -->
+    <div id="paste-json-modal" class="modal hidden">
+        <div class="modal-content" style="max-width:600px;">
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:16px;">
+                <h2 class="section-title" style="margin:0;">Paste JSON Records</h2>
+                <button class="btn-small" style="background:transparent; color:var(--text-muted); border:none;" onclick="document.getElementById('paste-json-modal').classList.add('hidden')">
+                    <ion-icon name="close-outline" style="font-size:24px;"></ion-icon>
+                </button>
+            </div>
+            <p style="color:var(--text-muted); font-size:13px; margin-top:0; margin-bottom:10px;">
+                Paste your JSON array below. It will be added to the batch for the user selected in the dropdown.
+            </p>
+            <textarea id="paste-json-textarea" style="width:100%; height:200px; background:var(--glass-bg); color:var(--text-main); border:1px solid var(--glass-border); border-radius:6px; padding:10px; font-family:monospace; resize:vertical;" placeholder="[\n  {\n    &#34;type&#34;: &#34;Sick Leave&#34;,\n    &#34;startDate&#34;: &#34;2026-01-01&#34;,\n    &#34;endDate&#34;: &#34;2026-01-01&#34;\n  }\n]"></textarea>
+            <div style="display:flex; gap:10px; margin-top:16px; justify-content:flex-end;">
+                <button type="button" class="btn-neutral" onclick="document.getElementById('paste-json-modal').classList.add('hidden')">Cancel</button>
+                <button type="button" class="btn-primary" id="btn-process-pasted-json">Import to Batch</button>
+            </div>
         </div>
     </div>
     
