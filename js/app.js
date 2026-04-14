@@ -203,9 +203,15 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function _calcDays(l) {
-        if (l.isHalfDay) return 0.5;
+        if (l.isHalfDay || (l.type && l.type.toLowerCase().includes('(half day)'))) return 0.5;
         const diff = Math.abs(new Date(l.endDate) - new Date(l.startDate));
         return Math.ceil(diff / (1000 * 60 * 60 * 24)) + 1;
+    }
+
+    // Fuzzy match: 'Casual Leave (Half Day)' matches policy 'Casual Leave'
+    function _matchesType(leaveType, policyName) {
+        if (!leaveType || !policyName) return false;
+        return leaveType === policyName || leaveType.startsWith(policyName);
     }
 
     function renderLeaveBalances() {
@@ -229,7 +235,7 @@ document.addEventListener('DOMContentLoaded', () => {
             select.innerHTML += `<option value="${t.name}">${t.name}</option>`;
             
             let used = 0;
-            const relevant = approvedLeaves.filter(l => l.type === t.name);
+            const relevant = approvedLeaves.filter(l => _matchesType(l.type, t.name));
             relevant.forEach(l => {
                 if (t.cycle && t.cycle.toLowerCase() === 'monthly') {
                     if (l.startDate.startsWith(currMonthStr)) used += _calcDays(l);

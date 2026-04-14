@@ -11,9 +11,14 @@ window.AdminUI = {
         return type?.toLowerCase().includes('wfh') || type?.toLowerCase().includes('work from home');
     },
     _calcDays: function(leave) {
-        if (leave.isHalfDay) return 0.5;
+        if (leave.isHalfDay || (leave.type && leave.type.toLowerCase().includes('(half day)'))) return 0.5;
         const s = new Date(leave.startDate), e = new Date(leave.endDate);
         return Math.max(1, Math.ceil(Math.abs(e - s) / (1000*60*60*24)) + 1);
+    },
+    // Fuzzy match: 'Casual Leave (Half Day)' matches policy 'Casual Leave'
+    _matchesType: function(leaveType, policyName) {
+        if (!leaveType || !policyName) return false;
+        return leaveType === policyName || leaveType.startsWith(policyName);
     },
     
     init: async function(user) {
@@ -926,7 +931,7 @@ window.AdminUI = {
 
         // --- Leave Balances per type (excluding WFH) ---
         const leaveBalances = leaveTypes.filter(t => !this._isWfh(t.name)).map(t => {
-            const used = leaveRequests.filter(l => l.type === t.name && l.status === 'Approved')
+            const used = leaveRequests.filter(l => this._matchesType(l.type, t.name) && l.status === 'Approved')
                 .reduce((a, l) => a + this._calcDays(l), 0);
             const limit = parseInt(t.limit);
             return { name: t.name, limit, cycle: t.cycle, used, remaining: Math.max(0, limit - used) };
