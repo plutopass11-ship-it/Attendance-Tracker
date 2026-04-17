@@ -520,6 +520,14 @@ async function runMigrations() {
             await pool.query("ALTER TABLE attendance ADD COLUMN status VARCHAR(30) DEFAULT 'working';");
         }
 
+        // Fix stuck records from deployment transition: checked out but status still 'working'
+        if (await tableExists('attendance')) {
+            const fixed = await pool.query(
+                "UPDATE attendance SET status = 'completed' WHERE check_out_time IS NOT NULL AND status = 'working'"
+            );
+            if (fixed.rowCount > 0) console.log(`Fixed ${fixed.rowCount} stuck attendance record(s).`);
+        }
+
         if (await tableExists('leave_policies')) {
             if (!(await columnExists('leave_policies', 'label'))) {
                 await pool.query("ALTER TABLE leave_policies ADD COLUMN label VARCHAR(100) DEFAULT '';");
