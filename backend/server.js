@@ -15,6 +15,7 @@ const pool = new Pool({
 });
 
 const KITSU_URL = process.env.KITSU_URL || 'http://host.docker.internal:3002';
+const N8N_WEBHOOK_URL = process.env.N8N_WEBHOOK_URL || '';  // e.g. http://n8n:5678/webhook/leave-status-changed
 
 // --- Service Account (Admin Token Cache) ---
 // Uses a dedicated Kitsu admin account to fetch person data,
@@ -142,16 +143,17 @@ app.post('/api/auth/login', async (req, res) => {
   // Format the user
   const fullName = `${kitsuUser.first_name || ''} ${kitsuUser.last_name || ''}`.trim();
   const role = ['admin', 'studio_manager'].includes(kitsuUser.role) ? 'admin' : 'user';
+  const phone = kitsuUser.phone || null; // Sync phone from Kitsu for WhatsApp identity
 
   // Upsert user into purely local Postgres Database to sync them natively
   try {
     const result = await pool.query(
-      `INSERT INTO users (user_id, name, password, role) 
-       VALUES ($1, $2, 'synced_from_kitsu', $3)
+      `INSERT INTO users (user_id, name, password, role, phone) 
+       VALUES ($1, $2, 'synced_from_kitsu', $3, $4)
        ON CONFLICT (user_id) 
-       DO UPDATE SET name = $2, role = $3
+       DO UPDATE SET name = $2, role = $3, phone = COALESCE($4, users.phone)
        RETURNING id, user_id, name, role`,
-      [email, fullName, role]
+      [email, fullName, role, phone]
     );
 
     // Provide response directly mirroring Store.js output
@@ -335,8 +337,30 @@ app.put('/api/leaves/:id', async (req, res) => {
    const { status } = req.body;
    try {
        const dbStatus = (status || 'pending').toLowerCase();
-       await pool.query('UPDATE leave_requests SET status = $1 WHERE id = $2', [dbStatus, req.params.id]);
+       const result = await pool.query(
+           `UPDATE leave_requests SET status = $1 WHERE id = $2
+            RETURNING id, user_id, type, CAST(start_date AS text) as start_date, CAST(end_date AS text) as end_date, status`,
+           [dbStatus, req.params.id]
+       );
        res.json({ success: true });
+
+       // Fire-and-forget webhook to n8n for WhatsApp notifications
+       if (N8N_WEBHOOK_URL && result.rowCount > 0) {
+           const leave = result.rows[0];
+           fetch(N8N_WEBHOOK_URL, {
+               method: 'POST',
+               headers: { 'Content-Type': 'application/json' },
+               body: JSON.stringify({
+                   event: 'leave_status_changed',
+                   leaveId: leave.id,
+                   userId: leave.user_id,
+                   type: leave.type,
+                   startDate: leave.start_date,
+                   endDate: leave.end_date,
+                   newStatus: leave.status
+               })
+           }).catch(e => console.error('n8n webhook error (non-critical):', e.message));
+       }
    } catch(err) {
        console.error(err);
        res.status(500).json({ success: false });
@@ -543,6 +567,12 @@ async function runMigrations() {
             if (!(await columnExists('leave_policies', 'cycle'))) {
                 await pool.query("ALTER TABLE leave_policies ADD COLUMN cycle VARCHAR(20) DEFAULT 'yearly';");
             }
+        }
+
+        // Add phone column for WhatsApp identity (synced from Kitsu)
+        if (await tableExists('users') && !(await columnExists('users', 'phone'))) {
+            await pool.query('ALTER TABLE users ADD COLUMN phone VARCHAR(20) UNIQUE;');
+            console.log('Added phone column to users table.');
         }
 
         console.log('DB migrations completed.');

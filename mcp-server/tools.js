@@ -421,6 +421,163 @@ function registerTools(server) {
             return { content: [{ type: 'text', text: JSON.stringify({ from: today, to: futureDateStr, count: result.rowCount, holidays: result.rows }, null, 2) }] };
         }
     );
+
+
+    // ═══════════════════════════════════════════════════════════════
+    //  WHATSAPP IDENTITY DOMAIN
+    // ═══════════════════════════════════════════════════════════════
+
+    server.tool(
+        'lookup_user_by_phone',
+        'Find an employee by their phone number. Used to resolve a WhatsApp sender to an attendance system user. Returns the user_id (email), name, role, and phone.',
+        { phone: z.string().describe('Phone number to look up (e.g., "+919876543210"). Will be matched with flexible normalization — trailing digits match.') },
+        async ({ phone }) => {
+            // Normalize: strip all non-digit characters, keep last 10 digits for matching
+            const digits = phone.replace(/\D/g, '');
+            const last10 = digits.slice(-10);
+
+            const result = await pool.query(
+                `SELECT user_id, name, role, phone
+                 FROM users
+                 WHERE REGEXP_REPLACE(phone, '\\D', '', 'g') LIKE '%' || $1`,
+                [last10]
+            );
+
+            if (result.rowCount === 0) {
+                return { content: [{ type: 'text', text: JSON.stringify({ found: false, error: 'No user found with this phone number. Ensure the phone is saved in the user profile.' }) }] };
+            }
+
+            const user = result.rows[0];
+            return { content: [{ type: 'text', text: JSON.stringify({ found: true, userId: user.user_id, name: user.name, role: user.role, phone: user.phone }, null, 2) }] };
+        }
+    );
+
+    server.tool(
+        'get_all_user_phones',
+        'Get a list of all employees with their phone numbers. Used by the cron job to send WhatsApp reminders. Only returns users who have a phone number registered.',
+        {},
+        async () => {
+            const result = await pool.query(
+                `SELECT user_id, name, role, phone
+                 FROM users
+                 WHERE phone IS NOT NULL AND phone != ''
+                 ORDER BY name`
+            );
+            return { content: [{ type: 'text', text: JSON.stringify({ count: result.rowCount, users: result.rows }, null, 2) }] };
+        }
+    );
+
+
+    // ═══════════════════════════════════════════════════════════════
+    //  ATTENDANCE WRITE DOMAIN (WhatsApp check-in/out)
+    // ═══════════════════════════════════════════════════════════════
+
+    server.tool(
+        'mark_attendance',
+        'Check in or check out an employee for today. Use isCheckOut=false (or omit) for check-in. Use isCheckOut=true for check-out. Handles all business logic: duplicate detection, early clock-out tracking, and auto half-day leave generation for shifts under 4 hours.',
+        {
+            userId: z.string().describe('Employee user ID (email)'),
+            isCheckOut: z.boolean().optional().describe('true = check out, false/omitted = check in')
+        },
+        async ({ userId, isCheckOut }) => {
+            const today = new Date().toISOString().slice(0, 10);
+
+            if (!isCheckOut) {
+                // ── CHECK-IN ──
+                const result = await pool.query(
+                    `INSERT INTO attendance (user_id, date, check_in_time, status)
+                     VALUES ($1, $2, NOW(), 'working')
+                     ON CONFLICT (user_id, date) DO NOTHING
+                     RETURNING user_id, date, check_in_time, status`,
+                    [userId, today]
+                );
+
+                if (result.rowCount === 0) {
+                    // Already checked in today
+                    const existing = await pool.query(
+                        `SELECT check_in_time, check_out_time, status FROM attendance WHERE user_id = $1 AND date = $2`,
+                        [userId, today]
+                    );
+                    const rec = existing.rows[0];
+                    return { content: [{ type: 'text', text: JSON.stringify({
+                        success: false,
+                        message: 'Already checked in today',
+                        checkInTime: rec.check_in_time,
+                        checkOutTime: rec.check_out_time,
+                        status: rec.status
+                    }, null, 2) }] };
+                }
+
+                return { content: [{ type: 'text', text: JSON.stringify({
+                    success: true,
+                    message: `Checked in successfully at ${new Date().toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata' })}`,
+                    record: result.rows[0]
+                }, null, 2) }] };
+
+            } else {
+                // ── CHECK-OUT (transactional) ──
+                const client = await pool.connect();
+                try {
+                    await client.query('BEGIN');
+
+                    const attRes = await client.query(
+                        `SELECT check_in_time, check_out_time FROM attendance WHERE user_id = $1 AND date = $2 FOR UPDATE`,
+                        [userId, today]
+                    );
+
+                    if (attRes.rowCount === 0) {
+                        await client.query('ROLLBACK');
+                        return { content: [{ type: 'text', text: JSON.stringify({ success: false, error: 'No check-in found for today. Please check in first.' }) }] };
+                    }
+
+                    const record = attRes.rows[0];
+                    if (record.check_out_time) {
+                        await client.query('ROLLBACK');
+                        return { content: [{ type: 'text', text: JSON.stringify({ success: false, message: 'Already checked out today', checkOutTime: record.check_out_time }) }] };
+                    }
+
+                    const checkInTime = new Date(record.check_in_time);
+                    const now = new Date();
+                    const hoursWorked = (now - checkInTime) / (1000 * 60 * 60);
+                    let newStatus = 'completed';
+                    let extraMessage = '';
+
+                    if (hoursWorked < 4) {
+                        // Auto-generate Half Day Leave
+                        await client.query(
+                            `INSERT INTO leave_requests (user_id, type, start_date, end_date, reason, status)
+                             VALUES ($1, $2, $3, $4, $5, $6)`,
+                            [userId, 'Casual Leave (Half Day)', today, today, 'Auto-generated Short Shift (< 4 hours)', 'pending']
+                        );
+                        extraMessage = ' ⚠️ Short shift detected (< 4h). A half-day leave request has been auto-generated.';
+                    } else if (hoursWorked < 8) {
+                        newStatus = 'pending_early_clockout';
+                        extraMessage = ' ⏰ Early clock-out detected (< 8h). Pending admin approval.';
+                    }
+
+                    await client.query(
+                        `UPDATE attendance SET check_out_time = NOW(), status = $3 WHERE user_id = $1 AND date = $2`,
+                        [userId, today, newStatus]
+                    );
+
+                    await client.query('COMMIT');
+
+                    return { content: [{ type: 'text', text: JSON.stringify({
+                        success: true,
+                        message: `Checked out successfully. Hours worked: ${hoursWorked.toFixed(2)}.${extraMessage}`,
+                        hoursWorked: hoursWorked.toFixed(2),
+                        status: newStatus
+                    }, null, 2) }] };
+
+                } catch (txnErr) {
+                    await client.query('ROLLBACK');
+                    return { content: [{ type: 'text', text: JSON.stringify({ success: false, error: 'Check-out failed: ' + txnErr.message }) }] };
+                } finally {
+                    client.release();
+                }
+            }
+        }
+    );
 }
 
 module.exports = { registerTools };

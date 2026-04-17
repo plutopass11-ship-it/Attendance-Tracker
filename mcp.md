@@ -36,7 +36,7 @@ mcp-server/
 ├── Dockerfile         # Container build definition
 ├── index.js           # Express + SSE transport entry point
 ├── db.js              # PostgreSQL connection pool
-├── tools.js           # All MCP Tool definitions (16 tools across 4 domains)
+├── tools.js           # All MCP Tool definitions (19 tools across 6 domains)
 └── resources.js       # All MCP Resource definitions (4 resources)
 ```
 
@@ -64,7 +64,7 @@ http://192.168.1.60:3500/mcp/health
 
 ---
 
-## Available Tools (16)
+## Available Tools (19)
 
 ### Attendance Domain
 | Tool | Description |
@@ -97,6 +97,17 @@ http://192.168.1.60:3500/mcp/health
 |---|---|
 | `list_holidays` | All holidays (public + optional) |
 | `get_upcoming_holidays` | Holidays in the next N days |
+
+### WhatsApp Identity Domain
+| Tool | Description |
+|---|---|
+| `lookup_user_by_phone` | Find employee by phone number (WhatsApp sender → user_id) |
+| `get_all_user_phones` | List all employees with registered phone numbers |
+
+### Attendance Write Domain
+| Tool | Description |
+|---|---|
+| `mark_attendance` | Check in or check out an employee (with full business logic) |
 
 ## Available Resources (4)
 

@@ -52,6 +52,7 @@ services:
       KITSU_URL: http://cgwire:80
       KITSU_ADMIN_EMAIL: ${KITSU_ADMIN_EMAIL}
       KITSU_ADMIN_PASSWORD: ${KITSU_ADMIN_PASSWORD}
+      N8N_WEBHOOK_URL: ${N8N_WEBHOOK_URL:-}
     networks:
       - default
       - kitsu
