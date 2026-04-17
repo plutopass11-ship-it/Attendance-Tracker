@@ -1,0 +1,426 @@
+const { z } = require('zod');
+const { pool } = require('./db');
+
+/**
+ * Register all MCP Tools on the given McpServer instance.
+ * Tools are discrete actions an AI agent can execute.
+ *
+ * HOW TO ADD A NEW TOOL:
+ * 1. Call server.tool(name, description, schema, handler)
+ *    - name: lowercase_snake_case identifier
+ *    - description: clear sentence the AI reads to decide when to use this tool
+ *    - schema: Zod object defining required/optional parameters
+ *    - handler: async (params) => { return { content: [{ type: 'text', text: '...' }] } }
+ * 2. The MCP client auto-discovers it. No wiring needed.
+ */
+function registerTools(server) {
+
+    // ═══════════════════════════════════════════════════════════════
+    //  ATTENDANCE DOMAIN
+    // ═══════════════════════════════════════════════════════════════
+
+    server.tool(
+        'get_attendance_today',
+        'Get live attendance status for all employees today, or a specific employee if userId is provided. Returns check-in/out times, status (working/completed/pending_early_clockout/absent), and hours worked.',
+        { userId: z.string().optional().describe('Optional employee user ID (email). If omitted, returns all employees.') },
+        async ({ userId }) => {
+            const today = new Date().toISOString().slice(0, 10);
+            let query, params;
+
+            if (userId) {
+                query = `
+                    SELECT a.user_id, u.name, a.check_in_time, a.check_out_time, a.status,
+                           EXTRACT(EPOCH FROM (COALESCE(a.check_out_time, NOW()) - a.check_in_time)) / 3600 AS hours_worked
+                    FROM attendance a
+                    JOIN users u ON u.user_id = a.user_id
+                    WHERE a.date = $1 AND a.user_id = $2`;
+                params = [today, userId];
+            } else {
+                query = `
+                    SELECT a.user_id, u.name, a.check_in_time, a.check_out_time, a.status,
+                           EXTRACT(EPOCH FROM (COALESCE(a.check_out_time, NOW()) - a.check_in_time)) / 3600 AS hours_worked
+                    FROM attendance a
+                    JOIN users u ON u.user_id = a.user_id
+                    WHERE a.date = $1
+                    ORDER BY a.check_in_time ASC`;
+                params = [today];
+            }
+
+            const result = await pool.query(query, params);
+            const records = result.rows.map(r => ({
+                ...r,
+                hours_worked: r.hours_worked ? parseFloat(r.hours_worked).toFixed(2) : null
+            }));
+
+            return { content: [{ type: 'text', text: JSON.stringify({ date: today, count: records.length, records }, null, 2) }] };
+        }
+    );
+
+    server.tool(
+        'get_attendance_by_date',
+        'Get attendance records for a specific date. Optionally filter by a single employee.',
+        {
+            date: z.string().describe('Date in YYYY-MM-DD format'),
+            userId: z.string().optional().describe('Optional employee user ID to filter by')
+        },
+        async ({ date, userId }) => {
+            let query = `
+                SELECT a.user_id, u.name, a.check_in_time, a.check_out_time, a.status,
+                       EXTRACT(EPOCH FROM (COALESCE(a.check_out_time, a.check_in_time) - a.check_in_time)) / 3600 AS hours_worked
+                FROM attendance a
+                JOIN users u ON u.user_id = a.user_id
+                WHERE a.date = $1`;
+            const params = [date];
+
+            if (userId) {
+                query += ' AND a.user_id = $2';
+                params.push(userId);
+            }
+            query += ' ORDER BY a.check_in_time ASC';
+
+            const result = await pool.query(query, params);
+            const records = result.rows.map(r => ({
+                ...r,
+                hours_worked: r.hours_worked ? parseFloat(r.hours_worked).toFixed(2) : null
+            }));
+
+            return { content: [{ type: 'text', text: JSON.stringify({ date, count: records.length, records }, null, 2) }] };
+        }
+    );
+
+    server.tool(
+        'get_user_worktime',
+        'Calculate total hours worked by a specific employee on a specific date. Returns check-in, check-out, and computed duration.',
+        {
+            userId: z.string().describe('Employee user ID (email)'),
+            date: z.string().describe('Date in YYYY-MM-DD format')
+        },
+        async ({ userId, date }) => {
+            const result = await pool.query(
+                `SELECT check_in_time, check_out_time, status,
+                        EXTRACT(EPOCH FROM (COALESCE(check_out_time, NOW()) - check_in_time)) / 3600 AS hours_worked
+                 FROM attendance WHERE user_id = $1 AND date = $2`,
+                [userId, date]
+            );
+
+            if (result.rowCount === 0) {
+                return { content: [{ type: 'text', text: JSON.stringify({ error: 'No attendance record found for this user on this date' }) }] };
+            }
+
+            const r = result.rows[0];
+            return {
+                content: [{
+                    type: 'text',
+                    text: JSON.stringify({
+                        userId, date,
+                        checkIn: r.check_in_time,
+                        checkOut: r.check_out_time,
+                        status: r.status,
+                        hoursWorked: parseFloat(r.hours_worked).toFixed(2)
+                    }, null, 2)
+                }]
+            };
+        }
+    );
+
+    server.tool(
+        'get_pending_clockouts',
+        'List all employees who have a pending early clock-out awaiting admin approval. Use this to review who needs approval.',
+        {},
+        async () => {
+            const result = await pool.query(`
+                SELECT a.user_id, u.name, a.date, a.check_in_time, a.check_out_time,
+                       EXTRACT(EPOCH FROM (a.check_out_time - a.check_in_time)) / 3600 AS hours_worked
+                FROM attendance a
+                JOIN users u ON u.user_id = a.user_id
+                WHERE a.status = 'pending_early_clockout'
+                ORDER BY a.date DESC
+            `);
+
+            const records = result.rows.map(r => ({
+                ...r,
+                hours_worked: parseFloat(r.hours_worked).toFixed(2)
+            }));
+
+            return { content: [{ type: 'text', text: JSON.stringify({ count: records.length, pendingClockouts: records }, null, 2) }] };
+        }
+    );
+
+    server.tool(
+        'approve_early_clockout',
+        'Approve an early clock-out request for an employee. This marks their day as completed.',
+        {
+            userId: z.string().describe('Employee user ID (email)'),
+            date: z.string().describe('Date of the attendance record (YYYY-MM-DD)')
+        },
+        async ({ userId, date }) => {
+            const result = await pool.query(
+                `UPDATE attendance SET status = 'completed' 
+                 WHERE user_id = $1 AND date = $2 AND status = 'pending_early_clockout'
+                 RETURNING user_id, date, status`,
+                [userId, date]
+            );
+
+            if (result.rowCount === 0) {
+                return { content: [{ type: 'text', text: JSON.stringify({ success: false, error: 'No pending early clock-out found for this user on this date' }) }] };
+            }
+
+            return { content: [{ type: 'text', text: JSON.stringify({ success: true, message: `Early clock-out approved for ${userId} on ${date}`, record: result.rows[0] }, null, 2) }] };
+        }
+    );
+
+    server.tool(
+        'reject_early_clockout',
+        'Reject an early clock-out request. This clears their check-out time and puts them back on the clock as "working".',
+        {
+            userId: z.string().describe('Employee user ID (email)'),
+            date: z.string().describe('Date of the attendance record (YYYY-MM-DD)')
+        },
+        async ({ userId, date }) => {
+            const result = await pool.query(
+                `UPDATE attendance SET status = 'working', check_out_time = NULL 
+                 WHERE user_id = $1 AND date = $2 AND status = 'pending_early_clockout'
+                 RETURNING user_id, date, status`,
+                [userId, date]
+            );
+
+            if (result.rowCount === 0) {
+                return { content: [{ type: 'text', text: JSON.stringify({ success: false, error: 'No pending early clock-out found for this user on this date' }) }] };
+            }
+
+            return { content: [{ type: 'text', text: JSON.stringify({ success: true, message: `Early clock-out rejected for ${userId} on ${date}. Employee is back on the clock.`, record: result.rows[0] }, null, 2) }] };
+        }
+    );
+
+
+    // ═══════════════════════════════════════════════════════════════
+    //  LEAVE DOMAIN
+    // ═══════════════════════════════════════════════════════════════
+
+    server.tool(
+        'get_pending_leaves',
+        'List all pending leave requests awaiting admin review. Returns employee name, leave type, dates, and reason.',
+        {},
+        async () => {
+            const result = await pool.query(`
+                SELECT lr.id, lr.user_id, u.name as user_name, lr.type,
+                       CAST(lr.start_date AS text) as start_date,
+                       CAST(lr.end_date AS text) as end_date,
+                       lr.reason, lr.created_at
+                FROM leave_requests lr
+                JOIN users u ON u.user_id = lr.user_id
+                WHERE lr.status = 'pending'
+                ORDER BY lr.created_at DESC
+            `);
+            return { content: [{ type: 'text', text: JSON.stringify({ count: result.rowCount, requests: result.rows }, null, 2) }] };
+        }
+    );
+
+    server.tool(
+        'get_leave_balance',
+        'Get the remaining leave balance for a specific employee. Shows quota, used, and remaining for each leave type.',
+        { userId: z.string().describe('Employee user ID (email)') },
+        async ({ userId }) => {
+            const policies = await pool.query('SELECT type, label, quota, cycle FROM leave_policies');
+            const used = await pool.query(
+                `SELECT type, COUNT(*) as count,
+                        SUM(CASE WHEN type LIKE '%(Half Day)%' THEN 0.5 
+                            ELSE GREATEST(1, (end_date - start_date) + 1) END) as days_used
+                 FROM leave_requests 
+                 WHERE user_id = $1 AND status = 'approved'
+                 GROUP BY type`,
+                [userId]
+            );
+
+            const balances = policies.rows.map(p => {
+                // Match by exact type or by label prefix (e.g., 'Casual Leave (Half Day)' matches 'Casual Leave')
+                const usedEntry = used.rows.find(u => 
+                    u.type === p.label || u.type.startsWith(p.label)
+                );
+                const daysUsed = usedEntry ? parseFloat(usedEntry.days_used) : 0;
+                return {
+                    type: p.label,
+                    quota: p.quota,
+                    cycle: p.cycle,
+                    used: daysUsed,
+                    remaining: Math.max(0, p.quota - daysUsed)
+                };
+            });
+
+            return { content: [{ type: 'text', text: JSON.stringify({ userId, balances }, null, 2) }] };
+        }
+    );
+
+    server.tool(
+        'approve_leave',
+        'Approve a pending leave request by its ID.',
+        { leaveId: z.string().describe('The numeric ID of the leave request to approve') },
+        async ({ leaveId }) => {
+            const result = await pool.query(
+                `UPDATE leave_requests SET status = 'approved' WHERE id = $1 AND status = 'pending'
+                 RETURNING id, user_id, type, CAST(start_date AS text) as start_date, CAST(end_date AS text) as end_date`,
+                [leaveId]
+            );
+
+            if (result.rowCount === 0) {
+                return { content: [{ type: 'text', text: JSON.stringify({ success: false, error: 'No pending leave request found with this ID' }) }] };
+            }
+
+            return { content: [{ type: 'text', text: JSON.stringify({ success: true, message: 'Leave approved', record: result.rows[0] }, null, 2) }] };
+        }
+    );
+
+    server.tool(
+        'reject_leave',
+        'Reject a pending leave request by its ID.',
+        { leaveId: z.string().describe('The numeric ID of the leave request to reject') },
+        async ({ leaveId }) => {
+            const result = await pool.query(
+                `UPDATE leave_requests SET status = 'rejected' WHERE id = $1 AND status = 'pending'
+                 RETURNING id, user_id, type, CAST(start_date AS text) as start_date, CAST(end_date AS text) as end_date`,
+                [leaveId]
+            );
+
+            if (result.rowCount === 0) {
+                return { content: [{ type: 'text', text: JSON.stringify({ success: false, error: 'No pending leave request found with this ID' }) }] };
+            }
+
+            return { content: [{ type: 'text', text: JSON.stringify({ success: true, message: 'Leave rejected', record: result.rows[0] }, null, 2) }] };
+        }
+    );
+
+    server.tool(
+        'submit_leave',
+        'Submit a leave request on behalf of an employee. This is an admin action — the leave is created with "pending" status by default.',
+        {
+            userId: z.string().describe('Employee user ID (email)'),
+            type: z.string().describe('Leave type (e.g., "Casual Leave", "Sick Leave", "Work From Home")'),
+            startDate: z.string().describe('Start date (YYYY-MM-DD)'),
+            endDate: z.string().describe('End date (YYYY-MM-DD)'),
+            reason: z.string().optional().describe('Reason for leave'),
+            autoApprove: z.boolean().optional().describe('If true, leave is created as approved (admin override). Defaults to false.')
+        },
+        async ({ userId, type, startDate, endDate, reason, autoApprove }) => {
+            const status = autoApprove ? 'approved' : 'pending';
+            const result = await pool.query(
+                `INSERT INTO leave_requests (user_id, type, start_date, end_date, reason, status)
+                 VALUES ($1, $2, $3, $4, $5, $6)
+                 RETURNING id, user_id, type, CAST(start_date AS text) as start_date, CAST(end_date AS text) as end_date, status`,
+                [userId, type, startDate, endDate, reason || 'Submitted via MCP', status]
+            );
+
+            return { content: [{ type: 'text', text: JSON.stringify({ success: true, message: `Leave request created (${status})`, record: result.rows[0] }, null, 2) }] };
+        }
+    );
+
+    server.tool(
+        'get_employees_on_leave',
+        'Get a list of employees who are on approved leave on a specific date. Defaults to today if no date provided.',
+        { date: z.string().optional().describe('Date to check (YYYY-MM-DD). Defaults to today.') },
+        async ({ date }) => {
+            const checkDate = date || new Date().toISOString().slice(0, 10);
+            const result = await pool.query(`
+                SELECT lr.user_id, u.name, lr.type, 
+                       CAST(lr.start_date AS text) as start_date,
+                       CAST(lr.end_date AS text) as end_date, lr.reason
+                FROM leave_requests lr
+                JOIN users u ON u.user_id = lr.user_id
+                WHERE lr.status = 'approved' AND lr.start_date <= $1 AND lr.end_date >= $1
+                ORDER BY u.name
+            `, [checkDate]);
+
+            return { content: [{ type: 'text', text: JSON.stringify({ date: checkDate, count: result.rowCount, employees: result.rows }, null, 2) }] };
+        }
+    );
+
+
+    // ═══════════════════════════════════════════════════════════════
+    //  USER DOMAIN
+    // ═══════════════════════════════════════════════════════════════
+
+    server.tool(
+        'list_users',
+        'List all registered employees in the attendance tracker system. Shows their name, ID, and role.',
+        {},
+        async () => {
+            const result = await pool.query(
+                'SELECT user_id, name, role, created_at FROM users ORDER BY name'
+            );
+            return { content: [{ type: 'text', text: JSON.stringify({ count: result.rowCount, users: result.rows }, null, 2) }] };
+        }
+    );
+
+    server.tool(
+        'get_user_info',
+        'Get detailed information about a specific employee, including their attendance today and leave balances.',
+        { userId: z.string().describe('Employee user ID (email)') },
+        async ({ userId }) => {
+            const today = new Date().toISOString().slice(0, 10);
+            
+            const [user, todayAtt, recentLeaves] = await Promise.all([
+                pool.query('SELECT user_id, name, role, created_at FROM users WHERE user_id = $1', [userId]),
+                pool.query('SELECT check_in_time, check_out_time, status FROM attendance WHERE user_id = $1 AND date = $2', [userId, today]),
+                pool.query(
+                    `SELECT id, type, CAST(start_date AS text) as start_date, CAST(end_date AS text) as end_date, status, reason
+                     FROM leave_requests WHERE user_id = $1 ORDER BY created_at DESC LIMIT 10`,
+                    [userId]
+                )
+            ]);
+
+            if (user.rowCount === 0) {
+                return { content: [{ type: 'text', text: JSON.stringify({ error: 'User not found' }) }] };
+            }
+
+            return {
+                content: [{
+                    type: 'text',
+                    text: JSON.stringify({
+                        user: user.rows[0],
+                        todayAttendance: todayAtt.rows[0] || null,
+                        recentLeaves: recentLeaves.rows
+                    }, null, 2)
+                }]
+            };
+        }
+    );
+
+
+    // ═══════════════════════════════════════════════════════════════
+    //  HOLIDAY DOMAIN
+    // ═══════════════════════════════════════════════════════════════
+
+    server.tool(
+        'list_holidays',
+        'List all holidays configured in the system (both public and optional).',
+        {},
+        async () => {
+            const result = await pool.query(
+                'SELECT name, CAST(date AS text) as date, type FROM holidays ORDER BY date ASC'
+            );
+            return { content: [{ type: 'text', text: JSON.stringify({ count: result.rowCount, holidays: result.rows }, null, 2) }] };
+        }
+    );
+
+    server.tool(
+        'get_upcoming_holidays',
+        'Get holidays coming up in the next N days. Defaults to 30 days.',
+        { days: z.number().optional().describe('Number of days to look ahead. Default: 30') },
+        async ({ days }) => {
+            const lookAhead = days || 30;
+            const today = new Date().toISOString().slice(0, 10);
+            const futureDate = new Date();
+            futureDate.setDate(futureDate.getDate() + lookAhead);
+            const futureDateStr = futureDate.toISOString().slice(0, 10);
+
+            const result = await pool.query(
+                `SELECT name, CAST(date AS text) as date, type FROM holidays 
+                 WHERE date >= $1 AND date <= $2 ORDER BY date ASC`,
+                [today, futureDateStr]
+            );
+
+            return { content: [{ type: 'text', text: JSON.stringify({ from: today, to: futureDateStr, count: result.rowCount, holidays: result.rows }, null, 2) }] };
+        }
+    );
+}
+
+module.exports = { registerTools };
