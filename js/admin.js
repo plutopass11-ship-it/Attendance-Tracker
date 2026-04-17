@@ -40,6 +40,13 @@ window.AdminUI = {
         }
     },
     
+    approveEarlyClockOut: async function(userId, date, action) {
+        if(!confirm(`Are you sure you want to ${action} early clock-out?`)) return;
+        await Store.approveEarlyClockout(userId, date, action);
+        await Store.syncWithBackend();
+        this.renderDashboard();
+    },
+    
     setupEventListeners: function() {
         // Nav switching
         const adminNavs = document.querySelectorAll('.admin-nav-item');
@@ -482,9 +489,35 @@ window.AdminUI = {
             
             if(record) {
                 checkIn = record.checkInTime;
-                if(record.checkOutTime) {
+                if(record.status === 'pending_early_clockout') {
+                    statusBadge = '<span class="badge warning" style="background:#f59e0b;color:white;">Pending Approval</span>';
+                    checkOut = record.checkOutTime + ` <br><div style="margin-top:6px;"><button class="btn-primary" style="font-size:11px;padding:4px 8px;border-radius:4px;" onclick="window.AdminUI.approveEarlyClockOut('${user.id}', '${today}', 'approve')">Approve</button> <button class="btn-danger" style="background:#ef4444;color:white;border:none;font-size:11px;padding:4px 8px;border-radius:4px;cursor:pointer;" onclick="window.AdminUI.approveEarlyClockOut('${user.id}', '${today}', 'reject')">Reject</button></div>`;
+                } else if(record.checkOutTime && record.status === 'completed') {
                     statusBadge = '<span class="badge approved">Completed</span>';
                     checkOut = record.checkOutTime;
+                    
+                    // Display total hours calculated based on the UI times
+                    try {
+                        const inTimeParts = record.checkInTime.match(/(\d+):(\d+)\s*([a-zA-Z]*)/);
+                        const outTimeParts = record.checkOutTime.match(/(\d+):(\d+)\s*([a-zA-Z]*)/);
+                        if (inTimeParts && outTimeParts) {
+                            let inHrs = parseInt(inTimeParts[1], 10), inMins = parseInt(inTimeParts[2], 10);
+                            let outHrs = parseInt(outTimeParts[1], 10), outMins = parseInt(outTimeParts[2], 10);
+                            if (inTimeParts[3]?.toLowerCase() === 'pm' && inHrs < 12) inHrs += 12;
+                            if (outTimeParts[3]?.toLowerCase() === 'pm' && outHrs < 12) outHrs += 12;
+                            if (inTimeParts[3]?.toLowerCase() === 'am' && inHrs === 12) inHrs = 0;
+                            if (outTimeParts[3]?.toLowerCase() === 'am' && outHrs === 12) outHrs = 0;
+                            
+                            const inMinTotal = inHrs * 60 + inMins;
+                            const outMinTotal = outHrs * 60 + outMins;
+                            const diffMins = outMinTotal - inMinTotal;
+                            if (diffMins > 0) {
+                                const dh = Math.floor(diffMins / 60);
+                                const dm = diffMins % 60;
+                                checkOut += ` <br><small style="color:var(--text-muted)">Total: ${dh}h ${dm}m</small>`;
+                            }
+                        }
+                    } catch(e) {}
                 } else {
                     statusBadge = '<span class="badge pending">Working</span>';
                 }

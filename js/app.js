@@ -159,8 +159,10 @@ document.addEventListener('DOMContentLoaded', () => {
         const todayStr = getTodayDateString();
         const record = Store.getAttendanceToday(currentUser.id, todayStr);
         
-        mainActionBtn.classList.remove('check-in', 'check-out', 'completed');
-        statusDot.classList.remove('unverified', 'verified', 'completed');
+        mainActionBtn.classList.remove('check-in', 'check-out', 'completed', 'disabled');
+        statusDot.classList.remove('unverified', 'verified', 'completed', 'warning', 'pending');
+        mainActionBtn.style.pointerEvents = "auto";
+        mainActionBtn.style.opacity = "1";
         
         if (!record) {
             // Not checked in yet
@@ -182,6 +184,20 @@ document.addEventListener('DOMContentLoaded', () => {
             attendanceDetails.classList.remove('hidden');
             valCheckIn.textContent = record.checkInTime;
             valCheckOut.textContent = "--:--";
+        } else if (record.status === 'pending_early_clockout') {
+            // Pending Early Checkout
+            statusText.textContent = "Pending Approval";
+            statusDot.classList.add('warning', 'pending');
+            statusDot.style.background = "#f59e0b"; // Orange fallback
+            
+            mainActionBtn.classList.add('disabled');
+            mainActionBtn.style.pointerEvents = "none";
+            mainActionBtn.style.background = "#334155"; // Greyed out
+            mainActionLabel.textContent = "Pending";
+            
+            attendanceDetails.classList.remove('hidden');
+            valCheckIn.textContent = record.checkInTime;
+            valCheckOut.textContent = record.checkOutTime;
         } else {
             // Checked out (day completed)
             statusText.textContent = "Day Completed";
@@ -587,7 +603,7 @@ document.addEventListener('DOMContentLoaded', () => {
         renderUserCalendar();
     });
 
-    mainActionBtn.addEventListener('click', () => {
+    mainActionBtn.addEventListener('click', async () => {
         const todayStr = getTodayDateString();
         const timeStr = getCurrentTimeString();
         const record = Store.getAttendanceToday(currentUser.id, todayStr);
@@ -598,7 +614,8 @@ document.addEventListener('DOMContentLoaded', () => {
                 userId: currentUser.id,
                 date: todayStr,
                 checkInTime: timeStr,
-                checkOutTime: null
+                checkOutTime: null,
+                status: 'working'
             });
             updateAttendanceUI();
             
@@ -606,10 +623,55 @@ document.addEventListener('DOMContentLoaded', () => {
             mainActionBtn.style.transform = "scale(0.9)";
             setTimeout(() => mainActionBtn.style.transform = "none", 150);
             
-        } else if (!record.checkOutTime) {
+        } else if (!record.checkOutTime || record.status === 'working') {
             // Check Out
+            
+            // Disable button to prevent double-clicks
+            const originalLabel = mainActionLabel.textContent;
+            mainActionLabel.textContent = "Processing...";
+            mainActionBtn.style.pointerEvents = "none";
+            mainActionBtn.style.opacity = "0.7";
+
+            // Local Calculation
+            const now = new Date();
+            // Parse checkInTime (e.g. "10:15", "09:30 PM")
+            const inTimeParts = record.checkInTime.match(/(\d+):(\d+)\s*([a-zA-Z]*)/);
+            let checkInDate = new Date();
+            if (inTimeParts) {
+                let hrs = parseInt(inTimeParts[1], 10);
+                const mins = parseInt(inTimeParts[2], 10);
+                const ampm = inTimeParts[3]?.toLowerCase();
+                if (ampm === 'pm' && hrs < 12) hrs += 12;
+                if (ampm === 'am' && hrs === 12) hrs = 0;
+                checkInDate.setHours(hrs, mins, 0, 0);
+            }
+            const hoursWorked = (now - checkInDate) / (1000 * 60 * 60);
+
+            if (hoursWorked < 4) {
+               if(!confirm("You've worked less than 4 hours. Proceeding will automatically log a Half-Day Leave request for today. Continue?")) {
+                   mainActionLabel.textContent = originalLabel;
+                   mainActionBtn.style.pointerEvents = "auto";
+                   mainActionBtn.style.opacity = "1";
+                   return;
+               }
+            } else if (hoursWorked < 8) {
+               if(!confirm("You've worked less than 8 hours. Checking out will require Admin Approval. Continue?")) {
+                   mainActionLabel.textContent = originalLabel;
+                   mainActionBtn.style.pointerEvents = "auto";
+                   mainActionBtn.style.opacity = "1";
+                   return;
+               }
+            }
+            
             record.checkOutTime = timeStr;
-            Store.updateAttendance(record);
+            await Store.updateAttendance(record);
+            
+            // Restore button properties (UI update will overwrite)
+            mainActionBtn.style.pointerEvents = "auto";
+            mainActionBtn.style.opacity = "1";
+            
+            // Re-fetch store cleanly to grab the newly assigned status from the backend
+            await Store.syncWithBackend();
             updateAttendanceUI();
         }
     });

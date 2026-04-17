@@ -208,7 +208,8 @@ app.get('/api/sync/store', async (req, res) => {
     `);
     const attendance = await pool.query(`
       SELECT user_id as "userId", CAST(date as text) as "date", 
-             check_in_time as "checkInTime", check_out_time as "checkOutTime" 
+             check_in_time as "checkInTime", check_out_time as "checkOutTime",
+             status
       FROM attendance;
     `);
 
@@ -232,9 +233,6 @@ app.get('/api/sync/store', async (req, res) => {
   } catch (err) {
     console.error('Store fetch error:', err);
     res.status(500).json({ error: 'Database fetch error', details: err.message });
-  }
-});
-
 
 // 3. Mark Attendance (Check in/out)
 app.post('/api/attendance', async (req, res) => {
@@ -242,15 +240,52 @@ app.post('/api/attendance', async (req, res) => {
   try {
     if (!isCheckOut) {
       await pool.query(
-        `INSERT INTO attendance (user_id, date, check_in_time) VALUES ($1, $2, NOW()) 
+        `INSERT INTO attendance (user_id, date, check_in_time, status) VALUES ($1, $2, NOW(), 'working') 
          ON CONFLICT (user_id, date) DO NOTHING`,
         [userId, date]
       );
     } else {
-      await pool.query(
-        `UPDATE attendance SET check_out_time = NOW() WHERE user_id = $1 AND date = $2`,
-        [userId, date]
-      );
+      const client = await pool.connect();
+      try {
+          await client.query('BEGIN');
+          const attRes = await client.query(`SELECT check_in_time, check_out_time FROM attendance WHERE user_id = $1 AND date = $2 FOR UPDATE`, [userId, date]);
+          
+          if (attRes.rowCount > 0) {
+              const record = attRes.rows[0];
+              if (record.check_out_time) {
+                  await client.query('ROLLBACK');
+                  return res.json({ success: true, message: 'Already checked out' });
+              }
+              
+              const checkInTime = new Date(record.check_in_time);
+              const now = new Date();
+              const hoursWorked = (now - checkInTime) / (1000 * 60 * 60);
+              
+              let newStatus = 'completed';
+              
+              if (hoursWorked < 4) {
+                 // Auto-generate Half Day Leave
+                 await client.query(
+                    `INSERT INTO leave_requests (user_id, type, start_date, end_date, reason, status)
+                     VALUES ($1, $2, $3, $4, $5, $6)`,
+                     [userId, 'Casual Leave (Half Day)', date, date, 'Auto-generated Short Shift (< 4 hours)', 'pending'] 
+                 );
+              } else if (hoursWorked < 8) {
+                 newStatus = 'pending_early_clockout';
+              }
+              
+              await client.query(
+                  `UPDATE attendance SET check_out_time = NOW(), status = $3 WHERE user_id = $1 AND date = $2`,
+                  [userId, date, newStatus]
+              );
+          }
+          await client.query('COMMIT');
+      } catch(txnErr) {
+          await client.query('ROLLBACK');
+          throw txnErr;
+      } finally {
+          client.release();
+      }
     }
     res.json({ success: true });
   } catch (err) {
@@ -259,10 +294,26 @@ app.post('/api/attendance', async (req, res) => {
   }
 });
 
+// 3b. Approve/Reject Early Clock-Out
+app.put('/api/attendance/approve', async (req, res) => {
+    const { userId, date, action } = req.body;
+    try {
+        let q = `UPDATE attendance SET status = $1 WHERE user_id = $2 AND date = $3`;
+        let params = ['completed', userId, date];
+        if (action === 'reject') {
+           q = `UPDATE attendance SET status = $1, check_out_time = NULL WHERE user_id = $2 AND date = $3`;
+           params = ['working', userId, date];
+        }
+        await pool.query(q, params);
+        res.json({ success: true });
+    } catch(err) {
+        console.error(err);
+        res.status(500).json({ success: false });
+    }
+});
 
 // 4. Submit Leave Request  (status stored lowercase for DB constraint)
-app.post('/api/leaves', async (req, res) => {
-    const { userId, type, startDate, endDate, reason, status, isHalfDay } = req.body;
+const { userId, type, startDate, endDate, reason, status, isHalfDay } = req.body;
     try {
         const dbStatus = (status || 'Pending').toLowerCase();
         await pool.query(
@@ -460,6 +511,10 @@ async function runMigrations() {
     try {
         if (await tableExists('leave_requests') && !(await columnExists('leave_requests', 'is_historical'))) {
             await pool.query('ALTER TABLE leave_requests ADD COLUMN is_historical BOOLEAN DEFAULT false;');
+        }
+        
+        if (await tableExists('attendance') && !(await columnExists('attendance', 'status'))) {
+            await pool.query("ALTER TABLE attendance ADD COLUMN status VARCHAR(30) DEFAULT 'working';");
         }
 
         if (await tableExists('leave_policies')) {

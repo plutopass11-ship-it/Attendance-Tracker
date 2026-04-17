@@ -137,6 +137,26 @@ const Store = {
             } catch (err) { console.error('Leave status sync error:', err); }
         }
     },
+    approveEarlyClockout: async (userId, date, action) => {
+        try {
+            await fetch('/api/attendance/approve', {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ userId, date, action })
+            });
+            // Also update local storage state temporarily
+            const data = Store.getAttendance();
+            const record = data.find(r => r.userId === userId && r.date === date);
+            if (record) {
+                if (action === 'approve') record.status = 'completed';
+                if (action === 'reject') {
+                    record.status = 'working';
+                    record.checkOutTime = null;
+                }
+                localStorage.setItem('attendance', JSON.stringify(data));
+            }
+        } catch (err) { console.error('Approval sync error:', err); }
+    },
     addUser: (userObj) => {
         const data = Store.getUsers();
         data.push(userObj);

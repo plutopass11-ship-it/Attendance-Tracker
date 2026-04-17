@@ -19,6 +19,7 @@ CREATE TABLE IF NOT EXISTS attendance (
     date DATE NOT NULL DEFAULT CURRENT_DATE,
     check_in_time TIMESTAMP,
     check_out_time TIMESTAMP,
+    status VARCHAR(30) DEFAULT 'working',
     UNIQUE(user_id, date)
 );
 
