@@ -8,30 +8,32 @@ const { registerResources } = require('./resources');
 const app = express();
 app.use(express.json());
 
-// ─── MCP Server Instance ────────────────────────────────────────
-const mcpServer = new McpServer({
-    name: 'attendance-tracker-mcp',
-    version: '1.0.0',
-    description: 'MCP Server for the Attendance Tracker — exposes attendance, leave, user, and holiday management tools for AI agents.'
-});
-
-// Register all tools and resources
-registerTools(mcpServer);
-registerResources(mcpServer);
-
 // ─── Session Management ─────────────────────────────────────────
-const transports = {};
+const sessions = {};
 
 // SSE endpoint — clients connect here to open a persistent stream
 app.get('/sse', async (req, res) => {
     console.log(`[MCP] New SSE connection from ${req.ip}`);
+    
+    // Create a fresh server instance per connection (SDK requirement)
+    const mcpServer = new McpServer({
+        name: 'attendance-tracker-mcp',
+        version: '1.0.0',
+        description: 'MCP Server for the Attendance Tracker — exposes attendance, leave, user, and holiday management tools for AI agents.'
+    });
+
+    // Register tools and resources to this session's server
+    registerTools(mcpServer);
+    registerResources(mcpServer);
+
     const transport = new SSEServerTransport('/messages', res);
-    transports[transport.sessionId] = transport;
+    sessions[transport.sessionId] = { transport, mcpServer };
 
     // Cleanup on disconnect
-    res.on('close', () => {
+    res.on('close', async () => {
         console.log(`[MCP] SSE session ${transport.sessionId} disconnected`);
-        delete transports[transport.sessionId];
+        try { await mcpServer.close(); } catch (e) {}
+        delete sessions[transport.sessionId];
     });
 
     await mcpServer.connect(transport);
@@ -40,13 +42,13 @@ app.get('/sse', async (req, res) => {
 // Messages endpoint — clients send JSON-RPC requests here
 app.post('/messages', async (req, res) => {
     const sessionId = req.query.sessionId;
-    const transport = transports[sessionId];
+    const session = sessions[sessionId];
 
-    if (!transport) {
+    if (!session) {
         return res.status(400).json({ error: 'Invalid or expired session ID. Reconnect via GET /sse.' });
     }
 
-    await transport.handlePostMessage(req, res, req.body);
+    await session.transport.handlePostMessage(req, res, req.body);
 });
 
 // ─── Health Check ────────────────────────────────────────────────
@@ -58,7 +60,7 @@ app.get('/health', async (req, res) => {
             status: 'healthy',
             server: 'attendance-tracker-mcp',
             version: '1.0.0',
-            activeSessions: Object.keys(transports).length,
+            activeSessions: Object.keys(sessions).length,
             uptime: process.uptime()
         });
     } catch (err) {
