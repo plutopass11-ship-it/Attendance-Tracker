@@ -233,6 +233,8 @@ app.get('/api/sync/store', async (req, res) => {
   } catch (err) {
     console.error('Store fetch error:', err);
     res.status(500).json({ error: 'Database fetch error', details: err.message });
+  }
+});
 
 // 3. Mark Attendance (Check in/out)
 app.post('/api/attendance', async (req, res) => {
@@ -313,7 +315,8 @@ app.put('/api/attendance/approve', async (req, res) => {
 });
 
 // 4. Submit Leave Request  (status stored lowercase for DB constraint)
-const { userId, type, startDate, endDate, reason, status, isHalfDay } = req.body;
+app.post('/api/leaves', async (req, res) => {
+    const { userId, type, startDate, endDate, reason, status, isHalfDay } = req.body;
     try {
         const dbStatus = (status || 'Pending').toLowerCase();
         await pool.query(
