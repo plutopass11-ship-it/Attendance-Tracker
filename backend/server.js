@@ -144,16 +144,17 @@ app.post('/api/auth/login', async (req, res) => {
   const fullName = `${kitsuUser.first_name || ''} ${kitsuUser.last_name || ''}`.trim();
   const role = ['admin', 'studio_manager'].includes(kitsuUser.role) ? 'admin' : 'user';
   const phone = kitsuUser.phone || null; // Sync phone from Kitsu for WhatsApp identity
+  const slackId = kitsuUser.notifications_slack_userid || null; // Sync Slack Member ID
 
   // Upsert user into purely local Postgres Database to sync them natively
   try {
     const result = await pool.query(
-      `INSERT INTO users (user_id, name, password, role, phone) 
-       VALUES ($1, $2, 'synced_from_kitsu', $3, $4)
+      `INSERT INTO users (user_id, name, password, role, phone, slack_id) 
+       VALUES ($1, $2, 'synced_from_kitsu', $3, $4, $5)
        ON CONFLICT (user_id) 
-       DO UPDATE SET name = $2, role = $3, phone = COALESCE($4, users.phone)
+       DO UPDATE SET name = $2, role = $3, phone = COALESCE($4, users.phone), slack_id = COALESCE($5, users.slack_id)
        RETURNING id, user_id, name, role`,
-      [email, fullName, role, phone]
+      [email, fullName, role, phone, slackId]
     );
 
     // Provide response directly mirroring Store.js output
@@ -579,6 +580,12 @@ async function runMigrations() {
         try {
             await pool.query('ALTER TABLE users DROP CONSTRAINT IF EXISTS users_phone_key;');
         } catch (e) { /* constraint doesn't exist, that's fine */ }
+
+        // Add slack_id column for Slack notifications
+        if (await tableExists('users') && !(await columnExists('users', 'slack_id'))) {
+            await pool.query('ALTER TABLE users ADD COLUMN slack_id VARCHAR(50);');
+            console.log('Added slack_id column to users table.');
+        }
 
         console.log('DB migrations completed.');
     } catch (err) {

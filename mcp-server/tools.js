@@ -367,7 +367,7 @@ function registerTools(server) {
         {},
         async () => {
             const result = await pool.query(
-                'SELECT user_id, name, role, phone, created_at FROM users ORDER BY name'
+                'SELECT user_id, name, role, phone, slack_id, created_at FROM users ORDER BY name'
             );
             return { content: [{ type: 'text', text: JSON.stringify({ count: result.rowCount, users: result.rows }, null, 2) }] };
         }
@@ -394,11 +394,13 @@ function registerTools(server) {
 
                 for (const p of persons) {
                     const phone = p.phone || null;
-                    if (!phone) continue; // Skip users without a phone number
+                    const slackId = p.notifications_slack_userid || null;
+                    
+                    if (!phone && !slackId) continue; // Skip if no contact info
 
                     const result = await pool.query(
-                        `UPDATE users SET phone = $2 WHERE user_id = $1 AND (phone IS NULL OR phone != $2)`,
-                        [p.email, phone]
+                        `UPDATE users SET phone = $2, slack_id = $3 WHERE user_id = $1 AND (phone IS NULL OR phone != $2 OR slack_id IS NULL OR slack_id != $3)`,
+                        [p.email, phone, slackId]
                     );
                     if (result.rowCount > 0) synced++;
                 }
