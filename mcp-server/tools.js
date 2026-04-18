@@ -340,11 +340,11 @@ function registerTools(server) {
 
     server.tool(
         'list_users',
-        'List all registered employees in the attendance tracker system. Shows their name, ID, and role.',
+        'List all registered employees in the attendance tracker system. Shows their name, ID, role, and phone number (if registered).',
         {},
         async () => {
             const result = await pool.query(
-                'SELECT user_id, name, role, created_at FROM users ORDER BY name'
+                'SELECT user_id, name, role, phone, created_at FROM users ORDER BY name'
             );
             return { content: [{ type: 'text', text: JSON.stringify({ count: result.rowCount, users: result.rows }, null, 2) }] };
         }
@@ -358,7 +358,7 @@ function registerTools(server) {
             const today = new Date().toISOString().slice(0, 10);
             
             const [user, todayAtt, recentLeaves] = await Promise.all([
-                pool.query('SELECT user_id, name, role, created_at FROM users WHERE user_id = $1', [userId]),
+                pool.query('SELECT user_id, name, role, phone, created_at FROM users WHERE user_id = $1', [userId]),
                 pool.query('SELECT check_in_time, check_out_time, status FROM attendance WHERE user_id = $1 AND date = $2', [userId, today]),
                 pool.query(
                     `SELECT id, type, CAST(start_date AS text) as start_date, CAST(end_date AS text) as end_date, status, reason
