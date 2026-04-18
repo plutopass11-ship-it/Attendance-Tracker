@@ -529,6 +529,27 @@ function registerTools(server) {
         }
     );
 
+    server.tool(
+        'lookup_user_by_slack_id',
+        'Find an employee by their Slack Member ID (e.g., "U09DAJJRQJD"). Used to resolve a Slack sender to an attendance system user. Returns the user_id (email), name, role, and slack_id.',
+        { slackId: z.string().describe('Slack Member ID to look up (e.g., "U09DAJJRQJD").') },
+        async ({ slackId }) => {
+            const result = await pool.query(
+                `SELECT user_id, name, role, phone, slack_id
+                 FROM users
+                 WHERE slack_id = $1`,
+                [slackId]
+            );
+
+            if (result.rowCount === 0) {
+                return { content: [{ type: 'text', text: JSON.stringify({ found: false, error: 'No user found with this Slack ID. Ensure the Slack Member ID is saved in their Kitsu profile.' }) }] };
+            }
+
+            const user = result.rows[0];
+            return { content: [{ type: 'text', text: JSON.stringify({ found: true, userId: user.user_id, name: user.name, role: user.role, slackId: user.slack_id, phone: user.phone }, null, 2) }] };
+        }
+    );
+
 
     // ═══════════════════════════════════════════════════════════════
     //  ATTENDANCE WRITE DOMAIN (WhatsApp check-in/out)
