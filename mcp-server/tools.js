@@ -1,5 +1,29 @@
 const { z } = require('zod');
 const { pool } = require('./db');
+const fetch = (...args) => import('node-fetch').then(({ default: fetch }) => fetch(...args));
+
+// ─── Kitsu Sync Helpers ──────────────────────────────────────────
+let cachedAdminToken = null;
+async function getAdminToken() {
+    if (cachedAdminToken) return cachedAdminToken;
+    try {
+        const response = await fetch(`${process.env.KITSU_URL}/api/auth/login`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                email: process.env.KITSU_ADMIN_EMAIL,
+                password: process.env.KITSU_ADMIN_PASSWORD
+            })
+        });
+        if (!response.ok) return null;
+        const data = await response.json();
+        cachedAdminToken = data.access_token;
+        return cachedAdminToken;
+    } catch (err) {
+        console.error('[MCP-Sync] Kitsu token error:', err.message);
+        return null;
+    }
+}
 
 /**
  * Register all MCP Tools on the given McpServer instance.
@@ -347,6 +371,47 @@ function registerTools(server) {
                 'SELECT user_id, name, role, phone, created_at FROM users ORDER BY name'
             );
             return { content: [{ type: 'text', text: JSON.stringify({ count: result.rowCount, users: result.rows }, null, 2) }] };
+        }
+    );
+
+    server.tool(
+        'sync_users_from_kitsu',
+        'Bulk sync all users from Kitsu into the local database. Pulls names, roles, and phone numbers for all users. Run this to ensure all WhatsApp identities are up to date.',
+        {},
+        async () => {
+            const adminToken = await getAdminToken();
+            if (!adminToken) {
+                return { content: [{ type: 'text', text: JSON.stringify({ success: false, error: 'Failed to authenticate with Kitsu' }) }] };
+            }
+
+            try {
+                const response = await fetch(`${process.env.KITSU_URL}/api/data/persons`, {
+                    headers: { 'Authorization': `Bearer ${adminToken}` }
+                });
+                if (!response.ok) throw new Error(`Kitsu API returned ${response.status}`);
+                
+                const persons = await response.json();
+                let synced = 0;
+
+                for (const p of persons) {
+                    const fullName = `${p.first_name || ''} ${p.last_name || ''}`.trim();
+                    const role = ['admin', 'studio_manager'].includes(p.role) ? 'admin' : 'user';
+                    const phone = p.phone || null;
+
+                    await pool.query(
+                        `INSERT INTO users (user_id, name, password, role, phone) 
+                         VALUES ($1, $2, 'synced_from_kitsu', $3, $4)
+                         ON CONFLICT (user_id) 
+                         DO UPDATE SET name = $2, role = $3, phone = COALESCE($4, users.phone)`,
+                        [p.email, fullName, role, phone]
+                    );
+                    synced++;
+                }
+
+                return { content: [{ type: 'text', text: JSON.stringify({ success: true, message: `Successfully synced ${synced} users from Kitsu`, count: synced }, null, 2) }] };
+            } catch (err) {
+                return { content: [{ type: 'text', text: JSON.stringify({ success: false, error: err.message }) }] };
+            }
         }
     );
 
