@@ -375,7 +375,7 @@ function registerTools(server) {
 
     server.tool(
         'sync_users_from_kitsu',
-        'Bulk sync all users from Kitsu into the local database. Pulls names, roles, and phone numbers for all users. Run this to ensure all WhatsApp identities are up to date.',
+        'Sync phone numbers from Kitsu for all existing users in the attendance tracker. Only updates users who have already logged in — does NOT create new users.',
         {},
         async () => {
             const adminToken = await getAdminToken();
@@ -393,21 +393,17 @@ function registerTools(server) {
                 let synced = 0;
 
                 for (const p of persons) {
-                    const fullName = `${p.first_name || ''} ${p.last_name || ''}`.trim();
-                    const role = ['admin', 'studio_manager'].includes(p.role) ? 'admin' : 'user';
                     const phone = p.phone || null;
+                    if (!phone) continue; // Skip users without a phone number
 
-                    await pool.query(
-                        `INSERT INTO users (user_id, name, password, role, phone) 
-                         VALUES ($1, $2, 'synced_from_kitsu', $3, $4)
-                         ON CONFLICT (user_id) 
-                         DO UPDATE SET name = $2, role = $3, phone = COALESCE($4, users.phone)`,
-                        [p.email, fullName, role, phone]
+                    const result = await pool.query(
+                        `UPDATE users SET phone = $2 WHERE user_id = $1 AND (phone IS NULL OR phone != $2)`,
+                        [p.email, phone]
                     );
-                    synced++;
+                    if (result.rowCount > 0) synced++;
                 }
 
-                return { content: [{ type: 'text', text: JSON.stringify({ success: true, message: `Successfully synced ${synced} users from Kitsu`, count: synced }, null, 2) }] };
+                return { content: [{ type: 'text', text: JSON.stringify({ success: true, message: `Updated phone numbers for ${synced} users`, count: synced }, null, 2) }] };
             } catch (err) {
                 return { content: [{ type: 'text', text: JSON.stringify({ success: false, error: err.message }) }] };
             }
