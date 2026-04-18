@@ -75,6 +75,9 @@ services:
       KITSU_ADMIN_EMAIL: ${KITSU_ADMIN_EMAIL}
       KITSU_ADMIN_PASSWORD: ${KITSU_ADMIN_PASSWORD}
       MCP_PORT: 3100
+    networks:
+      - default
+      - kitsu
     depends_on:
       attendance-db:
         condition: service_healthy
