@@ -1,6 +1,5 @@
 const { z } = require('zod');
 const { pool } = require('./db');
-const fetch = (...args) => import('node-fetch').then(({ default: fetch }) => fetch(...args));
 
 // ─── Kitsu Sync Helpers ──────────────────────────────────────────
 let cachedAdminToken = null;
