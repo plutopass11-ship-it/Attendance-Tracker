@@ -571,9 +571,14 @@ async function runMigrations() {
 
         // Add phone column for WhatsApp identity (synced from Kitsu)
         if (await tableExists('users') && !(await columnExists('users', 'phone'))) {
-            await pool.query('ALTER TABLE users ADD COLUMN phone VARCHAR(20) UNIQUE;');
+            await pool.query('ALTER TABLE users ADD COLUMN phone VARCHAR(20);');
             console.log('Added phone column to users table.');
         }
+
+        // Drop UNIQUE constraint on phone if it exists (multiple accounts can share a phone)
+        try {
+            await pool.query('ALTER TABLE users DROP CONSTRAINT IF EXISTS users_phone_key;');
+        } catch (e) { /* constraint doesn't exist, that's fine */ }
 
         console.log('DB migrations completed.');
     } catch (err) {
