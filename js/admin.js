@@ -10,6 +10,12 @@ window.AdminUI = {
     _isWfh: function(type) {
         return type?.toLowerCase().includes('wfh') || type?.toLowerCase().includes('work from home');
     },
+    _isWfhAttendanceStatus: function(status) {
+        return typeof status === 'string' && status.startsWith('wfh_');
+    },
+    _isPendingAttendanceStatus: function(status) {
+        return status === 'pending_early_clockout' || status === 'wfh_pending_early_clockout';
+    },
     _calcDays: function(leave) {
         if (leave.isHalfDay || (leave.type && leave.type.toLowerCase().includes('(half day)'))) return 0.5;
         const s = new Date(leave.startDate), e = new Date(leave.endDate);
@@ -465,7 +471,7 @@ window.AdminUI = {
         
         // Exclude super-admins (founders) from all headcount calculations
         const activePersons = this.kitsuPersons.filter(p => p.active && (p.role || '').toLowerCase() !== 'admin');
-        const presentCount = attendance.filter(r => activePersons.some(p => p.id === r.userId)).length;
+        const presentCount = attendance.filter(r => activePersons.some(p => p.id === r.userId) && !this._isWfhAttendanceStatus(r.status)).length;
         const totalUsers = activePersons.length > 0 ? activePersons.length : 0;
         document.getElementById('stat-present').textContent = `${presentCount} / ${totalUsers}`;
         
@@ -482,18 +488,24 @@ window.AdminUI = {
         activePersons.forEach(user => {
             const record = attendance.find(r => r.userId === user.id);
             const tr = document.createElement('tr');
+            const activeLeave = leaves.find(l => l.userId === user.id && l.status === 'Approved' && l.startDate <= today && l.endDate >= today);
+            const isWfhLeave = activeLeave && this._isWfh(activeLeave.type);
             
             let statusBadge = '<span class="badge rejected">Absent</span>';
             let checkIn = '--:--';
             let checkOut = '--:--';
             
             if(record) {
+                const isWfhAttendance = this._isWfhAttendanceStatus(record.status) || isWfhLeave;
+                if (isWfhAttendance) wfhCount++;
                 checkIn = record.checkInTime;
-                if(record.status === 'pending_early_clockout') {
+                if(this._isPendingAttendanceStatus(record.status)) {
                     statusBadge = '<span class="badge warning" style="background:#f59e0b;color:white;">Pending Approval</span>';
                     checkOut = record.checkOutTime + ` <br><div style="margin-top:6px;"><button class="btn-primary" style="font-size:11px;padding:4px 8px;border-radius:4px;" onclick="window.AdminUI.approveEarlyClockOut('${user.id}', '${today}', 'approve')">Approve</button> <button class="btn-danger" style="background:#ef4444;color:white;border:none;font-size:11px;padding:4px 8px;border-radius:4px;cursor:pointer;" onclick="window.AdminUI.approveEarlyClockOut('${user.id}', '${today}', 'reject')">Reject</button></div>`;
-                } else if(record.checkOutTime && record.status === 'completed') {
-                    statusBadge = '<span class="badge approved">Completed</span>';
+                } else if(record.checkOutTime && (record.status === 'completed' || record.status === 'wfh_completed')) {
+                    statusBadge = isWfhAttendance
+                        ? '<span class="badge" style="background:#3b82f6;color:white;">WFH Completed</span>'
+                        : '<span class="badge approved">Completed</span>';
                     checkOut = record.checkOutTime;
                     
                     // Display total hours calculated based on the UI times
@@ -519,15 +531,14 @@ window.AdminUI = {
                         }
                     } catch(e) {}
                 } else {
-                    statusBadge = '<span class="badge pending">Working</span>';
+                    statusBadge = isWfhAttendance
+                        ? '<span class="badge" style="background:#3b82f6;color:white;">WFH</span>'
+                        : '<span class="badge pending">Working</span>';
                 }
             }
             
-            // Check if on leave
-            const activeLeave = leaves.find(l => l.userId === user.id && l.status === 'Approved' && l.startDate <= today && l.endDate >= today);
             if(activeLeave && !record) {
-                const isWfh = activeLeave.type?.toLowerCase().includes('wfh') || activeLeave.type?.toLowerCase().includes('work from home');
-                if(isWfh) {
+                if(isWfhLeave) {
                     statusBadge = '<span class="badge" style="background:#3b82f6;color:white;">WFH</span>';
                     wfhCount++;
                 } else {
@@ -595,7 +606,7 @@ window.AdminUI = {
                 const dStr = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
                 labels.push(`${d.getMonth()+1}/${d.getDate()}`);
                 
-                const dayAttendance = Store.getAllAttendanceToday(dStr).length;
+                const dayAttendance = Store.getAllAttendanceToday(dStr).filter(r => !this._isWfhAttendanceStatus(r.status)).length;
                 let dayLeaveCount = 0;
                 let dayWfhCount = 0;
                 

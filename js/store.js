@@ -7,6 +7,7 @@ const defaultUsers = [];
 const defaultHolidays = [];
 const GLOBAL_QUOTA = 3;
 const defaultLeaves = [];
+const isWfhAttendanceStatus = (status) => typeof status === 'string' && status.startsWith('wfh_');
 
 function initDB() {
     if (!localStorage.getItem('v4_wfh_clear')) {
@@ -61,6 +62,7 @@ const Store = {
                     userId: record.userId,
                     date: record.date,
                     time: record.checkInTime,
+                    status: record.status,
                     isCheckOut: false
                 })
             });
@@ -148,9 +150,9 @@ const Store = {
             const data = Store.getAttendance();
             const record = data.find(r => r.userId === userId && r.date === date);
             if (record) {
-                if (action === 'approve') record.status = 'completed';
+                if (action === 'approve') record.status = isWfhAttendanceStatus(record.status) ? 'wfh_completed' : 'completed';
                 if (action === 'reject') {
-                    record.status = 'working';
+                    record.status = isWfhAttendanceStatus(record.status) ? 'wfh_working' : 'working';
                     record.checkOutTime = null;
                 }
                 localStorage.setItem('attendance', JSON.stringify(data));

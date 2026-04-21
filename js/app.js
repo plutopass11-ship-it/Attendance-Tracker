@@ -175,7 +175,7 @@ document.addEventListener('DOMContentLoaded', () => {
             attendanceDetails.classList.add('hidden');
         } else if (!record.checkOutTime) {
             // Checked in, not checked out
-            statusText.textContent = "Working";
+            statusText.textContent = _isWfhAttendanceStatus(record.status) ? "Working From Home" : "Working";
             statusDot.classList.add('verified');
             
             mainActionBtn.classList.add('check-out');
@@ -184,7 +184,7 @@ document.addEventListener('DOMContentLoaded', () => {
             attendanceDetails.classList.remove('hidden');
             valCheckIn.textContent = record.checkInTime;
             valCheckOut.textContent = "--:--";
-        } else if (record.status === 'pending_early_clockout') {
+        } else if (_isPendingAttendanceStatus(record.status)) {
             // Pending Early Checkout
             statusText.textContent = "Pending Approval";
             statusDot.classList.add('warning', 'pending');
@@ -200,7 +200,7 @@ document.addEventListener('DOMContentLoaded', () => {
             valCheckOut.textContent = record.checkOutTime;
         } else {
             // Checked out (day completed)
-            statusText.textContent = "Day Completed";
+            statusText.textContent = _isWfhAttendanceStatus(record.status) ? "WFH Day Completed" : "Day Completed";
             statusDot.classList.add('completed');
             
             mainActionBtn.classList.add('completed');
@@ -216,6 +216,14 @@ document.addEventListener('DOMContentLoaded', () => {
         if (!typeName) return false;
         const lower = typeName.toLowerCase();
         return lower.includes('wfh') || lower === 'work from home';
+    }
+
+    function _isWfhAttendanceStatus(status) {
+        return typeof status === 'string' && status.startsWith('wfh_');
+    }
+
+    function _isPendingAttendanceStatus(status) {
+        return status === 'pending_early_clockout' || status === 'wfh_pending_early_clockout';
     }
 
     function _calcDays(l) {
@@ -610,12 +618,14 @@ document.addEventListener('DOMContentLoaded', () => {
         
         if (!record) {
             // Check In
+            const myLeaves = Store.getUserLeaves(currentUser.id).filter(l => l.status === 'Approved');
+            const isWfhToday = myLeaves.some(l => _isWfh(l.type) && l.startDate <= todayStr && l.endDate >= todayStr);
             Store.addAttendance({
                 userId: currentUser.id,
                 date: todayStr,
                 checkInTime: timeStr,
                 checkOutTime: null,
-                status: 'working'
+                status: isWfhToday ? 'wfh_working' : 'working'
             });
             updateAttendanceUI();
             
@@ -623,7 +633,7 @@ document.addEventListener('DOMContentLoaded', () => {
             mainActionBtn.style.transform = "scale(0.9)";
             setTimeout(() => mainActionBtn.style.transform = "none", 150);
             
-        } else if (!record.checkOutTime || record.status === 'working') {
+        } else if (!record.checkOutTime || record.status === 'working' || record.status === 'wfh_working') {
             // Check Out
             
             // Disable button to prevent double-clicks

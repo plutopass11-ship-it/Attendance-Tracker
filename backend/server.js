@@ -244,16 +244,29 @@ app.post('/api/attendance', async (req, res) => {
   const { userId, date, time, isCheckOut } = req.body;
   try {
     if (!isCheckOut) {
-      await pool.query(
-        `INSERT INTO attendance (user_id, date, check_in_time, status) VALUES ($1, $2, NOW(), 'working') 
-         ON CONFLICT (user_id, date) DO NOTHING`,
+      const wfhRes = await pool.query(
+        `SELECT 1
+         FROM leave_requests
+         WHERE user_id = $1
+           AND status = 'approved'
+           AND start_date <= $2
+           AND end_date >= $2
+           AND (LOWER(type) LIKE '%wfh%' OR LOWER(type) = 'work from home')
+         LIMIT 1`,
         [userId, date]
+      );
+      const checkInStatus = wfhRes.rowCount > 0 ? 'wfh_working' : 'working';
+
+      await pool.query(
+        `INSERT INTO attendance (user_id, date, check_in_time, status) VALUES ($1, $2, NOW(), $3) 
+         ON CONFLICT (user_id, date) DO UPDATE SET status = EXCLUDED.status`,
+        [userId, date, checkInStatus]
       );
     } else {
       const client = await pool.connect();
       try {
           await client.query('BEGIN');
-          const attRes = await client.query(`SELECT check_in_time, check_out_time FROM attendance WHERE user_id = $1 AND date = $2 FOR UPDATE`, [userId, date]);
+          const attRes = await client.query(`SELECT check_in_time, check_out_time, status FROM attendance WHERE user_id = $1 AND date = $2 FOR UPDATE`, [userId, date]);
           
           if (attRes.rowCount > 0) {
               const record = attRes.rows[0];
@@ -265,8 +278,9 @@ app.post('/api/attendance', async (req, res) => {
               const checkInTime = new Date(record.check_in_time);
               const now = new Date();
               const hoursWorked = (now - checkInTime) / (1000 * 60 * 60);
+              const isWfhAttendance = typeof record.status === 'string' && record.status.startsWith('wfh_');
               
-              let newStatus = 'completed';
+              let newStatus = isWfhAttendance ? 'wfh_completed' : 'completed';
               
               if (hoursWorked < 4) {
                  // Auto-generate Half Day Leave
@@ -276,7 +290,7 @@ app.post('/api/attendance', async (req, res) => {
                      [userId, 'Casual Leave (Half Day)', date, date, 'Auto-generated Short Shift (< 4 hours)', 'pending'] 
                  );
               } else if (hoursWorked < 8) {
-                 newStatus = 'pending_early_clockout';
+                 newStatus = isWfhAttendance ? 'wfh_pending_early_clockout' : 'pending_early_clockout';
               }
               
               await client.query(
@@ -303,11 +317,18 @@ app.post('/api/attendance', async (req, res) => {
 app.put('/api/attendance/approve', async (req, res) => {
     const { userId, date, action } = req.body;
     try {
+        const existing = await pool.query(
+            'SELECT status FROM attendance WHERE user_id = $1 AND date = $2',
+            [userId, date]
+        );
+        const currentStatus = existing.rows[0]?.status || 'working';
+        const isWfhAttendance = typeof currentStatus === 'string' && currentStatus.startsWith('wfh_');
+
         let q = `UPDATE attendance SET status = $1 WHERE user_id = $2 AND date = $3`;
-        let params = ['completed', userId, date];
+        let params = [isWfhAttendance ? 'wfh_completed' : 'completed', userId, date];
         if (action === 'reject') {
            q = `UPDATE attendance SET status = $1, check_out_time = NULL WHERE user_id = $2 AND date = $3`;
-           params = ['working', userId, date];
+           params = [isWfhAttendance ? 'wfh_working' : 'working', userId, date];
         }
         await pool.query(q, params);
         res.json({ success: true });
