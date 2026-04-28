@@ -84,7 +84,7 @@ window.ReportsUI = {
 
     // ─── Core: Get all users' hours as an array ───
     _getAllUsersHours: function(fromDate, toDate) {
-        const users = Store.getUsers();
+        const users = Store.getUsers().filter(u => u.role !== 'admin');
         const attendance = Store.getAttendance();
         return users.map(u => {
             const records = attendance.filter(r => r.userId === u.id && r.date >= fromDate && r.date <= toDate);
@@ -118,7 +118,7 @@ window.ReportsUI = {
 
     // ─── Core: Burnout detection (7-day rolling avg > 10 hrs/day) ───
     _getBurnoutFlags: function() {
-        const users = Store.getUsers();
+        const users = Store.getUsers().filter(u => u.role !== 'admin');
         const attendance = Store.getAttendance();
         const today = new Date();
         const sevenAgo = new Date(today);
@@ -140,7 +140,7 @@ window.ReportsUI = {
 
     // ─── Core: Flex-time balance ───
     _getFlexBalance: function(fromDate, toDate) {
-        const users = Store.getUsers();
+        const users = Store.getUsers().filter(u => u.role !== 'admin');
         const s = this._settings;
         // Count working days in range (excluding Sundays by default for 6-day)
         const from = new Date(fromDate);
