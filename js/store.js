@@ -314,6 +314,17 @@ const Store = {
             if (data.attendance) localStorage.setItem('attendance', JSON.stringify(data.attendance));
             if (data.holidays) localStorage.setItem('holidays', JSON.stringify(data.holidays));
             
+            // Sync studio settings
+            try {
+                const settingsRes = await fetch('/api/settings');
+                if (settingsRes.ok) {
+                    const settings = await settingsRes.json();
+                    if (settings && Object.keys(settings).length > 0) {
+                        localStorage.setItem('studioSettings', JSON.stringify(settings));
+                    }
+                }
+            } catch(e) { /* settings endpoint may not exist yet */ }
+
             console.log('Store synced with backend successfully');
         } catch (err) {
             console.error('Failed to sync store with backend:', err);

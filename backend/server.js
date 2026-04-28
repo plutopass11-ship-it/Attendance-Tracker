@@ -611,10 +611,48 @@ app.delete('/api/admin/migration/history/:userId', async (req, res) => {
     }
 });
 
+// 10. Studio Settings
+app.get('/api/settings', async (req, res) => {
+    try {
+        if (!(await tableExists('studio_settings'))) return res.json({});
+        const result = await pool.query("SELECT value FROM studio_settings WHERE key = 'studioConfig' LIMIT 1");
+        if (result.rowCount > 0) {
+            res.json(JSON.parse(result.rows[0].value));
+        } else {
+            res.json({});
+        }
+    } catch (err) {
+        console.error('Settings fetch error:', err);
+        res.status(500).json({ error: err.message });
+    }
+});
+
+app.put('/api/settings', async (req, res) => {
+    try {
+        const value = JSON.stringify(req.body);
+        await pool.query(
+            `INSERT INTO studio_settings (key, value) VALUES ('studioConfig', $1)
+             ON CONFLICT (key) DO UPDATE SET value = $1`,
+            [value]
+        );
+        res.json({ success: true });
+    } catch (err) {
+        console.error('Settings save error:', err);
+        res.status(500).json({ success: false, error: err.message });
+    }
+});
+
 
 // --- Database auto-migration on startup ---
 async function runMigrations() {
     try {
+        // Create studio_settings table if it doesn't exist
+        await pool.query(`
+            CREATE TABLE IF NOT EXISTS studio_settings (
+                key VARCHAR(50) PRIMARY KEY,
+                value TEXT NOT NULL
+            );
+        `);
         if (await tableExists('leave_requests') && !(await columnExists('leave_requests', 'is_historical'))) {
             await pool.query('ALTER TABLE leave_requests ADD COLUMN is_historical BOOLEAN DEFAULT false;');
         }

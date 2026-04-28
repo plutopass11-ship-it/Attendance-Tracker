@@ -76,6 +76,7 @@ window.AdminUI = {
                 if(target === 'admin-tab-policies') this.renderPolicies();
                 if(target === 'admin-tab-holidays') this.renderHolidays();
                 if(target === 'admin-tab-migration') this.renderMigrationTab();
+                if(target === 'admin-tab-reports' && window.ReportsUI) window.ReportsUI.init();
             });
         });
 
