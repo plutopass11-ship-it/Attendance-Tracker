@@ -1104,9 +1104,8 @@ window.AdminUI = {
                 <td>${l.startDate}${l.startDate !== l.endDate ? ' → ' + l.endDate : ''}</td>
                 <td>${days}</td>
                 <td>${statusBadge}</td>
-                <td style="min-width:100px;">
-                    <button class="btn-small" style="background:#3b82f6;color:white;margin-right:4px;" onclick="window.AdminUI.openEditLeaveModal('${l.id}')">✏️</button>
-                    <button class="btn-small btn-reject" onclick="window.AdminUI.deleteLeaveRecord('${l.id}')">🗑️</button>
+                <td style="min-width:80px;">
+                    <button class="btn-small btn-primary" onclick="window.AdminUI.openEditLeaveModal('${l.id}')" style="width:auto; padding:4px 12px; margin:0;">Edit</button>
                 </td>
             `;
             tbody.appendChild(tr);
@@ -1187,9 +1186,17 @@ window.AdminUI = {
         const closeBtn = document.getElementById('close-edit-leave-modal');
         const modal = document.getElementById('edit-leave-modal');
         const overlay = modal.querySelector('.modal-overlay');
+        const deleteBtn = document.getElementById('delete-edit-leave-btn');
 
         closeBtn.onclick = () => modal.classList.add('hidden');
         overlay.onclick = () => modal.classList.add('hidden');
+
+        if (deleteBtn) {
+            deleteBtn.onclick = async () => {
+                modal.classList.add('hidden');
+                await window.AdminUI.deleteLeaveRecord(leave.id);
+            };
+        }
 
         form.onsubmit = async (e) => {
             e.preventDefault();
