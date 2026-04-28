@@ -3,6 +3,9 @@
 
 window.ReportsUI = {
 
+    _hoursChart: null,
+    _flexChart: null,
+
     // ─── Master Settings (defaults) ───
     _settings: { workDays: 6, dailyHours: 8 },
 
@@ -299,6 +302,9 @@ window.ReportsUI = {
                     <button class="btn-small btn-primary" style="width:auto; padding:4px 12px; margin:0;" onclick="window.ReportsUI.exportIndividual('${period}')">Export CSV</button>
                 </div>
             </div>
+            <div style="position: relative; width: 100%; height: 250px; margin-bottom: 20px;">
+                <canvas id="reportsHoursChart"></canvas>
+            </div>
             <div style="overflow-x:auto; max-height:400px; overflow-y:auto;">
                 <table class="admin-table">
                     <thead><tr>
@@ -335,6 +341,9 @@ window.ReportsUI = {
         html += `
         <div class="glass-panel" style="margin-bottom: 24px;">
             <h3 class="section-subtitle">⚖️ Flex-Time Balance <small style="color:var(--text-muted); font-weight:400;">(${s.workDays} days/wk × ${s.dailyHours}h/day)</small></h3>
+            <div style="position: relative; width: 100%; height: 250px; margin-bottom: 20px;">
+                <canvas id="reportsFlexChart"></canvas>
+            </div>
             <div style="overflow-x:auto; max-height:400px; overflow-y:auto;">
                 <table class="admin-table">
                     <thead><tr>
@@ -374,5 +383,67 @@ window.ReportsUI = {
         </div>`;
 
         container.innerHTML = html;
+
+        // Give DOM time to insert HTML before mounting charts
+        setTimeout(() => this._renderCharts(allData, flex), 0);
+    },
+
+    _renderCharts: function(allData, flex) {
+        if (this._hoursChart) this._hoursChart.destroy();
+        if (this._flexChart) this._flexChart.destroy();
+
+        // 1. Individual Hours Chart
+        const ctxHours = document.getElementById('reportsHoursChart');
+        if (ctxHours) {
+            this._hoursChart = new Chart(ctxHours, {
+                type: 'bar',
+                data: {
+                    labels: allData.map(d => d.name),
+                    datasets: [{
+                        label: 'Total Hours',
+                        data: allData.map(d => parseFloat(d.totalHours.toFixed(1))),
+                        backgroundColor: '#3b82f6',
+                        borderRadius: 4
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: { legend: { display: false } },
+                    scales: {
+                        y: { beginAtZero: true, grid: { color: 'rgba(255,255,255,0.05)' }, ticks: { color: '#94a3b8' } },
+                        x: { grid: { display: false }, ticks: { color: '#94a3b8' } }
+                    }
+                }
+            });
+        }
+
+        // 2. Flex-Time Balance Chart
+        const ctxFlex = document.getElementById('reportsFlexChart');
+        if (ctxFlex) {
+            const data = flex.map(f => f.diff);
+            const bgColors = data.map(val => val >= 0 ? '#10b981' : '#ef4444');
+            this._flexChart = new Chart(ctxFlex, {
+                type: 'bar',
+                data: {
+                    labels: flex.map(f => f.name),
+                    datasets: [{
+                        label: 'Flex-Time Balance',
+                        data: data,
+                        backgroundColor: bgColors,
+                        borderRadius: 4
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: { legend: { display: false } },
+                    scales: {
+                        y: { grid: { color: 'rgba(255,255,255,0.05)' }, ticks: { color: '#94a3b8' } },
+                        x: { grid: { display: false }, ticks: { color: '#94a3b8' } }
+                    }
+                }
+            });
+        }
     }
 };
