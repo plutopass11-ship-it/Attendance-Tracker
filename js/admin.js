@@ -490,12 +490,19 @@ window.AdminUI = {
             const tr = document.createElement('tr');
             const activeLeave = leaves.find(l => l.userId === user.id && l.status === 'Approved' && l.startDate <= today && l.endDate >= today);
             const isWfhLeave = activeLeave && this._isWfh(activeLeave.type);
+            // Check for approved non-WFH leave (takes absolute priority over attendance)
+            const isOnLeaveToday = activeLeave && !isWfhLeave;
             
             let statusBadge = '<span class="badge rejected">Absent</span>';
             let checkIn = '--:--';
             let checkOut = '--:--';
             
-            if(record) {
+            // BUG FIX: Non-WFH approved leave always takes priority over attendance records
+            // This handles the case where a user accidentally checked in, then admin adds a leave later
+            if (isOnLeaveToday) {
+                statusBadge = '<span class="badge" style="background:#8b5cf6;color:white;">On Leave</span>';
+                onLeaveCount++;
+            } else if(record) {
                 const isWfhAttendance = this._isWfhAttendanceStatus(record.status) || isWfhLeave;
                 if (isWfhAttendance) wfhCount++;
                 checkIn = record.checkInTime;
@@ -535,15 +542,10 @@ window.AdminUI = {
                         ? '<span class="badge" style="background:#3b82f6;color:white;">WFH</span>'
                         : '<span class="badge pending">Working</span>';
                 }
-            }
-            
-            if(activeLeave && !record) {
+            } else if(activeLeave && !record) {
                 if(isWfhLeave) {
                     statusBadge = '<span class="badge" style="background:#3b82f6;color:white;">WFH</span>';
                     wfhCount++;
-                } else {
-                    statusBadge = '<span class="badge" style="background:#8b5cf6;color:white;">On Leave</span>';
-                    onLeaveCount++;
                 }
             }
 
@@ -1050,7 +1052,9 @@ window.AdminUI = {
 
         // History table
         this._userDetailRequests = allLeaves;
+        this._userDetailUserId = userId;
         this._renderUserDetailHistory('all');
+        this._renderUserDetailAttendance(userId);
 
         // Filter buttons
         document.querySelectorAll('.user-detail-filter').forEach(btn => {
@@ -1077,7 +1081,7 @@ window.AdminUI = {
         else if (filter === 'leave') requests = requests.filter(l => !this._isWfh(l.type));
 
         if (requests.length === 0) {
-            tbody.innerHTML = '<tr><td colspan="5" style="text-align:center; color:var(--text-muted); padding:20px;">No records found.</td></tr>';
+            tbody.innerHTML = '<tr><td colspan="6" style="text-align:center; color:var(--text-muted); padding:20px;">No records found.</td></tr>';
             return;
         }
 
@@ -1095,14 +1099,141 @@ window.AdminUI = {
 
             const tr = document.createElement('tr');
             tr.innerHTML = `
-                <td>${l.type}${l.isHalfDay ? ' <small style="color:var(--warning);">(Half)</small>' : ''}</td>
+                <td>${l.type}${l.isHalfDay ? ' <small style="color:var(--warning);">(Half)</small>' : ''}${l.isHistorical ? ' <small style="color:var(--text-muted);">(Migrated)</small>' : ''}</td>
                 <td>${catBadge}</td>
                 <td>${l.startDate}${l.startDate !== l.endDate ? ' → ' + l.endDate : ''}</td>
                 <td>${days}</td>
                 <td>${statusBadge}</td>
+                <td style="min-width:100px;">
+                    <button class="btn-small" style="background:#3b82f6;color:white;margin-right:4px;" onclick="window.AdminUI.openEditLeaveModal('${l.id}')">✏️</button>
+                    <button class="btn-small btn-reject" onclick="window.AdminUI.deleteLeaveRecord('${l.id}')">🗑️</button>
+                </td>
             `;
             tbody.appendChild(tr);
         });
+    },
+
+    _renderUserDetailAttendance: function(userId) {
+        const tbody = document.getElementById('user-detail-attendance-tbody');
+        if (!tbody) return;
+
+        const allAttendance = Store.getAttendance().filter(r => r.userId === userId);
+        // Show last 7 records, most recent first
+        const sorted = allAttendance.sort((a, b) => b.date.localeCompare(a.date)).slice(0, 7);
+
+        if (sorted.length === 0) {
+            tbody.innerHTML = '<tr><td colspan="5" style="text-align:center; color:var(--text-muted); padding:20px;">No attendance records found.</td></tr>';
+            return;
+        }
+
+        tbody.innerHTML = '';
+        sorted.forEach(r => {
+            let statusLabel = r.status || 'unknown';
+            let statusColor = '#475569';
+            if (r.status === 'completed' || r.status === 'wfh_completed') statusColor = '#10b981';
+            else if (r.status === 'working' || r.status === 'wfh_working') statusColor = '#f59e0b';
+            else if (this._isPendingAttendanceStatus(r.status)) statusColor = '#f59e0b';
+
+            const tr = document.createElement('tr');
+            tr.innerHTML = `
+                <td>${r.date}</td>
+                <td>${r.checkInTime || '--:--'}</td>
+                <td>${r.checkOutTime || '--:--'}</td>
+                <td><span class="badge" style="background:${statusColor};color:white;">${statusLabel}</span></td>
+                <td>
+                    <button class="btn-small btn-reject" onclick="window.AdminUI.deleteAttendanceRecord('${userId}', '${r.date}')" title="Delete this attendance record">🗑️</button>
+                </td>
+            `;
+            tbody.appendChild(tr);
+        });
+    },
+
+    openEditLeaveModal: function(leaveId) {
+        const allLeaves = Store.getAllLeaves();
+        const leave = allLeaves.find(l => l.id == leaveId);
+        if (!leave) { alert('Leave record not found.'); return; }
+
+        document.getElementById('edit-leave-record-id').value = leave.id;
+        document.getElementById('edit-leave-record-userid').value = leave.userId;
+        document.getElementById('edit-leave-record-start').value = leave.startDate;
+        document.getElementById('edit-leave-record-end').value = leave.endDate;
+        document.getElementById('edit-leave-record-reason').value = leave.reason || '';
+        document.getElementById('edit-leave-record-status').value = leave.status || 'Approved';
+
+        // Populate type dropdown
+        const typeSelect = document.getElementById('edit-leave-record-type');
+        const leaveTypes = Store.getLeaveTypes();
+        let options = '<option value="Work From Home">Work From Home</option>';
+        leaveTypes.forEach(t => {
+            if (!this._isWfh(t.name)) {
+                options += `<option value="${t.name}">${t.name}</option>`;
+            }
+        });
+        // Add half-day variants
+        leaveTypes.forEach(t => {
+            if (!this._isWfh(t.name)) {
+                options += `<option value="${t.name} (Half Day)">${t.name} (Half Day)</option>`;
+            }
+        });
+        typeSelect.innerHTML = options;
+        typeSelect.value = leave.type;
+        // If current type not in dropdown, add it
+        if (typeSelect.value !== leave.type) {
+            typeSelect.innerHTML += `<option value="${leave.type}" selected>${leave.type}</option>`;
+        }
+
+        // Wire up form submit & close
+        const form = document.getElementById('edit-leave-form');
+        const closeBtn = document.getElementById('close-edit-leave-modal');
+        const modal = document.getElementById('edit-leave-modal');
+        const overlay = modal.querySelector('.modal-overlay');
+
+        closeBtn.onclick = () => modal.classList.add('hidden');
+        overlay.onclick = () => modal.classList.add('hidden');
+
+        form.onsubmit = async (e) => {
+            e.preventDefault();
+            const updates = {
+                type: document.getElementById('edit-leave-record-type').value,
+                startDate: document.getElementById('edit-leave-record-start').value,
+                endDate: document.getElementById('edit-leave-record-end').value,
+                reason: document.getElementById('edit-leave-record-reason').value,
+                status: document.getElementById('edit-leave-record-status').value
+            };
+
+            if (new Date(updates.startDate) > new Date(updates.endDate)) {
+                alert('End date cannot be before start date.');
+                return;
+            }
+
+            await Store.editLeave(leave.id, updates);
+            await Store.syncWithBackend();
+            modal.classList.add('hidden');
+            // Refresh the user detail modal
+            this.openUserDetail(leave.userId);
+            this.renderDashboard();
+        };
+
+        modal.classList.remove('hidden');
+    },
+
+    deleteLeaveRecord: async function(leaveId) {
+        if (!confirm('Are you sure you want to permanently delete this leave/WFH record?')) return;
+        const leave = Store.getAllLeaves().find(l => l.id == leaveId);
+        await Store.deleteLeave(leaveId);
+        await Store.syncWithBackend();
+        if (leave && this._userDetailUserId) {
+            this.openUserDetail(this._userDetailUserId);
+        }
+        this.renderDashboard();
+    },
+
+    deleteAttendanceRecord: async function(userId, date) {
+        if (!confirm(`Delete attendance record for ${date}? This cannot be undone.`)) return;
+        await Store.deleteAttendanceRecord(userId, date);
+        await Store.syncWithBackend();
+        this._renderUserDetailAttendance(userId);
+        this.renderDashboard();
     },
 
     openExtraOffModal: function(uid, currLeaves, currWfh) {

@@ -356,14 +356,40 @@ app.post('/api/leaves', async (req, res) => {
 });
 
 app.put('/api/leaves/:id', async (req, res) => {
-   const { status } = req.body;
+   const { status, type, startDate, endDate, reason } = req.body;
    try {
-       const dbStatus = (status || 'pending').toLowerCase();
-       const result = await pool.query(
-           `UPDATE leave_requests SET status = $1 WHERE id = $2
-            RETURNING id, user_id, type, CAST(start_date AS text) as start_date, CAST(end_date AS text) as end_date, status`,
-           [dbStatus, req.params.id]
-       );
+       let result;
+       if (type && startDate && endDate) {
+           // Full edit mode: update all fields
+           const dbStatus = (status || 'approved').toLowerCase();
+           result = await pool.query(
+               `UPDATE leave_requests SET type = $1, start_date = $2, end_date = $3, reason = $4, status = $5 WHERE id = $6
+                RETURNING id, user_id, type, CAST(start_date AS text) as start_date, CAST(end_date AS text) as end_date, status`,
+               [type, startDate, endDate, reason || '', dbStatus, req.params.id]
+           );
+       } else {
+           // Status-only update (existing behavior)
+           const dbStatus = (status || 'pending').toLowerCase();
+           result = await pool.query(
+               `UPDATE leave_requests SET status = $1 WHERE id = $2
+                RETURNING id, user_id, type, CAST(start_date AS text) as start_date, CAST(end_date AS text) as end_date, status`,
+               [dbStatus, req.params.id]
+           );
+       }
+
+       // If a non-WFH leave is approved, void any conflicting attendance records for those dates
+       if (result.rowCount > 0) {
+           const leave = result.rows[0];
+           const leaveType = (leave.type || '').toLowerCase();
+           const isWfh = leaveType.includes('wfh') || leaveType === 'work from home';
+           if (!isWfh && leave.status === 'approved') {
+               await pool.query(
+                   `DELETE FROM attendance WHERE user_id = $1 AND date >= $2 AND date <= $3`,
+                   [leave.user_id, leave.start_date, leave.end_date]
+               );
+           }
+       }
+
        res.json({ success: true });
 
        // Fire-and-forget webhook to n8n for WhatsApp notifications
@@ -387,6 +413,37 @@ app.put('/api/leaves/:id', async (req, res) => {
        console.error(err);
        res.status(500).json({ success: false });
    }
+});
+
+// 4b. Delete a specific leave request
+app.delete('/api/leaves/:id', async (req, res) => {
+    try {
+        const result = await pool.query(
+            'DELETE FROM leave_requests WHERE id = $1 RETURNING id',
+            [req.params.id]
+        );
+        if (result.rowCount === 0) {
+            return res.status(404).json({ success: false, message: 'Leave record not found' });
+        }
+        res.json({ success: true });
+    } catch (err) {
+        console.error('Leave delete error:', err);
+        res.status(500).json({ success: false, message: err.message });
+    }
+});
+
+// 4c. Delete an attendance record for a specific user/date (admin cleanup)
+app.delete('/api/attendance/:userId/:date', async (req, res) => {
+    try {
+        const result = await pool.query(
+            'DELETE FROM attendance WHERE user_id = $1 AND date = $2 RETURNING user_id',
+            [req.params.userId, req.params.date]
+        );
+        res.json({ success: true, deleted: result.rowCount });
+    } catch (err) {
+        console.error('Attendance delete error:', err);
+        res.status(500).json({ success: false, message: err.message });
+    }
 });
 
 

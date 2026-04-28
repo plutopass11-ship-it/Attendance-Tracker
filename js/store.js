@@ -139,6 +139,35 @@ const Store = {
             } catch (err) { console.error('Leave status sync error:', err); }
         }
     },
+    deleteLeave: async (leaveId) => {
+        const data = Store.getLeaves().filter(l => l.id != leaveId);
+        localStorage.setItem('leaves', JSON.stringify(data));
+        try {
+            await fetch(`/api/leaves/${leaveId}`, { method: 'DELETE' });
+        } catch (err) { console.error('Leave delete sync error:', err); }
+    },
+    editLeave: async (leaveId, updates) => {
+        const data = Store.getLeaves();
+        const index = data.findIndex(l => l.id == leaveId);
+        if (index > -1) {
+            Object.assign(data[index], updates);
+            localStorage.setItem('leaves', JSON.stringify(data));
+            try {
+                await fetch(`/api/leaves/${leaveId}`, {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(updates)
+                });
+            } catch (err) { console.error('Leave edit sync error:', err); }
+        }
+    },
+    deleteAttendanceRecord: async (userId, date) => {
+        const data = Store.getAttendance().filter(r => !(r.userId === userId && r.date === date));
+        localStorage.setItem('attendance', JSON.stringify(data));
+        try {
+            await fetch(`/api/attendance/${encodeURIComponent(userId)}/${date}`, { method: 'DELETE' });
+        } catch (err) { console.error('Attendance delete sync error:', err); }
+    },
     approveEarlyClockout: async (userId, date, action) => {
         try {
             await fetch('/api/attendance/approve', {
