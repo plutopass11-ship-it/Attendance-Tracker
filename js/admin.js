@@ -928,10 +928,10 @@ window.AdminUI = {
                     <td>${email}</td>
                     <td><span class="badge" style="background:#475569; color:white">Standard</span></td>
                     <td><span class="badge" style="background: ${p.role==='admin'?'var(--primary)':'var(--glass-border)'}; color:${p.role==='admin'?'white':'var(--text-main)'}">${appAccess}</span></td>
-                    <td>
-                        <button class="btn-small" style="background:#3b82f6; color:white; margin-right:4px;" onclick="window.AdminUI.openUserDetail('${p.id}')">View</button>
-                        <button class="btn-small btn-primary" style="margin-right:4px;" onclick="window.AdminUI.openExtraOffModal('${p.id}', ${extra.leaves}, ${extra.wfh})">Edit Off</button>
-                        ${p.id !== this.currentUser.id ? `<button class="btn-small btn-reject" onclick="window.AdminUI.deleteUser('${p.id}')">Remove</button>` : ''}
+                    <td style="white-space: nowrap; display: flex; gap: 8px; align-items: center; border-bottom: none;">
+                        <button class="btn-small" style="background:#3b82f6; color:white; width:auto; padding:4px 12px; margin:0;" onclick="window.AdminUI.openUserDetail('${p.id}')">View</button>
+                        <button class="btn-small btn-primary" style="width:auto; padding:4px 12px; margin:0;" onclick="window.AdminUI.openExtraOffModal('${p.id}', ${extra.leaves}, ${extra.wfh})">Edit Off</button>
+                        ${p.id !== this.currentUser.id ? `<button class="btn-small btn-reject" style="width:auto; padding:4px 12px; margin:0;" onclick="window.AdminUI.deleteUser('${p.id}')">Remove</button>` : ''}
                     </td>
                 `;
                 tbody.appendChild(tr);
@@ -1550,3 +1550,5 @@ window.AdminUI = {
 
 // Force Vite cache invalidation
 console.log("AdminUI loaded successfully");
+
+
