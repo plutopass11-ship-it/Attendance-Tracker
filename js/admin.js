@@ -1628,26 +1628,26 @@ window.AdminUI = {
             const res = await fetch('/api/zkteco/device-users');
             const data = await res.json();
             const deviceUsers = data.users || [];
-            const users = this._cachedUsers || [];
+            // Use cached users OR kitsuPersons (loaded on init) as fallback
+            const users = (this._cachedUsers && this._cachedUsers.length > 0) ? this._cachedUsers : (this.kitsuPersons || []).map(p => ({ id: p.id, name: `${p.first_name} ${p.last_name}` }));
 
             tbody.innerHTML = '';
             if (deviceUsers.length === 0) {
-                tbody.innerHTML = '<tr><td colspan="5" style="text-align:center; color:var(--text-muted); padding:24px;">No users found on device.</td></tr>';
+                tbody.innerHTML = '<tr><td colspan="5" style="text-align:center; color:var(--text-muted); padding:24px;">No users mapped yet. Push Kitsu users to device first.</td></tr>';
                 return;
             }
 
             deviceUsers.forEach(du => {
                 const tr = document.createElement('tr');
                 const mappedUser = du.mappedUserId ? users.find(u => u.id === du.mappedUserId) : null;
+                const statusColor = du.mappingStatus === 'enrolled' ? 'var(--success)' : du.mappingStatus === 'synced' ? '#3b82f6' : 'var(--warning)';
+                const statusLabel = du.mappingStatus || 'pending';
                 tr.innerHTML = `
                     <td>${du.uid}</td>
                     <td>${du.userId}</td>
-                    <td>${du.name || '-'}</td>
+                    <td>${du.name || (mappedUser ? mappedUser.name : '-')}</td>
                     <td>${mappedUser ? `<strong>${mappedUser.name}</strong>` : '<span style="color:var(--warning);">Unmapped</span>'}</td>
-                    <td>
-                        ${!du.mappedUserId ? `<button class="btn-small btn-primary" onclick="window.AdminUI.zktecoMapUserPrompt(${du.uid}, '${du.userId}')">Map</button>` : ''}
-                        <button class="btn-small btn-reject" onclick="window.AdminUI.zktecoDeleteDeviceUser(${du.uid})">Remove</button>
-                    </td>
+                    <td><span style="color:${statusColor};">${statusLabel}</span></td>
                 `;
                 tbody.appendChild(tr);
             });
