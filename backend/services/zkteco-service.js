@@ -224,23 +224,27 @@ async function processAttendanceLog(log) {
 async function syncAttendanceLogs() {
   if (!await connectDevice()) return { processed: 0, errors: 0 };
 
-  const logs = await getAttendances();
-  let processed = 0;
-  let errors = 0;
+  try {
+    const logs = await getAttendances();
+    let processed = 0;
+    let errors = 0;
 
-  for (const log of logs) {
-    try {
-      await processAttendanceLog(log);
-      processed++;
-    } catch (e) {
-      errors++;
+    for (const log of logs) {
+      try {
+        await processAttendanceLog(log);
+        processed++;
+      } catch (e) {
+        errors++;
+      }
     }
-  }
 
-  lastSyncAt = nowStr();
-  emitStatus();
-  console.log(`[ZKTECO] Synced ${processed} logs (${errors} errors)`);
-  return { processed, errors };
+    lastSyncAt = nowStr();
+    console.log(`[ZKTECO] Synced ${processed} logs (${errors} errors)`);
+    return { processed, errors };
+  } finally {
+    // Always disconnect after sync to free the device for fingerprint scans
+    await disconnectDevice();
+  }
 }
 
 async function syncKitsuUsersToDevice() {
@@ -305,10 +309,15 @@ let pollTimer = null;
 
 function startPolling() {
   if (pollTimer) clearInterval(pollTimer);
+  // Wait 30s after boot before first sync to let things stabilize
+  setTimeout(async () => {
+    console.log('[ZKTECO] Running initial attendance sync...');
+    await syncAttendanceLogs();
+  }, 30000);
   pollTimer = setInterval(async () => {
     await syncAttendanceLogs();
   }, POLL_INTERVAL_MS);
-  console.log(`[ZKTECO] Polling started every ${POLL_INTERVAL_MS}ms`);
+  console.log(`[ZKTECO] Polling started every ${POLL_INTERVAL_MS / 1000}s`);
 }
 
 function stopPolling() {

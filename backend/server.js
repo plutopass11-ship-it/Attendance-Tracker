@@ -896,9 +896,8 @@ runMigrations().then(() => {
     httpServer.listen(PORT, () => {
         console.log(`Backend running on port ${PORT} (HTTP + Socket.IO)`);
 
-        // Start ZKTeco polling and real-time listener
+        // Start ZKTeco polling (connect → pull logs → disconnect cycle)
         zktecoService.startPolling();
-        zktecoService.startRealtimeLogs();
-        console.log('[ZKTECO] Auto-polling and real-time listener activated');
+        console.log('[ZKTECO] Attendance polling activated');
     });
 });
