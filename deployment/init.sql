@@ -107,3 +107,25 @@ INSERT INTO holidays (name, date, type) VALUES
     ('Janmashtami', '2026-08-22', 'optional'),
     ('Guru Nanak Jayanti', '2026-11-08', 'optional')
 ON CONFLICT (date) DO NOTHING;
+
+-- =============================================
+-- ZKTeco Biometric Device Integration Tables
+-- =============================================
+CREATE TABLE IF NOT EXISTS zkteco_users (
+    id SERIAL PRIMARY KEY,
+    user_id VARCHAR(50) NOT NULL REFERENCES users(user_id) ON DELETE CASCADE,
+    zkteco_uid INTEGER NOT NULL,
+    zkteco_user_id VARCHAR(20) NOT NULL UNIQUE,
+    status VARCHAR(30) DEFAULT 'pending_enrollment',
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(user_id, zkteco_uid)
+);
+
+CREATE TABLE IF NOT EXISTS zkteco_sync_log (
+    id SERIAL PRIMARY KEY,
+    direction VARCHAR(30),
+    records_processed INTEGER,
+    status VARCHAR(20),
+    message TEXT,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);

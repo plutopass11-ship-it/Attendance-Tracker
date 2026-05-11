@@ -741,6 +741,12 @@ document.addEventListener('DOMContentLoaded', () => {
         }, 2000);
     });
 
+    // Expose refresh function for Socket.IO live updates
+    window.refreshAttendanceUI = async function() {
+        await Store.syncWithBackend();
+        updateAttendanceUI();
+    };
+
     // Run init
     init();
 });

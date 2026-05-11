@@ -84,6 +84,10 @@
                     <button class="admin-nav-item" data-target="admin-tab-reports">
                         <ion-icon name="analytics-outline"></ion-icon> Reports
                     </button>
+                    <button class="admin-nav-item" data-target="admin-tab-zkteco">
+                        <ion-icon name="finger-print-outline"></ion-icon> ZKTeco Device
+                        <span id="zkteco-status-indicator" style="margin-left:auto; font-size:10px; color:var(--text-muted);"></span>
+                    </button>
                 </nav>
                 <button id="admin-logout-btn" class="btn-primary" style="margin:20px; width:calc(100% - 40px); background:var(--danger)">Logout</button>
             </aside>
@@ -458,6 +462,89 @@
                                 </thead>
                                 <tbody id="migration-history-tbody">
                                     <tr><td colspan="3" style="text-align:center; color:var(--text-muted);">Loading...</td></tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </section>
+
+                    <!-- ZKTeco Device Tab -->
+                    <section id="admin-tab-zkteco" class="admin-tab hidden">
+                        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:20px;">
+                            <h2 class="section-title" style="margin:0;">ZKTeco WL20 Device</h2>
+                            <div id="zkteco-sync-progress" style="display:none; color:var(--success); font-size:14px;"></div>
+                        </div>
+
+                        <!-- Connection Status Card -->
+                        <div class="stats-grid" style="grid-template-columns: repeat(4, 1fr); margin-bottom:24px;">
+                            <div class="stat-card">
+                                <h3>Connection</h3>
+                                <div class="stat-value" id="zkteco-conn-status" style="font-size:20px;">—</div>
+                            </div>
+                            <div class="stat-card">
+                                <h3>Device IP</h3>
+                                <div class="stat-value" id="zkteco-device-ip" style="font-size:18px;">—</div>
+                            </div>
+                            <div class="stat-card">
+                                <h3>Last Sync</h3>
+                                <div class="stat-value" id="zkteco-last-sync" style="font-size:18px;">—</div>
+                            </div>
+                            <div class="stat-card">
+                                <h3>Logs on Device</h3>
+                                <div class="stat-value" id="zkteco-logs-count" style="font-size:18px;">—</div>
+                            </div>
+                        </div>
+
+                        <!-- Action Buttons -->
+                        <div style="display:flex; gap:10px; margin-bottom:24px; flex-wrap:wrap;">
+                            <button class="btn-primary" style="width:auto; padding:8px 16px; margin:0;" onclick="window.AdminUI.zktecoTestConnection()">
+                                <ion-icon name="refresh-outline" style="vertical-align:middle; margin-right:4px;"></ion-icon> Test Connection
+                            </button>
+                            <button class="btn-primary" style="width:auto; padding:8px 16px; margin:0; background:#10b981;" onclick="window.AdminUI.zktecoSyncAttendance()">
+                                <ion-icon name="sync-outline" style="vertical-align:middle; margin-right:4px;"></ion-icon> Sync Attendance Now
+                            </button>
+                            <button class="btn-primary" style="width:auto; padding:8px 16px; margin:0; background:#3b82f6;" onclick="window.AdminUI.zktecoPushUsers()">
+                                <ion-icon name="cloud-upload-outline" style="vertical-align:middle; margin-right:4px;"></ion-icon> Push Kitsu → Device
+                            </button>
+                        </div>
+
+                        <!-- User Mapping Table -->
+                        <div class="glass-panel" style="overflow-x:auto; margin-bottom:24px;">
+                            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:16px;">
+                                <h3 class="section-subtitle" style="margin:0;">User Mappings</h3>
+                            </div>
+                            <table class="admin-table">
+                                <thead>
+                                    <tr>
+                                        <th>Kitsu User</th>
+                                        <th>ZKTeco UID</th>
+                                        <th>ZKTeco User ID</th>
+                                        <th>Status</th>
+                                        <th>Actions</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="zkteco-mappings-tbody">
+                                    <tr><td colspan="5" style="text-align:center; color:var(--text-muted); padding:24px;">Loading...</td></tr>
+                                </tbody>
+                            </table>
+                        </div>
+
+                        <!-- Device Users (Unmapped) -->
+                        <div class="glass-panel" style="overflow-x:auto;">
+                            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:16px;">
+                                <h3 class="section-subtitle" style="margin:0;">Device Users</h3>
+                            </div>
+                            <table class="admin-table">
+                                <thead>
+                                    <tr>
+                                        <th>Device UID</th>
+                                        <th>Device User ID</th>
+                                        <th>Name on Device</th>
+                                        <th>Mapping</th>
+                                        <th>Actions</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="zkteco-device-users-tbody">
+                                    <tr><td colspan="5" style="text-align:center; color:var(--text-muted); padding:24px;">Loading...</td></tr>
                                 </tbody>
                             </table>
                         </div>
@@ -938,6 +1025,10 @@
             </div>
         </div>
     </div>
+
+    <!-- Socket.IO for Live Updates -->
+    <script src="https://cdn.socket.io/4.7.5/socket.io.min.js" integrity="sha384-2huaZvER9iE4bLn+uFNojhwY4BeymWnCyZrJbqKb5iM2nD3S+dj1e10w9I9KjJ" crossorigin="anonymous"></script>
+    <script src="js/socket-client.js?v=1"></script>
 
     <!-- Scripts -->
     <script src="js/auth.js?v=27"></script>
