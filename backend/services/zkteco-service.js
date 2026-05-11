@@ -26,7 +26,7 @@ function nowStr() {
 async function connectDevice() {
   if (device && isConnected) return true;
 
-  device = new Zkteco(DEVICE_IP, DEVICE_PORT, 5200, 5000);
+  device = new Zkteco(DEVICE_IP, DEVICE_PORT, 10000, 5200);
   try {
     await device.createSocket();
     isConnected = true;
