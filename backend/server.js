@@ -13,9 +13,6 @@ const io = new Server(httpServer, {
 app.use(cors());
 app.use(express.json());
 
-// Inject Socket.IO and DB pool into ZKTeco service
-zktecoService.inject(io, pool);
-
 const pool = new Pool({
   user: process.env.POSTGRES_USER || 'attendance_admin',
   host: process.env.POSTGRES_HOST || 'attendance-db',
@@ -23,6 +20,9 @@ const pool = new Pool({
   password: process.env.POSTGRES_PASSWORD || 'AttendancePluto@2026',
   port: process.env.POSTGRES_PORT || 5432,
 });
+
+// Inject Socket.IO and DB pool into ZKTeco service
+zktecoService.inject(io, pool);
 
 const KITSU_URL = process.env.KITSU_URL || 'http://host.docker.internal:3002';
 const N8N_WEBHOOK_URL = process.env.N8N_WEBHOOK_URL || '';  // e.g. http://n8n:5678/webhook/leave-status-changed
