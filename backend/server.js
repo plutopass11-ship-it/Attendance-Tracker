@@ -896,8 +896,9 @@ runMigrations().then(() => {
     httpServer.listen(PORT, () => {
         console.log(`Backend running on port ${PORT} (HTTP + Socket.IO)`);
 
-        // Start ZKTeco polling (connect → pull logs → disconnect cycle)
-        zktecoService.startPolling();
-        console.log('[ZKTECO] Attendance polling activated');
+        // ZKTeco: Auto-polling DISABLED to keep device free for fingerprint scans.
+        // Use the "Sync Attendance Now" button in the admin panel to pull logs manually.
+        // To re-enable auto-polling, uncomment: zktecoService.startPolling();
+        console.log('[ZKTECO] Manual sync mode — use admin panel to sync attendance');
     });
 });
