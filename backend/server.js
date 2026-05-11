@@ -758,6 +758,34 @@ app.post('/api/zkteco/test-connection', async (req, res) => {
     }
 });
 
+// 19. Sync enrollment status from device (reads users on device, updates DB status)
+app.post('/api/zkteco/sync-device-users', async (req, res) => {
+    try {
+        const deviceUsers = await zktecoService.getDeviceUsers();
+        if (deviceUsers.length === 0) {
+            return res.json({ success: true, updated: 0, message: 'No users found on device (is it connected?)' });
+        }
+
+        let updated = 0;
+        for (const du of deviceUsers) {
+            const result = await pool.query(
+                `UPDATE zkteco_users SET status = 'enrolled' 
+                 WHERE (zkteco_uid = $1 OR zkteco_user_id = $2) AND status != 'enrolled'`,
+                [du.uid, du.userId?.toString()]
+            );
+            updated += result.rowCount;
+        }
+
+        // Disconnect after sync to free the device
+        await zktecoService.disconnect();
+
+        res.json({ success: true, updated, deviceUserCount: deviceUsers.length });
+    } catch (err) {
+        console.error('[API] /zkteco/sync-device-users error:', err.message);
+        res.status(500).json({ success: false, message: err.message });
+    }
+});
+
 // ============================================================
 // Socket.IO Connection Handler
 // ============================================================

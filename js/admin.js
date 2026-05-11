@@ -1711,6 +1711,28 @@ window.AdminUI = {
         }
     },
 
+    zktecoSyncEnrollment: async function() {
+        const btn = event.target.closest('button');
+        const origText = btn.innerHTML;
+        btn.innerHTML = '<ion-icon name="finger-print-outline" style="vertical-align:middle; margin-right:4px;"></ion-icon> Syncing...';
+        btn.disabled = true;
+        try {
+            const res = await fetch('/api/zkteco/sync-device-users', { method: 'POST' });
+            const data = await res.json();
+            if (data.success) {
+                alert(`✅ Synced enrollment status.\n\nDevice users found: ${data.deviceUserCount || 0}\nStatuses updated: ${data.updated || 0}`);
+                this.renderZkteco();
+            } else {
+                alert('❌ ' + (data.message || 'Failed to sync'));
+            }
+        } catch (err) {
+            alert('Sync error: ' + err.message);
+        } finally {
+            btn.innerHTML = origText;
+            btn.disabled = false;
+        }
+    },
+
     zktecoUnmapUser: async function(userId) {
         if (!confirm('Remove mapping for this user?')) return;
         try {
