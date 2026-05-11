@@ -1588,10 +1588,19 @@ window.AdminUI = {
         tbody.innerHTML = '<tr><td colspan="5" style="text-align:center; color:var(--text-muted); padding:24px;">Loading...</td></tr>';
 
         try {
+            // Ensure users are loaded
+            if (!this._cachedUsers || this._cachedUsers.length === 0) {
+                try {
+                    const storeRes = await fetch('/api/sync/store');
+                    const storeData = await storeRes.json();
+                    this._cachedUsers = storeData.users || [];
+                } catch (e) {}
+            }
+            const users = this._cachedUsers || [];
+
             const res = await fetch('/api/zkteco/device-users');
             const data = await res.json();
             const mappings = data.mappings || [];
-            const users = this._cachedUsers || [];
 
             tbody.innerHTML = '';
             if (mappings.length === 0) {
@@ -1602,7 +1611,7 @@ window.AdminUI = {
             mappings.forEach(m => {
                 const user = users.find(u => u.id === m.user_id);
                 const tr = document.createElement('tr');
-                const statusColor = m.status === 'synced' ? '#10b981' : (m.status === 'pending_enrollment' ? '#f59e0b' : 'var(--text-muted)');
+                const statusColor = m.status === 'enrolled' ? '#10b981' : (m.status === 'pending_enrollment' ? '#f59e0b' : 'var(--text-muted)');
                 tr.innerHTML = `
                     <td><strong>${user ? user.name : m.user_id}</strong></td>
                     <td>${m.zkteco_uid}</td>
@@ -1625,11 +1634,19 @@ window.AdminUI = {
         tbody.innerHTML = '<tr><td colspan="5" style="text-align:center; color:var(--text-muted); padding:24px;">Loading...</td></tr>';
 
         try {
+            // Ensure users are loaded
+            if (!this._cachedUsers || this._cachedUsers.length === 0) {
+                try {
+                    const storeRes = await fetch('/api/sync/store');
+                    const storeData = await storeRes.json();
+                    this._cachedUsers = storeData.users || [];
+                } catch (e) {}
+            }
+            const users = this._cachedUsers || [];
+
             const res = await fetch('/api/zkteco/device-users');
             const data = await res.json();
             const deviceUsers = data.users || [];
-            // Use cached users OR kitsuPersons (loaded on init) as fallback
-            const users = (this._cachedUsers && this._cachedUsers.length > 0) ? this._cachedUsers : (this.kitsuPersons || []).map(p => ({ id: p.id, name: `${p.first_name} ${p.last_name}` }));
 
             tbody.innerHTML = '';
             if (deviceUsers.length === 0) {
@@ -1640,7 +1657,7 @@ window.AdminUI = {
             deviceUsers.forEach(du => {
                 const tr = document.createElement('tr');
                 const mappedUser = du.mappedUserId ? users.find(u => u.id === du.mappedUserId) : null;
-                const statusColor = du.mappingStatus === 'enrolled' ? 'var(--success)' : du.mappingStatus === 'synced' ? '#3b82f6' : 'var(--warning)';
+                const statusColor = du.mappingStatus === 'enrolled' ? 'var(--success)' : du.mappingStatus === 'pending_enrollment' ? 'var(--warning)' : '#3b82f6';
                 const statusLabel = du.mappingStatus || 'pending';
                 tr.innerHTML = `
                     <td>${du.uid}</td>
