@@ -662,23 +662,21 @@ app.get('/api/zkteco/status', async (req, res) => {
     res.json(zktecoService.getStatus());
 });
 
-// 12. ZKTeco Device Users (from device + mappings)
+// 12. ZKTeco Device Users (from DB mappings — does NOT connect to device)
 app.get('/api/zkteco/device-users', async (req, res) => {
     try {
-        const deviceUsers = await zktecoService.getDeviceUsers();
         const mappingsRes = await pool.query('SELECT user_id, zkteco_uid, zkteco_user_id, status FROM zkteco_users');
         const mappings = mappingsRes.rows;
 
-        const enriched = deviceUsers.map(du => {
-            const map = mappings.find(m => m.zkteco_uid === du.uid || m.zkteco_user_id === du.userId);
-            return {
-                ...du,
-                mappedUserId: map?.user_id || null,
-                mappingStatus: map?.status || 'unmapped'
-            };
-        });
+        // Return DB mappings as both users and mappings (no device hit needed for tab display)
+        const users = mappings.map(m => ({
+            uid: m.zkteco_uid,
+            userId: m.zkteco_user_id,
+            mappedUserId: m.user_id,
+            mappingStatus: m.status || 'synced'
+        }));
 
-        res.json({ success: true, users: enriched, mappings });
+        res.json({ success: true, users, mappings });
     } catch (err) {
         console.error('[API] /zkteco/device-users error:', err.message);
         res.status(500).json({ success: false, message: err.message });
