@@ -26,17 +26,28 @@ function nowStr() {
 async function connectDevice() {
   if (device && isConnected) return true;
 
+  // Clean up any lingering device/socket from a previous failed attempt
+  if (device) {
+    try { await device.disconnect(); } catch (e) {}
+    device = null;
+    // Give the device time to release the connection
+    await new Promise(r => setTimeout(r, 1000));
+  }
+
   device = new Zkteco(DEVICE_IP, DEVICE_PORT, 10000, 5200);
   try {
     await device.createSocket();
     isConnected = true;
-    const info = await device.getInfo();
+    let info = null;
+    try { info = await device.getInfo(); } catch (e) {}
     logsOnDevice = info?.logCapacity || 0;
     console.log(`[ZKTECO] Connected to ${DEVICE_IP}:${DEVICE_PORT}`);
     emitStatus();
     return true;
   } catch (err) {
     console.error('[ZKTECO] Connection failed:', err.message);
+    // Force-destroy the socket to prevent lingering connections
+    try { await device.disconnect(); } catch (e) {}
     isConnected = false;
     device = null;
     emitStatus();
