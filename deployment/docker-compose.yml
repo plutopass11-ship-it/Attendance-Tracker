@@ -60,10 +60,6 @@ services:
       KITSU_ADMIN_EMAIL: ${KITSU_ADMIN_EMAIL}
       KITSU_ADMIN_PASSWORD: ${KITSU_ADMIN_PASSWORD}
       N8N_WEBHOOK_URL: ${N8N_WEBHOOK_URL:-}
-      # ZKTeco WL20 Biometric Device
-      ZKTECO_IP: ${ZKTECO_IP:-192.168.1.252}
-      ZKTECO_PORT: ${ZKTECO_PORT:-4370}
-      ZKTECO_POLL_INTERVAL: ${ZKTECO_POLL_INTERVAL:-30000}
     networks:
       - default
       - kitsu

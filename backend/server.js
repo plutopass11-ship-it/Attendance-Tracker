@@ -3,7 +3,6 @@ const cors = require('cors');
 const { Pool } = require('pg');
 const { createServer } = require('http');
 const { Server } = require('socket.io');
-const zktecoService = require('./services/zkteco-service');
 
 const app = express();
 const httpServer = createServer(app);
@@ -21,8 +20,7 @@ const pool = new Pool({
   port: process.env.POSTGRES_PORT || 5432,
 });
 
-// Inject Socket.IO and DB pool into ZKTeco service
-zktecoService.inject(io, pool);
+
 
 const KITSU_URL = process.env.KITSU_URL || 'http://host.docker.internal:3002';
 const N8N_WEBHOOK_URL = process.env.N8N_WEBHOOK_URL || '';  // e.g. http://n8n:5678/webhook/leave-status-changed
@@ -653,146 +651,12 @@ app.put('/api/settings', async (req, res) => {
 });
 
 
-// ============================================================
-// ZKTeco Device Management Routes
-// ============================================================
-
-// 11. ZKTeco Device Status
-app.get('/api/zkteco/status', async (req, res) => {
-    res.json(zktecoService.getStatus());
-});
-
-// 12. ZKTeco Device Users (from DB mappings — does NOT connect to device)
-app.get('/api/zkteco/device-users', async (req, res) => {
-    try {
-        const mappingsRes = await pool.query('SELECT user_id, zkteco_uid, zkteco_user_id, status FROM zkteco_users');
-        const mappings = mappingsRes.rows;
-
-        // Return DB mappings as both users and mappings (no device hit needed for tab display)
-        const users = mappings.map(m => ({
-            uid: m.zkteco_uid,
-            userId: m.zkteco_user_id,
-            mappedUserId: m.user_id,
-            mappingStatus: m.status || 'synced'
-        }));
-
-        res.json({ success: true, users, mappings });
-    } catch (err) {
-        console.error('[API] /zkteco/device-users error:', err.message);
-        res.status(500).json({ success: false, message: err.message });
-    }
-});
-
-// 13. Map a device user to an app user
-app.post('/api/zkteco/map-user', async (req, res) => {
-    const { userId, zktecoUid, zktecoUserId } = req.body;
-    if (!userId || !zktecoUid || !zktecoUserId) {
-        return res.status(400).json({ success: false, message: 'Missing fields: userId, zktecoUid, zktecoUserId' });
-    }
-    try {
-        await pool.query(
-            `INSERT INTO zkteco_users (user_id, zkteco_uid, zkteco_user_id, status)
-             VALUES ($1, $2, $3, $4)
-             ON CONFLICT (zkteco_user_id) DO UPDATE SET user_id = $1, zkteco_uid = $2, status = $4`,
-            [userId, zktecoUid, zktecoUserId, 'synced']
-        );
-        res.json({ success: true });
-    } catch (err) {
-        console.error('[API] /zkteco/map-user error:', err.message);
-        res.status(500).json({ success: false, message: err.message });
-    }
-});
-
-// 14. Unmap a user
-app.delete('/api/zkteco/unmap/:userId', async (req, res) => {
-    try {
-        await pool.query('DELETE FROM zkteco_users WHERE user_id = $1', [req.params.userId]);
-        res.json({ success: true });
-    } catch (err) {
-        res.status(500).json({ success: false, message: err.message });
-    }
-});
-
-// 15. Push Kitsu users to ZKTeco device
-app.post('/api/zkteco/push-users', async (req, res) => {
-    try {
-        const result = await zktecoService.syncKitsuUsersToDevice();
-        res.json({ success: true, ...result });
-    } catch (err) {
-        console.error('[API] /zkteco/push-users error:', err.message);
-        res.status(500).json({ success: false, message: err.message });
-    }
-});
-
-// 16. Manual attendance sync from device
-app.post('/api/zkteco/sync-attendance', async (req, res) => {
-    try {
-        const result = await zktecoService.syncAttendanceLogs();
-        res.json({ success: true, ...result });
-    } catch (err) {
-        console.error('[API] /zkteco/sync-attendance error:', err.message);
-        res.status(500).json({ success: false, message: err.message });
-    }
-});
-
-// 17. Delete a user from device
-app.delete('/api/zkteco/device-user/:uid', async (req, res) => {
-    try {
-        const deleted = await zktecoService.deleteDeviceUser(parseInt(req.params.uid, 10));
-        if (deleted) {
-            await pool.query('DELETE FROM zkteco_users WHERE zkteco_uid = $1', [req.params.uid]);
-        }
-        res.json({ success: deleted });
-    } catch (err) {
-        res.status(500).json({ success: false, message: err.message });
-    }
-});
-
-// 18. Test device connection
-app.post('/api/zkteco/test-connection', async (req, res) => {
-    try {
-        const connected = await zktecoService.connect();
-        res.json({ success: true, connected });
-    } catch (err) {
-        res.status(500).json({ success: false, connected: false, message: err.message });
-    }
-});
-
-// 19. Sync enrollment status from device (reads users on device, updates DB status)
-app.post('/api/zkteco/sync-device-users', async (req, res) => {
-    try {
-        const deviceUsers = await zktecoService.getDeviceUsers();
-        if (deviceUsers.length === 0) {
-            return res.json({ success: true, updated: 0, message: 'No users found on device (is it connected?)' });
-        }
-
-        let updated = 0;
-        for (const du of deviceUsers) {
-            const result = await pool.query(
-                `UPDATE zkteco_users SET status = 'enrolled' 
-                 WHERE (zkteco_uid = $1 OR zkteco_user_id = $2) AND status != 'enrolled'`,
-                [du.uid, du.userId?.toString()]
-            );
-            updated += result.rowCount;
-        }
-
-        // Disconnect after sync to free the device
-        await zktecoService.disconnect();
-
-        res.json({ success: true, updated, deviceUserCount: deviceUsers.length });
-    } catch (err) {
-        console.error('[API] /zkteco/sync-device-users error:', err.message);
-        res.status(500).json({ success: false, message: err.message });
-    }
-});
 
 // ============================================================
 // Socket.IO Connection Handler
 // ============================================================
 io.on('connection', (socket) => {
     console.log(`[Socket.IO] Client connected: ${socket.id}`);
-    // Send current device status immediately
-    socket.emit('device:status', zktecoService.getStatus());
 
     socket.on('disconnect', () => {
         console.log(`[Socket.IO] Client disconnected: ${socket.id}`);
@@ -860,30 +724,6 @@ async function runMigrations() {
             console.log('Added slack_id column to users table.');
         }
 
-        // ─── ZKTeco Tables ───
-        await pool.query(`
-            CREATE TABLE IF NOT EXISTS zkteco_users (
-                id SERIAL PRIMARY KEY,
-                user_id VARCHAR(50) NOT NULL REFERENCES users(user_id) ON DELETE CASCADE,
-                zkteco_uid INTEGER NOT NULL,
-                zkteco_user_id VARCHAR(20) NOT NULL UNIQUE,
-                status VARCHAR(30) DEFAULT 'pending_enrollment',
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                UNIQUE(user_id, zkteco_uid)
-            );
-        `);
-
-        await pool.query(`
-            CREATE TABLE IF NOT EXISTS zkteco_sync_log (
-                id SERIAL PRIMARY KEY,
-                direction VARCHAR(30),
-                records_processed INTEGER,
-                status VARCHAR(20),
-                message TEXT,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-            );
-        `);
-
         console.log('DB migrations completed.');
     } catch (err) {
         console.error('Migration error:', err);
@@ -895,10 +735,5 @@ const PORT = process.env.PORT || 4000;
 runMigrations().then(() => {
     httpServer.listen(PORT, () => {
         console.log(`Backend running on port ${PORT} (HTTP + Socket.IO)`);
-
-        // ZKTeco: Auto-polling DISABLED to keep device free for fingerprint scans.
-        // Use the "Sync Attendance Now" button in the admin panel to pull logs manually.
-        // To re-enable auto-polling, uncomment: zktecoService.startPolling();
-        console.log('[ZKTECO] Manual sync mode — use admin panel to sync attendance');
     });
 });
