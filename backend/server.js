@@ -314,6 +314,7 @@ app.post('/api/attendance', async (req, res) => {
           client.release();
       }
     }
+    io.emit('attendance:update', { userId });
     res.json({ success: true });
   } catch (err) {
     console.error(err);
@@ -339,6 +340,7 @@ app.put('/api/attendance/approve', async (req, res) => {
            params = [isWfhAttendance ? 'wfh_working' : 'working', userId, date];
         }
         await pool.query(q, params);
+        io.emit('attendance:update', { userId });
         res.json({ success: true });
     } catch(err) {
         console.error(err);
@@ -356,6 +358,7 @@ app.post('/api/leaves', async (req, res) => {
              VALUES ($1, $2, $3, $4, $5, $6)`,
              [userId, type, startDate, endDate, reason, dbStatus]
         );
+        io.emit('attendance:update', { userId });
         res.json({ success: true });
     } catch(err) {
         console.error('Leave insert error:', err);
@@ -398,7 +401,10 @@ app.put('/api/leaves/:id', async (req, res) => {
            }
        }
 
-       res.json({ success: true });
+        if (result.rowCount > 0) {
+            io.emit('attendance:update', { userId: result.rows[0].user_id });
+        }
+        res.json({ success: true });
 
        // Fire-and-forget webhook to n8n for WhatsApp notifications
        if (N8N_WEBHOOK_URL && result.rowCount > 0) {
@@ -427,12 +433,13 @@ app.put('/api/leaves/:id', async (req, res) => {
 app.delete('/api/leaves/:id', async (req, res) => {
     try {
         const result = await pool.query(
-            'DELETE FROM leave_requests WHERE id = $1 RETURNING id',
+            'DELETE FROM leave_requests WHERE id = $1 RETURNING user_id',
             [req.params.id]
         );
         if (result.rowCount === 0) {
             return res.status(404).json({ success: false, message: 'Leave record not found' });
         }
+        io.emit('attendance:update', { userId: result.rows[0].user_id });
         res.json({ success: true });
     } catch (err) {
         console.error('Leave delete error:', err);
@@ -447,6 +454,7 @@ app.delete('/api/attendance/:userId/:date', async (req, res) => {
             'DELETE FROM attendance WHERE user_id = $1 AND date = $2 RETURNING user_id',
             [req.params.userId, req.params.date]
         );
+        io.emit('attendance:update', { userId: req.params.userId });
         res.json({ success: true, deleted: result.rowCount });
     } catch (err) {
         console.error('Attendance delete error:', err);
@@ -868,7 +876,8 @@ async function runAutoHalfDayLeave() {
         }
 
         if (autoApplied > 0) {
-            console.log(`[Auto Half-Day] Total auto-applied: ${autoApplied}`);
+            console.log(`[Auto Half-Day] Completed check. Applied half-day leaves for ${autoApplied} users.`);
+            io.emit('attendance:update', { broadcast: true }); // Notify all clients that a mass update occurred
         } else {
             console.log('[Auto Half-Day] All users accounted for. No auto-leaves needed.');
         }

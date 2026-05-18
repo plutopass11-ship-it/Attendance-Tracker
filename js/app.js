@@ -746,6 +746,23 @@ document.addEventListener('DOMContentLoaded', () => {
         await Store.syncWithBackend();
         updateAttendanceUI();
     };
+    // --- Realtime / Auto-Refresh Logic ---
+    let lastLoadedDate = new Date().toDateString();
+    
+    document.addEventListener("visibilitychange", () => {
+        if (document.visibilityState === "visible") {
+            const today = new Date().toDateString();
+            if (today !== lastLoadedDate) {
+                console.log("[App] Date changed overnight. Reloading application...");
+                window.location.reload();
+            } else {
+                // If it's the same day, just pull latest updates in case we missed a socket event
+                if (window.refreshAttendanceUI) {
+                    window.refreshAttendanceUI();
+                }
+            }
+        }
+    });
 
     // Run init
     init();
