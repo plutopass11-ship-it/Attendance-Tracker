@@ -1,7 +1,5 @@
 {
   "name": "attendance-backend",
-{
-  "name": "attendance-backend",
   "version": "1.0.0",
   "description": "Node.js backend for Attendance Tracker",
   "main": "server.js",
