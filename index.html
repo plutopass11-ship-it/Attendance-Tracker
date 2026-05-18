@@ -84,6 +84,9 @@
                     <button class="admin-nav-item" data-target="admin-tab-reports">
                         <ion-icon name="analytics-outline"></ion-icon> Reports
                     </button>
+                    <button class="admin-nav-item" data-target="admin-tab-history">
+                        <ion-icon name="time-outline"></ion-icon> Employee History
+                    </button>
                 </nav>
                 <button id="admin-logout-btn" class="btn-primary" style="margin:20px; width:calc(100% - 40px); background:var(--danger)">Logout</button>
             </aside>
@@ -460,6 +463,203 @@
                                     <tr><td colspan="3" style="text-align:center; color:var(--text-muted);">Loading...</td></tr>
                                 </tbody>
                             </table>
+                        </div>
+                    </section>
+
+                    <!-- Employee History Tab -->
+                    <section id="admin-tab-history" class="admin-tab hidden">
+                        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:20px; flex-wrap:wrap; gap:12px;">
+                            <h2 class="section-title" style="margin:0">Employee History</h2>
+                            <div style="display:flex; gap:10px; align-items:center; flex-wrap:wrap;">
+                                <select id="history-user-select" class="history-user-select" onchange="window.AdminUI.loadEmployeeHistory(this.value)">
+                                    <option value="">— Select Employee —</option>
+                                </select>
+                                <select id="history-period-select" class="history-period-select" onchange="window.AdminUI.loadEmployeeHistory(document.getElementById('history-user-select').value)">
+                                    <option value="monthly">This Month</option>
+                                    <option value="yearly" selected>This Year</option>
+                                    <option value="alltime">All Time</option>
+                                </select>
+                                <button class="btn-small btn-primary" style="margin:0; width:auto; padding:8px 16px;" onclick="window.AdminUI.exportEmployeeHistory()">
+                                    <ion-icon name="download-outline" style="vertical-align:middle; margin-right:4px;"></ion-icon> Export CSV
+                                </button>
+                                <button class="btn-small btn-neutral" style="margin:0; width:auto; padding:8px 16px;" onclick="window.AdminUI.triggerAutoHalfDay()" title="Manually trigger auto half-day check for all users">
+                                    <ion-icon name="alarm-outline" style="vertical-align:middle; margin-right:4px;"></ion-icon> Run Auto Half-Day
+                                </button>
+                            </div>
+                        </div>
+
+                        <div id="history-placeholder" style="text-align:center; padding:80px 20px; color:var(--text-muted);">
+                            <ion-icon name="person-circle-outline" style="font-size:80px; opacity:0.3; display:block; margin:0 auto 16px;"></ion-icon>
+                            <h3 style="margin:0 0 8px; color:var(--text-main);">Select an Employee</h3>
+                            <p style="margin:0; font-size:14px;">Choose an employee from the dropdown above to view their complete history, attendance stats, and leave records.</p>
+                        </div>
+
+                        <div id="history-content" class="hidden">
+                            <!-- Stats Overview -->
+                            <div class="stats-grid" style="grid-template-columns: repeat(6, 1fr); margin-bottom:24px;" id="history-stats-grid">
+                                <div class="stat-card">
+                                    <h3>Attendance %</h3>
+                                    <div class="stat-value" id="hist-stat-attendance" style="color:#10b981;">0%</div>
+                                </div>
+                                <div class="stat-card">
+                                    <h3>Days Present</h3>
+                                    <div class="stat-value" id="hist-stat-present" style="color:#3b82f6;">0</div>
+                                </div>
+                                <div class="stat-card">
+                                    <h3>Total Leaves</h3>
+                                    <div class="stat-value" id="hist-stat-leaves" style="color:#8b5cf6;">0</div>
+                                </div>
+                                <div class="stat-card">
+                                    <h3>WFH Days</h3>
+                                    <div class="stat-value" id="hist-stat-wfh" style="color:#06b6d4;">0</div>
+                                </div>
+                                <div class="stat-card">
+                                    <h3>Late Logins</h3>
+                                    <div class="stat-value" id="hist-stat-late" style="color:#f59e0b;">0</div>
+                                </div>
+                                <div class="stat-card">
+                                    <h3>Early Logouts</h3>
+                                    <div class="stat-value" id="hist-stat-early" style="color:#ef4444;">0</div>
+                                </div>
+                            </div>
+
+                            <!-- Charts Row -->
+                            <div style="display:flex; gap:24px; margin-bottom:24px; flex-wrap:wrap;">
+                                <div class="glass-panel" style="width:320px; flex-shrink:0; overflow:hidden;">
+                                    <h3 class="section-subtitle">Attendance Overview</h3>
+                                    <div style="position:relative; width:100%; height:260px; overflow:hidden;">
+                                        <canvas id="historyAttendanceChart" width="280" height="260"></canvas>
+                                    </div>
+                                </div>
+                                <div class="glass-panel" style="flex:1; min-width:400px; overflow:hidden;">
+                                    <h3 class="section-subtitle">Monthly Attendance Trend</h3>
+                                    <div style="position:relative; width:100%; height:260px; overflow:hidden;">
+                                        <canvas id="historyTrendChart" width="600" height="260"></canvas>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- Sub-tabs for different record views -->
+                            <div style="display:flex; gap:6px; margin-bottom:16px; flex-wrap:wrap;">
+                                <button class="btn-small btn-primary history-detail-tab active" data-view="attendance" style="margin:0; width:auto; padding:8px 18px;" onclick="window.AdminUI.switchHistoryView('attendance')">
+                                    📍 Attendance Log
+                                </button>
+                                <button class="btn-small btn-neutral history-detail-tab" data-view="leaves" style="margin:0; width:auto; padding:8px 18px;" onclick="window.AdminUI.switchHistoryView('leaves')">
+                                    📋 Leave History
+                                </button>
+                                <button class="btn-small btn-neutral history-detail-tab" data-view="wfh" style="margin:0; width:auto; padding:8px 18px;" onclick="window.AdminUI.switchHistoryView('wfh')">
+                                    🏠 WFH History
+                                </button>
+                                <button class="btn-small btn-neutral history-detail-tab" data-view="late" style="margin:0; width:auto; padding:8px 18px;" onclick="window.AdminUI.switchHistoryView('late')">
+                                    ⏰ Late Logins
+                                </button>
+                                <button class="btn-small btn-neutral history-detail-tab" data-view="early" style="margin:0; width:auto; padding:8px 18px;" onclick="window.AdminUI.switchHistoryView('early')">
+                                    🏃 Early Logouts
+                                </button>
+                                <button class="btn-small btn-neutral history-detail-tab" data-view="auto" style="margin:0; width:auto; padding:8px 18px;" onclick="window.AdminUI.switchHistoryView('auto')">
+                                    🤖 Auto-Applied
+                                </button>
+                            </div>
+
+                            <div id="history-records-count" style="font-size:12px; color:var(--text-muted); margin-bottom:8px;">0 records</div>
+
+                            <!-- Attendance Log Table -->
+                            <div id="history-view-attendance" class="glass-panel" style="overflow-x:auto; max-height:500px; overflow-y:auto;">
+                                <table class="admin-table">
+                                    <thead>
+                                        <tr>
+                                            <th>Date</th>
+                                            <th>Day</th>
+                                            <th>Check In</th>
+                                            <th>Check Out</th>
+                                            <th>Hours</th>
+                                            <th>Status</th>
+                                            <th>Flags</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="history-attendance-tbody"></tbody>
+                                </table>
+                            </div>
+
+                            <!-- Leave History Table -->
+                            <div id="history-view-leaves" class="glass-panel hidden" style="overflow-x:auto; max-height:500px; overflow-y:auto;">
+                                <table class="admin-table">
+                                    <thead>
+                                        <tr>
+                                            <th>Type</th>
+                                            <th>Category</th>
+                                            <th>Dates</th>
+                                            <th>Days</th>
+                                            <th>Reason</th>
+                                            <th>Status</th>
+                                            <th>Source</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="history-leaves-tbody"></tbody>
+                                </table>
+                            </div>
+
+                            <!-- WFH History Table -->
+                            <div id="history-view-wfh" class="glass-panel hidden" style="overflow-x:auto; max-height:500px; overflow-y:auto;">
+                                <table class="admin-table">
+                                    <thead>
+                                        <tr>
+                                            <th>Date(s)</th>
+                                            <th>Days</th>
+                                            <th>Reason</th>
+                                            <th>Status</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="history-wfh-tbody"></tbody>
+                                </table>
+                            </div>
+
+                            <!-- Late Logins Table -->
+                            <div id="history-view-late" class="glass-panel hidden" style="overflow-x:auto; max-height:500px; overflow-y:auto;">
+                                <table class="admin-table">
+                                    <thead>
+                                        <tr>
+                                            <th>Date</th>
+                                            <th>Day</th>
+                                            <th>Check In Time</th>
+                                            <th>Delay</th>
+                                            <th>Status</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="history-late-tbody"></tbody>
+                                </table>
+                            </div>
+
+                            <!-- Early Logouts Table -->
+                            <div id="history-view-early" class="glass-panel hidden" style="overflow-x:auto; max-height:500px; overflow-y:auto;">
+                                <table class="admin-table">
+                                    <thead>
+                                        <tr>
+                                            <th>Date</th>
+                                            <th>Day</th>
+                                            <th>Check Out Time</th>
+                                            <th>Hours Worked</th>
+                                            <th>Deficit</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="history-early-tbody"></tbody>
+                                </table>
+                            </div>
+
+                            <!-- Auto-Applied Leaves Table -->
+                            <div id="history-view-auto" class="glass-panel hidden" style="overflow-x:auto; max-height:500px; overflow-y:auto;">
+                                <table class="admin-table">
+                                    <thead>
+                                        <tr>
+                                            <th>Date</th>
+                                            <th>Leave Type</th>
+                                            <th>Reason</th>
+                                            <th>Status</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="history-auto-tbody"></tbody>
+                                </table>
+                            </div>
                         </div>
                     </section>
 
@@ -945,11 +1145,11 @@
     <script src="js/socket-client.js?v=1"></script>
 
     <!-- Scripts -->
-    <script src="js/auth.js?v=27"></script>
-    <script src="js/store.js?v=27"></script>
-    <script src="js/app.js?v=27"></script>
-    <script src="js/admin.js?v=27"></script>
-    <script src="js/reports.js?v=27"></script>
+    <script src="js/auth.js?v=28"></script>
+    <script src="js/store.js?v=28"></script>
+    <script src="js/app.js?v=28"></script>
+    <script src="js/admin.js?v=28"></script>
+    <script src="js/reports.js?v=28"></script>
     
     <!-- Edit Holiday Modal -->
     <div id="edit-holiday-modal" class="modal hidden">

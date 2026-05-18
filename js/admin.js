@@ -77,6 +77,7 @@ window.AdminUI = {
                 if(target === 'admin-tab-holidays') this.renderHolidays();
                 if(target === 'admin-tab-migration') this.renderMigrationTab();
                 if(target === 'admin-tab-reports' && window.ReportsUI) window.ReportsUI.init();
+                if(target === 'admin-tab-history') this.renderHistoryTab();
                 if(target === 'admin-tab-zkteco') this.renderZkteco();
             });
         });
@@ -1547,6 +1548,472 @@ window.AdminUI = {
             console.error('Clear migration error:', err);
             alert('Error connecting to backend.');
         }
+    },
+
+    // ============================================================
+    // Employee History Tab
+    // ============================================================
+
+    _historyAttChart: null,
+    _historyTrendChart: null,
+    _historyData: null,
+    _historyUserId: null,
+
+    renderHistoryTab: async function() {
+        // Populate user dropdown
+        try {
+            const res = await fetch('/api/sync/store');
+            const data = await res.json();
+            const dbUsers = (data.users || []).filter(u => u.role !== 'admin');
+            const select = document.getElementById('history-user-select');
+            if (select) {
+                const currentVal = select.value;
+                select.innerHTML = '<option value="">— Select Employee —</option>' +
+                    dbUsers.map(u => `<option value="${u.id}"${u.id === currentVal ? ' selected' : ''}>${u.name} (${u.id})</option>`).join('');
+            }
+        } catch (e) {
+            console.error('Error populating history user dropdown:', e);
+        }
+    },
+
+    loadEmployeeHistory: async function(userId) {
+        if (!userId) {
+            document.getElementById('history-placeholder').classList.remove('hidden');
+            document.getElementById('history-content').classList.add('hidden');
+            return;
+        }
+
+        document.getElementById('history-placeholder').classList.add('hidden');
+        document.getElementById('history-content').classList.remove('hidden');
+
+        this._historyUserId = userId;
+
+        try {
+            const res = await fetch(`/api/users/${encodeURIComponent(userId)}/history`);
+            if (!res.ok) throw new Error('Failed to fetch history');
+            const data = await res.json();
+            this._historyData = data;
+
+            // Compute date range filter
+            const period = document.getElementById('history-period-select')?.value || 'yearly';
+            const now = new Date();
+            let fromDate = '2020-01-01';
+            if (period === 'monthly') {
+                fromDate = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}-01`;
+            } else if (period === 'yearly') {
+                fromDate = `${now.getFullYear()}-01-01`;
+            }
+            const toDate = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}-${String(now.getDate()).padStart(2,'0')}`;
+
+            // Filter data by period
+            const attendance = data.attendance.filter(a => a.date >= fromDate && a.date <= toDate);
+            const leaves = data.leaves.filter(l => l.startDate >= fromDate || l.endDate >= fromDate);
+
+            // Compute stats
+            const daysPresent = attendance.filter(a => a.checkInTime).length;
+            const lateLogins = attendance.filter(a => a.isLateLogin).length;
+            const earlyLogouts = attendance.filter(a => a.isEarlyLogout && a.checkOutTime).length;
+            const wfhLeaves = leaves.filter(l => this._isWfh(l.type) && l.status === 'Approved');
+            const nonWfhLeaves = leaves.filter(l => !this._isWfh(l.type) && l.status === 'Approved');
+            const autoApplied = leaves.filter(l => l.isAutoApplied);
+
+            // WFH days
+            let wfhDays = 0;
+            wfhLeaves.forEach(l => wfhDays += this._calcDays(l));
+
+            // Total leave days
+            let totalLeaveDays = 0;
+            nonWfhLeaves.forEach(l => totalLeaveDays += this._calcDays(l));
+
+            // Calculate working days in period for attendance %
+            const settings = JSON.parse(localStorage.getItem('studioSettings') || '{}');
+            const workDaysPerWeek = settings.workDays || 6;
+            const holidays = Store.getHolidays().filter(h => h.date >= fromDate && h.date <= toDate && h.type !== 'Optional');
+
+            let workingDays = 0;
+            const d = new Date(fromDate);
+            const endD = new Date(toDate);
+            while (d <= endD) {
+                const dow = d.getDay();
+                const dStr = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+                const isHoliday = holidays.some(h => h.date === dStr);
+                if (!isHoliday) {
+                    if (workDaysPerWeek === 5 && dow !== 0 && dow !== 6) workingDays++;
+                    else if (workDaysPerWeek === 6 && dow !== 0) workingDays++;
+                    else if (workDaysPerWeek === 7) workingDays++;
+                }
+                d.setDate(d.getDate() + 1);
+            }
+
+            const attendancePct = workingDays > 0 ? Math.round((daysPresent / workingDays) * 100) : 0;
+
+            // Update stat cards
+            document.getElementById('hist-stat-attendance').textContent = attendancePct + '%';
+            document.getElementById('hist-stat-present').textContent = daysPresent;
+            document.getElementById('hist-stat-leaves').textContent = totalLeaveDays;
+            document.getElementById('hist-stat-wfh').textContent = wfhDays;
+            document.getElementById('hist-stat-late').textContent = lateLogins;
+            document.getElementById('hist-stat-early').textContent = earlyLogouts;
+
+            // Render Charts
+            this._renderHistoryCharts(daysPresent, totalLeaveDays, wfhDays, lateLogins, workingDays, attendance);
+
+            // Render current view
+            const currentView = document.querySelector('.history-detail-tab.active')?.dataset?.view || 'attendance';
+            this.switchHistoryView(currentView);
+
+        } catch (err) {
+            console.error('Error loading employee history:', err);
+            document.getElementById('history-content').innerHTML = '<p style="color:var(--danger); text-align:center; padding:40px;">Failed to load employee history.</p>';
+        }
+    },
+
+    _renderHistoryCharts: function(present, leaves, wfh, late, total, attendance) {
+        // 1. Attendance Doughnut
+        const attCtx = document.getElementById('historyAttendanceChart');
+        if (attCtx) {
+            if (this._historyAttChart) this._historyAttChart.destroy();
+            const absent = Math.max(0, total - present - leaves - wfh);
+            this._historyAttChart = new Chart(attCtx, {
+                type: 'doughnut',
+                data: {
+                    labels: total > 0 ? ['Present', 'WFH', 'On Leave', 'Absent'] : ['No Data'],
+                    datasets: [{
+                        data: total > 0 ? [present, wfh, leaves, absent] : [1],
+                        backgroundColor: total > 0 ? ['#10b981', '#3b82f6', '#8b5cf6', '#ef4444'] : ['#334155'],
+                        borderWidth: 0
+                    }]
+                },
+                options: {
+                    responsive: false,
+                    plugins: {
+                        legend: { position: 'right', labels: { color: '#e2e8f0', usePointStyle: true } }
+                    }
+                }
+            });
+        }
+
+        // 2. Monthly Trend
+        const trendCtx = document.getElementById('historyTrendChart');
+        if (trendCtx) {
+            if (this._historyTrendChart) this._historyTrendChart.destroy();
+
+            const monthLabels = [];
+            const presentData = [];
+            const lateData = [];
+            const now = new Date();
+
+            for (let m = 5; m >= 0; m--) {
+                const d = new Date(now.getFullYear(), now.getMonth() - m, 1);
+                const mStr = d.toLocaleString('default', { month: 'short', year: '2-digit' });
+                monthLabels.push(mStr);
+                const mStart = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-01`;
+                const mEnd = new Date(d.getFullYear(), d.getMonth()+1, 0);
+                const mEndStr = `${mEnd.getFullYear()}-${String(mEnd.getMonth()+1).padStart(2,'0')}-${String(mEnd.getDate()).padStart(2,'0')}`;
+
+                const mRecords = attendance.filter(a => a.date >= mStart && a.date <= mEndStr);
+                presentData.push(mRecords.filter(a => a.checkInTime).length);
+                lateData.push(mRecords.filter(a => a.isLateLogin).length);
+            }
+
+            this._historyTrendChart = new Chart(trendCtx, {
+                type: 'bar',
+                data: {
+                    labels: monthLabels,
+                    datasets: [
+                        { label: 'Days Present', data: presentData, backgroundColor: '#10b981', borderRadius: 4 },
+                        { label: 'Late Logins', data: lateData, backgroundColor: '#f59e0b', borderRadius: 4 }
+                    ]
+                },
+                options: {
+                    responsive: false,
+                    plugins: { legend: { labels: { color: '#e2e8f0' } } },
+                    scales: {
+                        y: { beginAtZero: true, ticks: { color: '#94a3b8', stepSize: 1 }, grid: { color: 'rgba(255,255,255,0.05)' } },
+                        x: { ticks: { color: '#94a3b8' }, grid: { color: 'rgba(255,255,255,0.05)' } }
+                    }
+                }
+            });
+        }
+    },
+
+    switchHistoryView: function(view) {
+        // Update tab buttons
+        document.querySelectorAll('.history-detail-tab').forEach(btn => {
+            btn.classList.remove('active', 'btn-primary');
+            btn.classList.add('btn-neutral');
+        });
+        const activeBtn = document.querySelector(`.history-detail-tab[data-view="${view}"]`);
+        if (activeBtn) { activeBtn.classList.add('active', 'btn-primary'); activeBtn.classList.remove('btn-neutral'); }
+
+        // Hide all views
+        ['attendance', 'leaves', 'wfh', 'late', 'early', 'auto'].forEach(v => {
+            const el = document.getElementById(`history-view-${v}`);
+            if (el) el.classList.add('hidden');
+        });
+        const viewEl = document.getElementById(`history-view-${view}`);
+        if (viewEl) viewEl.classList.remove('hidden');
+
+        if (!this._historyData) return;
+
+        const data = this._historyData;
+        const period = document.getElementById('history-period-select')?.value || 'yearly';
+        const now = new Date();
+        let fromDate = '2020-01-01';
+        if (period === 'monthly') {
+            fromDate = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}-01`;
+        } else if (period === 'yearly') {
+            fromDate = `${now.getFullYear()}-01-01`;
+        }
+
+        const attendance = data.attendance.filter(a => a.date >= fromDate);
+        const leaves = data.leaves.filter(l => l.startDate >= fromDate || l.endDate >= fromDate);
+
+        const _getDayName = (dateStr) => new Date(dateStr).toLocaleDateString('en-US', { weekday: 'short' });
+
+        const _parseTimeMinutes = (timeStr) => {
+            if (!timeStr || timeStr === '--:--') return null;
+            const match = timeStr.match(/(\d{1,2}):(\d{2})\s*(am|pm)?/i);
+            if (!match) return null;
+            let h = parseInt(match[1], 10);
+            const m = parseInt(match[2], 10);
+            const ampm = match[3]?.toLowerCase();
+            if (ampm === 'pm' && h < 12) h += 12;
+            if (ampm === 'am' && h === 12) h = 0;
+            return h * 60 + m;
+        };
+
+        if (view === 'attendance') {
+            const tbody = document.getElementById('history-attendance-tbody');
+            tbody.innerHTML = '';
+            document.getElementById('history-records-count').textContent = `${attendance.length} records`;
+            if (attendance.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;color:var(--text-muted);padding:30px;">No attendance records found.</td></tr>';
+                return;
+            }
+            attendance.forEach(r => {
+                const isWfh = this._isWfhAttendanceStatus(r.status);
+                let statusBadge = '';
+                let statusColor = '#475569';
+                if (r.status === 'completed' || r.status === 'wfh_completed') { statusBadge = isWfh ? 'WFH Done' : 'Completed'; statusColor = '#10b981'; }
+                else if (r.status === 'working' || r.status === 'wfh_working') { statusBadge = isWfh ? 'WFH' : 'Working'; statusColor = '#f59e0b'; }
+                else { statusBadge = r.status; }
+
+                let flags = '';
+                if (r.isLateLogin) flags += '<span class="badge" style="background:#f59e0b;color:white;font-size:10px;margin-right:4px;">Late</span>';
+                if (r.isEarlyLogout && r.checkOutTime) flags += '<span class="badge" style="background:#ef4444;color:white;font-size:10px;">Early Out</span>';
+
+                const tr = document.createElement('tr');
+                tr.innerHTML = `
+                    <td>${r.date}</td>
+                    <td>${_getDayName(r.date)}</td>
+                    <td>${r.checkInTime || '--:--'}</td>
+                    <td>${r.checkOutTime || '--:--'}</td>
+                    <td>${r.hoursWorked ? r.hoursWorked + 'h' : '--'}</td>
+                    <td><span class="badge" style="background:${statusColor};color:white;">${statusBadge}</span></td>
+                    <td>${flags || '<span style="color:var(--text-muted);">—</span>'}</td>
+                `;
+                tbody.appendChild(tr);
+            });
+        }
+        else if (view === 'leaves') {
+            const tbody = document.getElementById('history-leaves-tbody');
+            tbody.innerHTML = '';
+            const leaveOnly = leaves.filter(l => !this._isWfh(l.type));
+            document.getElementById('history-records-count').textContent = `${leaveOnly.length} records`;
+            if (leaveOnly.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;color:var(--text-muted);padding:30px;">No leave records found.</td></tr>';
+                return;
+            }
+            leaveOnly.forEach(l => {
+                const days = this._calcDays(l);
+                let statusBadge = '';
+                if (l.status === 'Approved') statusBadge = '<span class="badge approved">Approved</span>';
+                else if (l.status === 'Pending') statusBadge = '<span class="badge pending">Pending</span>';
+                else statusBadge = `<span class="badge rejected">${l.status}</span>`;
+                let source = '<span style="color:var(--text-muted);">Manual</span>';
+                if (l.isAutoApplied) source = '<span class="badge" style="background:#f97316;color:white;font-size:10px;">🤖 Auto</span>';
+                else if (l.isHistorical) source = '<span class="badge" style="background:#64748b;color:white;font-size:10px;">Migrated</span>';
+
+                const tr = document.createElement('tr');
+                tr.innerHTML = `
+                    <td>${l.type}${l.isHalfDay ? ' <small style="color:var(--warning);">(Half)</small>' : ''}</td>
+                    <td><span class="badge" style="background:#8b5cf6;color:white;">Leave</span></td>
+                    <td>${l.startDate}${l.startDate !== l.endDate ? ' → ' + l.endDate : ''}</td>
+                    <td>${days}</td>
+                    <td style="max-width:200px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;" title="${(l.reason||'').replace(/"/g, '&quot;')}">${l.reason || '-'}</td>
+                    <td>${statusBadge}</td>
+                    <td>${source}</td>
+                `;
+                tbody.appendChild(tr);
+            });
+        }
+        else if (view === 'wfh') {
+            const tbody = document.getElementById('history-wfh-tbody');
+            tbody.innerHTML = '';
+            const wfhOnly = leaves.filter(l => this._isWfh(l.type));
+            document.getElementById('history-records-count').textContent = `${wfhOnly.length} records`;
+            if (wfhOnly.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="4" style="text-align:center;color:var(--text-muted);padding:30px;">No WFH records found.</td></tr>';
+                return;
+            }
+            wfhOnly.forEach(l => {
+                const days = this._calcDays(l);
+                let statusBadge = '';
+                if (l.status === 'Approved') statusBadge = '<span class="badge approved">Approved</span>';
+                else if (l.status === 'Pending') statusBadge = '<span class="badge pending">Pending</span>';
+                else statusBadge = `<span class="badge rejected">${l.status}</span>`;
+                const tr = document.createElement('tr');
+                tr.innerHTML = `
+                    <td>${l.startDate}${l.startDate !== l.endDate ? ' → ' + l.endDate : ''}</td>
+                    <td>${days}</td>
+                    <td style="max-width:250px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${l.reason || '-'}</td>
+                    <td>${statusBadge}</td>
+                `;
+                tbody.appendChild(tr);
+            });
+        }
+        else if (view === 'late') {
+            const tbody = document.getElementById('history-late-tbody');
+            tbody.innerHTML = '';
+            const lateRecords = attendance.filter(a => a.isLateLogin);
+            document.getElementById('history-records-count').textContent = `${lateRecords.length} records`;
+            if (lateRecords.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;color:var(--text-muted);padding:30px;">No late logins found. 🎉</td></tr>';
+                return;
+            }
+            lateRecords.forEach(r => {
+                const checkInMin = _parseTimeMinutes(r.checkInTime);
+                const expectedMin = 11 * 60; // 11:00 AM
+                const delayMin = checkInMin !== null ? Math.max(0, checkInMin - expectedMin) : 0;
+                const delayStr = delayMin > 0 ? `${Math.floor(delayMin / 60)}h ${delayMin % 60}m` : '—';
+
+                const isWfh = this._isWfhAttendanceStatus(r.status);
+                const statusLabel = isWfh ? 'WFH' : 'Office';
+
+                const tr = document.createElement('tr');
+                tr.innerHTML = `
+                    <td>${r.date}</td>
+                    <td>${_getDayName(r.date)}</td>
+                    <td><strong style="color:#f59e0b;">${r.checkInTime}</strong></td>
+                    <td><span class="badge" style="background:#f59e0b;color:white;">${delayStr}</span></td>
+                    <td>${statusLabel}</td>
+                `;
+                tbody.appendChild(tr);
+            });
+        }
+        else if (view === 'early') {
+            const tbody = document.getElementById('history-early-tbody');
+            tbody.innerHTML = '';
+            const earlyRecords = attendance.filter(a => a.isEarlyLogout && a.checkOutTime);
+            document.getElementById('history-records-count').textContent = `${earlyRecords.length} records`;
+            if (earlyRecords.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;color:var(--text-muted);padding:30px;">No early logouts found. 🎉</td></tr>';
+                return;
+            }
+            earlyRecords.forEach(r => {
+                const hrs = parseFloat(r.hoursWorked || 0);
+                const deficit = Math.max(0, 8 - hrs).toFixed(1);
+                const tr = document.createElement('tr');
+                tr.innerHTML = `
+                    <td>${r.date}</td>
+                    <td>${_getDayName(r.date)}</td>
+                    <td><strong style="color:#ef4444;">${r.checkOutTime}</strong></td>
+                    <td>${hrs}h</td>
+                    <td><span class="badge" style="background:#ef4444;color:white;">-${deficit}h</span></td>
+                `;
+                tbody.appendChild(tr);
+            });
+        }
+        else if (view === 'auto') {
+            const tbody = document.getElementById('history-auto-tbody');
+            tbody.innerHTML = '';
+            const autoRecords = leaves.filter(l => l.isAutoApplied);
+            document.getElementById('history-records-count').textContent = `${autoRecords.length} records`;
+            if (autoRecords.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="4" style="text-align:center;color:var(--text-muted);padding:30px;">No auto-applied leaves found.</td></tr>';
+                return;
+            }
+            autoRecords.forEach(l => {
+                let statusBadge = '';
+                if (l.status === 'Approved') statusBadge = '<span class="badge approved">Approved</span>';
+                else if (l.status === 'Pending') statusBadge = '<span class="badge pending">Pending</span>';
+                else statusBadge = `<span class="badge rejected">${l.status}</span>`;
+                const tr = document.createElement('tr');
+                tr.innerHTML = `
+                    <td>${l.startDate}</td>
+                    <td><span class="badge" style="background:#f97316;color:white;">${l.type}</span></td>
+                    <td>${l.reason || '-'}</td>
+                    <td>${statusBadge}</td>
+                `;
+                tbody.appendChild(tr);
+            });
+        }
+    },
+
+    triggerAutoHalfDay: async function() {
+        if (!confirm('This will check all users who have not logged in today and auto-apply a half-day leave for them.\n\nAre you sure?')) return;
+        try {
+            const res = await fetch('/api/cron/auto-halfday', { method: 'POST' });
+            const data = await res.json();
+            if (data.success) {
+                alert('Auto half-day check completed successfully.\n\n' + data.message);
+                await Store.syncWithBackend();
+                if (this._historyUserId) this.loadEmployeeHistory(this._historyUserId);
+                this.renderDashboard();
+            } else {
+                alert('Failed: ' + (data.message || 'Unknown error'));
+            }
+        } catch (err) {
+            console.error('Auto half-day trigger error:', err);
+            alert('Error connecting to backend.');
+        }
+    },
+
+    exportEmployeeHistory: function() {
+        if (!this._historyData || !this._historyUserId) {
+            alert('Please select an employee first.');
+            return;
+        }
+        const data = this._historyData;
+        const userId = this._historyUserId;
+        const user = (this._cachedUsers || []).find(u => u.id === userId);
+        const name = user ? user.name : userId;
+
+        // Build CSV
+        const headers = ['Date', 'Type', 'Check In', 'Check Out', 'Hours', 'Status', 'Late Login', 'Early Logout'];
+        const rows = data.attendance.map(r => [
+            r.date,
+            'Attendance',
+            r.checkInTime || '',
+            r.checkOutTime || '',
+            r.hoursWorked || '',
+            r.status || '',
+            r.isLateLogin ? 'YES' : '',
+            r.isEarlyLogout ? 'YES' : ''
+        ]);
+
+        // Add leaves
+        data.leaves.forEach(l => {
+            rows.push([
+                l.startDate + (l.startDate !== l.endDate ? ' to ' + l.endDate : ''),
+                l.type,
+                '', '', '',
+                l.status,
+                l.isAutoApplied ? 'AUTO' : '',
+                ''
+            ]);
+        });
+
+        const csvContent = [headers.join(',')]
+            .concat(rows.map(r => r.map(v => `"${v}"`).join(',')))
+            .join('\n');
+        const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+        const link = document.createElement('a');
+        link.href = URL.createObjectURL(blob);
+        link.download = `employee_history_${name.replace(/\s+/g, '_')}_${new Date().toISOString().slice(0,10)}.csv`;
+        link.click();
+        URL.revokeObjectURL(link.href);
     }
 };
 

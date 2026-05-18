@@ -651,6 +651,243 @@ app.put('/api/settings', async (req, res) => {
 });
 
 
+// 11. User History (comprehensive data for Employee History tab)
+app.get('/api/users/:id/history', async (req, res) => {
+    const userId = req.params.id;
+    try {
+        // Fetch all attendance records
+        const attendance = await pool.query(`
+            SELECT user_id as "userId", CAST(date as text) as "date",
+                   check_in_time as "checkInTime", check_out_time as "checkOutTime",
+                   status
+            FROM attendance WHERE user_id = $1 ORDER BY date DESC
+        `, [userId]);
+
+        // Fetch all leave records
+        const hasAutoApplied = await columnExists('leave_requests', 'is_auto_applied');
+        const leaves = await pool.query(`
+            SELECT id::text, user_id as "userId", type,
+                   CAST(start_date as text) as "startDate",
+                   CAST(end_date as text) as "endDate",
+                   reason, status,
+                   COALESCE(is_historical, false) as "isHistorical",
+                   ${hasAutoApplied ? 'COALESCE(is_auto_applied, false)' : 'false::boolean'} as "isAutoApplied"
+            FROM leave_requests WHERE user_id = $1 ORDER BY id DESC
+        `, [userId]);
+
+        // Format attendance times to IST
+        const formattedAttendance = attendance.rows.map(a => ({
+            ...a,
+            checkInTime: a.checkInTime ? new Date(a.checkInTime).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Kolkata' }) : null,
+            checkOutTime: a.checkOutTime ? new Date(a.checkOutTime).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Kolkata' }) : null,
+            // Compute hours worked from raw timestamps
+            hoursWorked: (a.checkInTime && a.checkOutTime) ? ((new Date(a.checkOutTime) - new Date(a.checkInTime)) / (1000 * 60 * 60)).toFixed(1) : null,
+            // Late login flag: check-in after 11:00 AM IST
+            isLateLogin: a.checkInTime ? (() => {
+                const checkIn = new Date(a.checkInTime);
+                const istHour = parseInt(checkIn.toLocaleTimeString('en-IN', { hour: '2-digit', hour12: false, timeZone: 'Asia/Kolkata' }));
+                const istMin = parseInt(checkIn.toLocaleTimeString('en-IN', { minute: '2-digit', timeZone: 'Asia/Kolkata' }));
+                return (istHour > 11 || (istHour === 11 && istMin > 0));
+            })() : false,
+            // Early checkout flag: checkout before 6 PM IST (less than 8 hours)
+            isEarlyLogout: (a.checkInTime && a.checkOutTime) ? ((new Date(a.checkOutTime) - new Date(a.checkInTime)) / (1000 * 60 * 60) < 8) : false
+        }));
+
+        // Capitalize leave statuses for frontend
+        const formattedLeaves = leaves.rows.map(l => ({
+            ...l,
+            status: l.status ? l.status.charAt(0).toUpperCase() + l.status.slice(1) : l.status
+        }));
+
+        res.json({
+            attendance: formattedAttendance,
+            leaves: formattedLeaves
+        });
+    } catch (err) {
+        console.error('User history fetch error:', err);
+        res.status(500).json({ error: 'Failed to fetch user history', details: err.message });
+    }
+});
+
+// 12. Auto Half-Day Leave Cron (runs at 11:05 AM IST)
+async function runAutoHalfDayLeave() {
+    try {
+        const now = new Date();
+        // Get IST time
+        const istTime = new Date(now.toLocaleString('en-US', { timeZone: 'Asia/Kolkata' }));
+        const istHour = istTime.getHours();
+        const istDay = istTime.getDay(); // 0=Sunday
+
+        // Only run on working days (Mon-Sat) and only at/after 11 AM
+        if (istDay === 0 || istHour < 11) return;
+
+        const todayStr = `${istTime.getFullYear()}-${String(istTime.getMonth()+1).padStart(2,'0')}-${String(istTime.getDate()).padStart(2,'0')}`;
+
+        console.log(`[Auto Half-Day] Checking for missing logins on ${todayStr}...`);
+
+        // Check if today is a holiday (holidays may be stored in localStorage only)
+        try {
+            if (await tableExists('holidays')) {
+                const holidayCheck = await pool.query(
+                    "SELECT 1 FROM holidays WHERE date = $1 AND LOWER(type) = 'public' LIMIT 1",
+                    [todayStr]
+                );
+                if (holidayCheck.rowCount > 0) {
+                    console.log('[Auto Half-Day] Today is a public holiday, skipping.');
+                    return;
+                }
+            }
+        } catch (e) {
+            console.log('[Auto Half-Day] Holidays table not found, skipping holiday check.');
+        }
+
+        // Get all non-admin users
+        const users = await pool.query("SELECT user_id FROM users WHERE role != 'admin'");
+
+        // Leave type priority order (lowercase slug matching)
+        const priorityOrder = ['earned', 'casual', 'sick'];
+
+        // Get leave policies
+        const hasLabel = await columnExists('leave_policies', 'label');
+        const hasQuota = await columnExists('leave_policies', 'quota');
+        const hasCycle = await columnExists('leave_policies', 'cycle');
+        const policies = await pool.query(`
+            SELECT id, type,
+                   ${hasLabel ? 'label' : 'type'} as label,
+                   ${hasQuota ? 'quota' : '12'} as quota,
+                   ${hasCycle ? 'cycle' : "'yearly'"} as cycle
+            FROM leave_policies
+        `);
+
+        const currentYear = istTime.getFullYear();
+        const currentMonthStr = `${currentYear}-${String(istTime.getMonth()+1).padStart(2,'0')}`;
+
+        let autoApplied = 0;
+
+        for (const user of users.rows) {
+            const uid = user.user_id;
+
+            // Check if user already has attendance today
+            const attCheck = await pool.query(
+                'SELECT 1 FROM attendance WHERE user_id = $1 AND date = $2 LIMIT 1',
+                [uid, todayStr]
+            );
+            if (attCheck.rowCount > 0) continue;
+
+            // Check if user already has approved leave covering today
+            const leaveCheck = await pool.query(
+                "SELECT 1 FROM leave_requests WHERE user_id = $1 AND status = 'approved' AND start_date <= $2 AND end_date >= $2 LIMIT 1",
+                [uid, todayStr]
+            );
+            if (leaveCheck.rowCount > 0) continue;
+
+            // Check if already auto-applied today
+            const hasAutoCol = await columnExists('leave_requests', 'is_auto_applied');
+            if (hasAutoCol) {
+                const autoCheck = await pool.query(
+                    "SELECT 1 FROM leave_requests WHERE user_id = $1 AND start_date = $2 AND is_auto_applied = true LIMIT 1",
+                    [uid, todayStr]
+                );
+                if (autoCheck.rowCount > 0) continue;
+            }
+
+            // Determine leave type by hierarchy
+            let selectedType = null;
+            let selectedLabel = null;
+
+            for (const priority of priorityOrder) {
+                // Find policy matching this priority keyword
+                const policy = policies.rows.find(p => {
+                    const slug = (p.type || '').toLowerCase();
+                    const label = (p.label || '').toLowerCase();
+                    return slug.includes(priority) || label.includes(priority);
+                });
+                if (!policy) continue;
+
+                // Calculate used leaves for this type
+                const isMonthly = (policy.cycle || 'yearly').toLowerCase() === 'monthly';
+                let usedQuery;
+                if (isMonthly) {
+                    usedQuery = await pool.query(
+                        `SELECT COALESCE(SUM(
+                            CASE WHEN LOWER(type) LIKE '%half day%' THEN 0.5
+                            ELSE GREATEST(1, (end_date - start_date + 1)) END
+                        ), 0) as used
+                        FROM leave_requests
+                        WHERE user_id = $1 AND status = 'approved'
+                          AND (LOWER(type) LIKE $2 OR LOWER(type) LIKE $3)
+                          AND to_char(start_date, 'YYYY-MM') = $4`,
+                        [uid, `%${priority}%`, `${policy.label.toLowerCase()}%`, currentMonthStr]
+                    );
+                } else {
+                    usedQuery = await pool.query(
+                        `SELECT COALESCE(SUM(
+                            CASE WHEN LOWER(type) LIKE '%half day%' THEN 0.5
+                            ELSE GREATEST(1, (end_date - start_date + 1)) END
+                        ), 0) as used
+                        FROM leave_requests
+                        WHERE user_id = $1 AND status = 'approved'
+                          AND (LOWER(type) LIKE $2 OR LOWER(type) LIKE $3)
+                          AND EXTRACT(YEAR FROM start_date) = $4`,
+                        [uid, `%${priority}%`, `${policy.label.toLowerCase()}%`, currentYear]
+                    );
+                }
+
+                const used = parseFloat(usedQuery.rows[0].used);
+                const quota = parseInt(policy.quota);
+                const remaining = quota - used;
+
+                if (remaining >= 0.5) {
+                    selectedType = policy.label;
+                    selectedLabel = `${policy.label} (Half Day)`;
+                    break;
+                }
+            }
+
+            // Fallback to LOP if no quota available
+            if (!selectedLabel) {
+                selectedLabel = 'Loss of Pay (Half Day)';
+            }
+
+            // Auto-apply the half-day leave
+            const insertCols = hasAutoCol
+                ? '(user_id, type, start_date, end_date, reason, status, is_auto_applied)'
+                : '(user_id, type, start_date, end_date, reason, status)';
+            const insertVals = hasAutoCol
+                ? [uid, selectedLabel, todayStr, todayStr, 'Auto-applied: No login by 11:00 AM', 'approved', true]
+                : [uid, selectedLabel, todayStr, todayStr, 'Auto-applied: No login by 11:00 AM', 'approved'];
+            const placeholders = hasAutoCol ? '$1, $2, $3, $4, $5, $6, $7' : '$1, $2, $3, $4, $5, $6';
+
+            await pool.query(
+                `INSERT INTO leave_requests ${insertCols} VALUES (${placeholders})`,
+                insertVals
+            );
+
+            console.log(`[Auto Half-Day] Applied '${selectedLabel}' for user ${uid}`);
+            autoApplied++;
+        }
+
+        if (autoApplied > 0) {
+            console.log(`[Auto Half-Day] Total auto-applied: ${autoApplied}`);
+        } else {
+            console.log('[Auto Half-Day] All users accounted for. No auto-leaves needed.');
+        }
+    } catch (err) {
+        console.error('[Auto Half-Day] Error:', err);
+    }
+}
+
+// Manual trigger endpoint for auto half-day (admin use)
+app.post('/api/cron/auto-halfday', async (req, res) => {
+    try {
+        await runAutoHalfDayLeave();
+        res.json({ success: true, message: 'Auto half-day check completed.' });
+    } catch (err) {
+        console.error('Manual auto-halfday error:', err);
+        res.status(500).json({ success: false, message: err.message });
+    }
+});
+
 
 // ============================================================
 // Socket.IO Connection Handler
@@ -724,6 +961,12 @@ async function runMigrations() {
             console.log('Added slack_id column to users table.');
         }
 
+        // Add is_auto_applied column for auto half-day leaves
+        if (await tableExists('leave_requests') && !(await columnExists('leave_requests', 'is_auto_applied'))) {
+            await pool.query('ALTER TABLE leave_requests ADD COLUMN is_auto_applied BOOLEAN DEFAULT false;');
+            console.log('Added is_auto_applied column to leave_requests table.');
+        }
+
         console.log('DB migrations completed.');
     } catch (err) {
         console.error('Migration error:', err);
@@ -735,5 +978,19 @@ const PORT = process.env.PORT || 4000;
 runMigrations().then(() => {
     httpServer.listen(PORT, () => {
         console.log(`Backend running on port ${PORT} (HTTP + Socket.IO)`);
+
+        // Schedule auto half-day check every 5 minutes between 11:00-11:30 AM IST
+        setInterval(() => {
+            const now = new Date();
+            const istTime = new Date(now.toLocaleString('en-US', { timeZone: 'Asia/Kolkata' }));
+            const h = istTime.getHours();
+            const m = istTime.getMinutes();
+            // Run between 11:00 and 11:30 AM IST
+            if (h === 11 && m >= 0 && m <= 30) {
+                runAutoHalfDayLeave();
+            }
+        }, 5 * 60 * 1000); // Check every 5 minutes
+
+        console.log('Auto half-day leave scheduler initialized (11:00-11:30 AM IST)');
     });
 });

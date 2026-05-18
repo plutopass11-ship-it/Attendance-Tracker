@@ -179,6 +179,52 @@
 .cal-leave-badge.present { background: rgba(16, 185, 129, 0.15); color: var(--success); }
 .cal-leave-badge.working { background: rgba(245, 158, 11, 0.15); color: var(--warning); }
 
+/* Employee History Tab */
+.history-user-select, .history-period-select {
+    background: var(--glass-bg);
+    color: var(--text-main);
+    border: 1px solid var(--glass-border);
+    border-radius: 10px;
+    padding: 10px 16px;
+    font-size: 14px;
+    font-family: 'Inter', sans-serif;
+    cursor: pointer;
+    min-width: 200px;
+    transition: border-color 0.2s, box-shadow 0.2s;
+}
+.history-user-select:focus, .history-period-select:focus {
+    outline: none;
+    border-color: var(--primary);
+    box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.2);
+}
+.history-period-select {
+    min-width: 140px;
+}
+#history-stats-grid .stat-card {
+    text-align: center;
+}
+#history-stats-grid .stat-card h3 {
+    font-size: 12px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+#history-stats-grid .stat-value {
+    font-size: 28px;
+}
+@media (max-width: 1200px) {
+    #history-stats-grid {
+        grid-template-columns: repeat(3, 1fr) !important;
+    }
+}
+@media (max-width: 768px) {
+    #history-stats-grid {
+        grid-template-columns: repeat(2, 1fr) !important;
+    }
+    .history-user-select {
+        min-width: 100%;
+    }
+}
+
 /* Responsive tweaks for admin */
 @media (max-width: 768px) {
     .admin-layout {
