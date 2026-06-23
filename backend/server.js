@@ -136,6 +136,14 @@ app.post('/api/auth/login', async (req, res) => {
        return res.json({ success: true, user: { id: 'admin1', name: 'Super Admin', role: 'admin' }});
   }
 
+  // Check if user is deactivated locally
+  try {
+    const localUser = await pool.query('SELECT is_active FROM users WHERE user_id = $1', [email]);
+    if (localUser.rowCount > 0 && localUser.rows[0].is_active === false) {
+      return res.status(403).json({ success: false, message: 'Account has been deactivated.' });
+    }
+  } catch(e) {}
+
   // Step 1: Verify the user's OWN credentials against Kitsu
   const userToken = await loginToKitsu(email, password);
   if (!userToken) {
@@ -195,7 +203,8 @@ app.get('/api/sync/store', async (req, res) => {
       columnExists('leave_policies', 'cycle')
     ]);
 
-    const users = await pool.query('SELECT user_id as id, name, role FROM users;');
+    const hasIsActiveCol = await columnExists('users', 'is_active');
+    const users = await pool.query(`SELECT user_id as id, name, role, ${hasIsActiveCol ? 'is_active' : 'true'} as is_active FROM users;`);
     const leaves = await pool.query(`
       SELECT id::text, user_id as "userId", type, 
              CAST(start_date as text) as "startDate", 
@@ -563,6 +572,37 @@ app.delete('/api/users/:id', async (req, res) => {
     }
 });
 
+// Kitsu Removal Sync Endpoints
+app.get('/api/users/pending_removal', async (req, res) => {
+    try {
+        const result = await pool.query("SELECT user_id as id, name, role FROM users WHERE pending_removal = true AND is_active = true");
+        res.json({ success: true, pending_removals: result.rows });
+    } catch (err) {
+        console.error(err);
+        res.status(500).json({ success: false });
+    }
+});
+
+app.post('/api/users/:id/dismiss_removal', async (req, res) => {
+    try {
+        await pool.query("UPDATE users SET pending_removal = false WHERE user_id = $1", [req.params.id]);
+        res.json({ success: true });
+    } catch (err) {
+        console.error(err);
+        res.status(500).json({ success: false });
+    }
+});
+
+app.post('/api/users/:id/deactivate', async (req, res) => {
+    try {
+        await pool.query("UPDATE users SET is_active = false, pending_removal = false WHERE user_id = $1", [req.params.id]);
+        res.json({ success: true });
+    } catch (err) {
+        console.error('Deactivate user error:', err);
+        res.status(500).json({ success: false, message: 'Deactivate failed' });
+    }
+});
+
 
 // 8. Batch Migration History (Admin-only, AI-agent ready)
 app.post('/api/admin/migration/history', async (req, res) => {
@@ -716,6 +756,43 @@ app.get('/api/users/:id/history', async (req, res) => {
         res.status(500).json({ error: 'Failed to fetch user history', details: err.message });
     }
 });
+// 12a. Kitsu User Removal Sweep (runs EOD)
+async function checkKitsuRemovals() {
+    try {
+        console.log('[Kitsu Sweep] Running EOD Kitsu sweep to find removed users...');
+        const adminToken = await getAdminToken();
+        if (!adminToken) {
+            console.error('[Kitsu Sweep] No admin token available.');
+            return;
+        }
+        
+        const response = await fetch(`${KITSU_URL}/api/data/persons`, {
+            headers: { 'Authorization': `Bearer ${adminToken}` }
+        });
+        if (!response.ok) {
+            console.error('[Kitsu Sweep] Kitsu persons API returned:', response.status);
+            return;
+        }
+        const persons = await response.json();
+        const kitsuEmails = persons.map(p => p.email);
+
+        const hasIsActiveCol = await columnExists('users', 'is_active');
+        const activeCondition = hasIsActiveCol ? 'AND is_active = true' : '';
+        const localUsersResult = await pool.query(`SELECT user_id FROM users WHERE role != 'admin' ${activeCondition}`);
+        const localUserIds = localUsersResult.rows.map(r => r.user_id);
+
+        for (const localId of localUserIds) {
+            if (!kitsuEmails.includes(localId)) {
+                await pool.query("UPDATE users SET pending_removal = true WHERE user_id = $1", [localId]);
+                console.log(`[Kitsu Sweep] User ${localId} not found in Kitsu. Marked for pending removal.`);
+            } else {
+                await pool.query("UPDATE users SET pending_removal = false WHERE user_id = $1", [localId]);
+            }
+        }
+    } catch (err) {
+        console.error('[Kitsu Sweep] Error:', err);
+    }
+}
 
 // 12. Auto Half-Day Leave Cron (runs at 11:05 AM IST)
 async function runAutoHalfDayLeave() {
@@ -749,8 +826,10 @@ async function runAutoHalfDayLeave() {
             console.log('[Auto Half-Day] Holidays table not found, skipping holiday check.');
         }
 
-        // Get all non-admin users
-        const users = await pool.query("SELECT user_id FROM users WHERE role != 'admin'");
+        // Get all active non-admin users
+        const hasIsActiveCol = await columnExists('users', 'is_active');
+        const activeCondition = hasIsActiveCol ? 'AND is_active = true' : '';
+        const users = await pool.query(`SELECT user_id FROM users WHERE role != 'admin' ${activeCondition}`);
 
         // Leave type priority order (lowercase slug matching)
         const priorityOrder = ['earned', 'casual', 'sick'];
@@ -862,8 +941,8 @@ async function runAutoHalfDayLeave() {
                 ? '(user_id, type, start_date, end_date, reason, status, is_auto_applied)'
                 : '(user_id, type, start_date, end_date, reason, status)';
             const insertVals = hasAutoCol
-                ? [uid, selectedLabel, todayStr, todayStr, 'Auto-applied: No login by 11:00 AM', 'approved', true]
-                : [uid, selectedLabel, todayStr, todayStr, 'Auto-applied: No login by 11:00 AM', 'approved'];
+                ? [uid, selectedLabel, todayStr, todayStr, 'Auto-applied: No login by 11:00 AM', 'pending', true]
+                : [uid, selectedLabel, todayStr, todayStr, 'Auto-applied: No login by 11:00 AM', 'pending'];
             const placeholders = hasAutoCol ? '$1, $2, $3, $4, $5, $6, $7' : '$1, $2, $3, $4, $5, $6';
 
             await pool.query(
@@ -975,6 +1054,17 @@ async function runMigrations() {
             await pool.query('ALTER TABLE leave_requests ADD COLUMN is_auto_applied BOOLEAN DEFAULT false;');
             console.log('Added is_auto_applied column to leave_requests table.');
         }
+        // Add pending_removal and is_active columns to users table
+        if (await tableExists('users')) {
+            if (!(await columnExists('users', 'pending_removal'))) {
+                await pool.query('ALTER TABLE users ADD COLUMN pending_removal BOOLEAN DEFAULT false;');
+                console.log('Added pending_removal column to users table.');
+            }
+            if (!(await columnExists('users', 'is_active'))) {
+                await pool.query('ALTER TABLE users ADD COLUMN is_active BOOLEAN DEFAULT true;');
+                console.log('Added is_active column to users table.');
+            }
+        }
 
         console.log('DB migrations completed.');
     } catch (err) {
@@ -1001,5 +1091,21 @@ runMigrations().then(() => {
         }, 5 * 60 * 1000); // Check every 5 minutes
 
         console.log('Auto half-day leave scheduler initialized (11:00-11:30 AM IST)');
+
+        // Schedule Kitsu user sweep
+        let lastSweepDate = null;
+        setInterval(() => {
+            const now = new Date();
+            const istTime = new Date(now.toLocaleString('en-US', { timeZone: 'Asia/Kolkata' }));
+            const h = istTime.getHours();
+            const currentDateStr = istTime.toDateString();
+            
+            // Run at 23:xx IST, once per day
+            if (h === 23 && lastSweepDate !== currentDateStr) {
+                lastSweepDate = currentDateStr;
+                checkKitsuRemovals();
+            }
+        }, 30 * 60 * 1000); // Check every 30 minutes
+        console.log('EOD Kitsu removal sweep scheduler initialized (23:xx IST)');
     });
 });

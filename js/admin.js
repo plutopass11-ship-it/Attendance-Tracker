@@ -39,6 +39,7 @@ window.AdminUI = {
             // Sync with backend DB first, then render
             await Store.syncWithBackend();
             this.renderDashboard(); // initial render with cached data
+            this.fetchPendingRemovals(); // fetch removal alerts
             this.syncKitsuUsers();  // async: updates kitsuPersons and re-renders when ready
         } catch(e) {
             document.getElementById('admin-greeting').textContent = "CRASH: " + e.message;
@@ -460,6 +461,76 @@ window.AdminUI = {
                 this.renderDashboard();
             }
         } catch(e) { console.error('Error syncing users:', e); }
+    },
+
+    fetchPendingRemovals: async function() {
+        try {
+            const res = await fetch('/api/users/pending_removal');
+            if (res.ok) {
+                const data = await res.json();
+                if (data.success) {
+                    this.renderPendingRemovals(data.pending_removals);
+                }
+            }
+        } catch(e) {
+            console.error('Failed to fetch pending removals:', e);
+        }
+    },
+
+    renderPendingRemovals: function(users) {
+        const container = document.getElementById('pending-removals-container');
+        if (!container) return;
+        
+        if (!users || users.length === 0) {
+            container.innerHTML = '';
+            return;
+        }
+
+        let html = '<div style="background: var(--danger-light, #fee2e2); border: 1px solid var(--danger, #ef4444); border-radius: 8px; padding: 15px; margin-bottom: 20px;">';
+        html += '<h3 style="margin-top: 0; color: var(--danger, #b91c1c); display: flex; align-items: center; gap: 8px;"><ion-icon name="warning-outline"></ion-icon> Action Required: Users removed from Kitsu</h3>';
+        html += '<ul style="list-style: none; padding: 0; margin: 0;">';
+        
+        users.forEach(u => {
+            html += `<li style="display: flex; justify-content: space-between; align-items: center; background: white; padding: 10px; border-radius: 6px; margin-bottom: 8px; border: 1px solid #fca5a5;">
+                <div>
+                    <strong>${u.name}</strong> (${u.id})
+                </div>
+                <div style="display: flex; gap: 10px;">
+                    <button class="btn-primary" style="background: var(--danger, #ef4444); padding: 6px 12px; font-size: 12px;" onclick="AdminUI.confirmRemoval('${u.id}')">Confirm Deactivation</button>
+                    <button class="btn-secondary" style="padding: 6px 12px; font-size: 12px; color: var(--text-main); border: 1px solid var(--glass-border);" onclick="AdminUI.dismissRemoval('${u.id}')">Dismiss</button>
+                </div>
+            </li>`;
+        });
+        
+        html += '</ul></div>';
+        container.innerHTML = html;
+    },
+
+    confirmRemoval: async function(userId) {
+        if (!confirm('Are you sure you want to deactivate this user? Their history will be kept.')) return;
+        try {
+            const res = await fetch(`/api/users/${userId}/deactivate`, { method: 'POST' });
+            if (res.ok) {
+                alert('User deactivated.');
+                this.fetchPendingRemovals();
+                this.renderUsers();
+            }
+        } catch (e) {
+            console.error(e);
+            alert('Failed to deactivate user.');
+        }
+    },
+
+    dismissRemoval: async function(userId) {
+        try {
+            const res = await fetch(`/api/users/${userId}/dismiss_removal`, { method: 'POST' });
+            if (res.ok) {
+                this.fetchPendingRemovals();
+            }
+        } catch (e) {
+            console.error(e);
+            alert('Failed to dismiss.');
+        }
     },
 
     getTodayStr: function() {
@@ -906,7 +977,7 @@ window.AdminUI = {
             const data = await res.json();
             
             // In postgres we only store active users generally, so we show all rows
-            const dbUsers = data.users || [];
+            const dbUsers = (data.users || []).filter(u => u.is_active !== false);
             window.AdminUI._cachedUsers = dbUsers;
             
             const grantUserSelect = document.getElementById('grant-leave-user');
