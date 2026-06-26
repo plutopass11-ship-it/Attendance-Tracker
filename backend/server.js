@@ -402,7 +402,8 @@ app.put('/api/leaves/:id', async (req, res) => {
            const leave = result.rows[0];
            const leaveType = (leave.type || '').toLowerCase();
            const isWfh = leaveType.includes('wfh') || leaveType === 'work from home';
-           if (!isWfh && leave.status === 'approved') {
+           const isHalfDay = leaveType.includes('half day');
+           if (!isWfh && !isHalfDay && leave.status === 'approved') {
                await pool.query(
                    `DELETE FROM attendance WHERE user_id = $1 AND date >= $2 AND date <= $3`,
                    [leave.user_id, leave.start_date, leave.end_date]

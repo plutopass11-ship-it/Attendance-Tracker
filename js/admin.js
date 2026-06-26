@@ -564,8 +564,10 @@ window.AdminUI = {
             const tr = document.createElement('tr');
             const activeLeave = leaves.find(l => l.userId === user.id && l.status === 'Approved' && l.startDate <= today && l.endDate >= today);
             const isWfhLeave = activeLeave && this._isWfh(activeLeave.type);
+            const isHalfDayLeave = activeLeave && (activeLeave.type || '').toLowerCase().includes('half day');
             // Check for approved non-WFH leave (takes absolute priority over attendance)
-            const isOnLeaveToday = activeLeave && !isWfhLeave;
+            // But if it's a half-day leave AND they have an attendance record, they are technically working the other half.
+            const isOnLeaveToday = activeLeave && !isWfhLeave && (!isHalfDayLeave || !record);
             
             let statusBadge = '<span class="badge rejected">Absent</span>';
             let checkIn = '--:--';
@@ -574,19 +576,22 @@ window.AdminUI = {
             // BUG FIX: Non-WFH approved leave always takes priority over attendance records
             // This handles the case where a user accidentally checked in, then admin adds a leave later
             if (isOnLeaveToday) {
-                statusBadge = '<span class="badge" style="background:#8b5cf6;color:white;">On Leave</span>';
+                statusBadge = isHalfDayLeave ? '<span class="badge" style="background:#a855f7;color:white;">Half Day Leave</span>' : '<span class="badge" style="background:#8b5cf6;color:white;">On Leave</span>';
                 onLeaveCount++;
             } else if(record) {
                 const isWfhAttendance = this._isWfhAttendanceStatus(record.status) || isWfhLeave;
                 if (isWfhAttendance) wfhCount++;
                 checkIn = record.checkInTime;
+                
+                let extraBadge = isHalfDayLeave ? ' <span class="badge" style="background:#a855f7;color:white;margin-left:4px;">Half Day Leave</span>' : '';
+                if (isHalfDayLeave) onLeaveCount++;
                 if(this._isPendingAttendanceStatus(record.status)) {
-                    statusBadge = '<span class="badge warning" style="background:#f59e0b;color:white;">Pending Approval</span>';
+                    statusBadge = '<span class="badge warning" style="background:#f59e0b;color:white;">Pending Approval</span>' + extraBadge;
                     checkOut = record.checkOutTime + ` <br><div style="margin-top:6px;"><button class="btn-primary" style="font-size:11px;padding:4px 8px;border-radius:4px;" onclick="window.AdminUI.approveEarlyClockOut('${user.id}', '${today}', 'approve')">Approve</button> <button class="btn-danger" style="background:#ef4444;color:white;border:none;font-size:11px;padding:4px 8px;border-radius:4px;cursor:pointer;" onclick="window.AdminUI.approveEarlyClockOut('${user.id}', '${today}', 'reject')">Reject</button></div>`;
                 } else if(record.checkOutTime && (record.status === 'completed' || record.status === 'wfh_completed')) {
-                    statusBadge = isWfhAttendance
+                    statusBadge = (isWfhAttendance
                         ? '<span class="badge" style="background:#3b82f6;color:white;">WFH Completed</span>'
-                        : '<span class="badge approved">Completed</span>';
+                        : '<span class="badge approved">Completed</span>') + extraBadge;
                     checkOut = record.checkOutTime;
                     
                     // Display total hours calculated based on the UI times
@@ -612,9 +617,9 @@ window.AdminUI = {
                         }
                     } catch(e) {}
                 } else {
-                    statusBadge = isWfhAttendance
+                    statusBadge = (isWfhAttendance
                         ? '<span class="badge" style="background:#3b82f6;color:white;">WFH</span>'
-                        : '<span class="badge pending">Working</span>';
+                        : '<span class="badge pending">Working</span>') + extraBadge;
                 }
             } else if(activeLeave && !record) {
                 if(isWfhLeave) {
