@@ -40,7 +40,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // --- INIT ---
     function init() {
-        Store.autoCheckoutMissing();
+
         
         if (Auth.isAuthenticated()) {
             currentUser = Auth.getCurrentUser();

@@ -29,7 +29,7 @@ window.AdminUI = {
     
     init: async function(user) {
         try {
-            Store.autoCheckoutMissing();
+
             
             this.currentUser = user;
             

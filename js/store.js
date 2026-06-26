@@ -33,21 +33,7 @@ const Store = {
     getUserById: (id) => Store.getUsers().find(u => u.id === id),
     
     // Attendance
-    autoCheckoutMissing: () => {
-        const data = Store.getAttendance();
-        const now = new Date();
-        const todayStr = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}-${String(now.getDate()).padStart(2,'0')}`;
-        let modified = false;
-        data.forEach(r => {
-            if (!r.checkOutTime && r.date !== todayStr) {
-                r.checkOutTime = "20:00 (Auto)";
-                modified = true;
-            }
-        });
-        if(modified) {
-            localStorage.setItem('attendance', JSON.stringify(data));
-        }
-    },
+
     addAttendance: async (record) => {
         const data = Store.getAttendance();
         data.push(record);

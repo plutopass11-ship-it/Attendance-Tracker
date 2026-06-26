@@ -794,6 +794,31 @@ async function checkKitsuRemovals() {
     }
 }
 
+// 12b. Auto-Checkout Missing Logouts (runs EOD)
+async function autoCheckoutMissing() {
+    try {
+        console.log('[Auto-Checkout] Running EOD sweep for missing checkouts...');
+        const now = new Date();
+        const istTime = new Date(now.toLocaleString('en-US', { timeZone: 'Asia/Kolkata' }));
+        const todayStr = `${istTime.getFullYear()}-${String(istTime.getMonth()+1).padStart(2,'0')}-${String(istTime.getDate()).padStart(2,'0')}`;
+
+        // Set check_out_time to 20:00 (8:00 PM) of the check_in day for any 'working' records up to today
+        const result = await pool.query(
+            "UPDATE attendance SET check_out_time = date + interval '20 hours', status = 'completed' WHERE check_out_time IS NULL AND status = 'working' AND date <= $1",
+            [todayStr]
+        );
+
+        if (result.rowCount > 0) {
+            console.log(`[Auto-Checkout] Successfully auto-checked out ${result.rowCount} user(s) at 20:00.`);
+            io.emit('attendance:update', { broadcast: true });
+        } else {
+            console.log('[Auto-Checkout] No missing checkouts found.');
+        }
+    } catch (err) {
+        console.error('[Auto-Checkout] Error:', err);
+    }
+}
+
 // 12. Auto Half-Day Leave Cron (runs at 11:05 AM IST)
 async function runAutoHalfDayLeave() {
     try {
@@ -1104,6 +1129,7 @@ runMigrations().then(() => {
             if (h === 23 && lastSweepDate !== currentDateStr) {
                 lastSweepDate = currentDateStr;
                 checkKitsuRemovals();
+                autoCheckoutMissing();
             }
         }, 30 * 60 * 1000); // Check every 30 minutes
         console.log('EOD Kitsu removal sweep scheduler initialized (23:xx IST)');
