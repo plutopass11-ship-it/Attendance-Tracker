@@ -180,7 +180,13 @@ window.OvertimeUI = {
             </div>
             <div class="stat-card">
                 <h3>Avg OT / Session</h3>
-                <div class="stat-value" style="color: #f472b6;">${s.recordCount > 0 ? Math.floor(s.totalOvertimeMinutes / s.recordCount) + 'm' : '0m'}</div>
+                <div class="stat-value" style="color: #f472b6;">${(() => {
+                    if (s.recordCount === 0) return '0m';
+                    const avg = Math.floor(s.totalOvertimeMinutes / s.recordCount);
+                    const h = Math.floor(avg / 60);
+                    const m = avg % 60;
+                    return h > 0 ? h + 'h ' + m + 'm' : m + 'm';
+                })()}</div>
             </div>
         `;
     },
