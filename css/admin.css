@@ -311,6 +311,8 @@
 .overtime-controls {
     margin-bottom: 20px;
     padding: 24px;
+    position: relative;
+    z-index: 10;
 }
 .overtime-controls h3 {
     margin: 0 0 16px 0;
