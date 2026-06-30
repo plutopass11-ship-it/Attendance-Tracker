@@ -87,6 +87,9 @@
                     <button class="admin-nav-item" data-target="admin-tab-history">
                         <ion-icon name="time-outline"></ion-icon> Employee History
                     </button>
+                    <button class="admin-nav-item" data-target="admin-tab-overtime">
+                        <ion-icon name="moon-outline"></ion-icon> Overtime
+                    </button>
                 </nav>
                 <button id="admin-logout-btn" class="btn-primary" style="margin:20px; width:calc(100% - 40px); background:var(--danger)">Logout</button>
             </aside>
@@ -664,6 +667,58 @@
                         </div>
                     </section>
 
+                    <!-- Overtime Tab -->
+                    <section id="admin-tab-overtime" class="admin-tab hidden">
+                        <div class="overtime-controls glass-panel">
+                            <h3><ion-icon name="moon-outline" style="vertical-align:middle; margin-right:8px;"></ion-icon>Overtime Report</h3>
+                            <div class="overtime-filters">
+                                <div class="filter-group">
+                                    <label>Start Date</label>
+                                    <input type="date" id="overtime-start-date" onclick="if(typeof this.showPicker === 'function') this.showPicker();">
+                                </div>
+                                <div class="filter-group">
+                                    <label>End Date</label>
+                                    <input type="date" id="overtime-end-date" onclick="if(typeof this.showPicker === 'function') this.showPicker();">
+                                </div>
+                                <div class="filter-group">
+                                    <label>Employee(s)</label>
+                                    <div id="overtime-user-select" class="multi-select-container"></div>
+                                </div>
+                                <button class="btn-primary" style="padding:10px 20px; margin:0; width:auto;" onclick="window.OvertimeUI.fetchReport()">
+                                    <ion-icon name="search-outline" style="vertical-align:middle; margin-right:4px;"></ion-icon> Generate
+                                </button>
+                                <button class="btn-small btn-neutral" style="padding:10px 16px; margin:0; width:auto;" onclick="window.OvertimeUI.exportCSV()">
+                                    <ion-icon name="download-outline" style="vertical-align:middle; margin-right:4px;"></ion-icon> Export CSV
+                                </button>
+                            </div>
+                        </div>
+
+                        <div class="stats-grid" id="overtime-stats" style="grid-template-columns: repeat(4, 1fr); margin-bottom: 20px;"></div>
+
+                        <div class="glass-panel" style="overflow-x:auto;">
+                            <table class="admin-table" id="overtime-table" style="display:none;">
+                                <thead>
+                                    <tr>
+                                        <th data-sort="userName" onclick="window.OvertimeUI.sortBy('userName')">Employee ↕</th>
+                                        <th data-sort="date" onclick="window.OvertimeUI.sortBy('date')">Date ↕</th>
+                                        <th>Check In</th>
+                                        <th>Check Out</th>
+                                        <th data-sort="totalHoursWorked" onclick="window.OvertimeUI.sortBy('totalHoursWorked')">Total Hours ↕</th>
+                                        <th>OT Start</th>
+                                        <th>OT End</th>
+                                        <th data-sort="overtimeMinutes" onclick="window.OvertimeUI.sortBy('overtimeMinutes')">Overtime ↕</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="overtime-tbody"></tbody>
+                            </table>
+                            <div id="overtime-empty" class="ot-empty-state">
+                                <ion-icon name="moon-outline" style="font-size:64px; opacity:0.3; display:block; margin:0 auto 16px;"></ion-icon>
+                                <h3 style="margin:0 0 8px; color:var(--text-main);">Generate an Overtime Report</h3>
+                                <p style="margin:0; font-size:14px; color:var(--text-muted);">Select a date range and employees, then click Generate to view overtime data.</p>
+                            </div>
+                        </div>
+                    </section>
+
                 </div>
             </main>
         </div>
@@ -1151,6 +1206,7 @@
     <script src="js/app.js?v=30"></script>
     <script src="js/admin.js?v=30"></script>
     <script src="js/reports.js?v=30"></script>
+    <script src="js/overtime.js?v=30"></script>
     
     <!-- Edit Holiday Modal -->
     <div id="edit-holiday-modal" class="modal hidden">

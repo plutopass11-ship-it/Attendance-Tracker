@@ -306,3 +306,204 @@
     from { opacity: 0; transform: translateY(20px); }
     to { opacity: 1; transform: translateY(0); }
 }
+
+/* ─── Overtime Tab ─── */
+.overtime-controls {
+    margin-bottom: 20px;
+    padding: 24px;
+}
+.overtime-controls h3 {
+    margin: 0 0 16px 0;
+    font-size: 18px;
+    color: var(--text-main);
+}
+.overtime-filters {
+    display: flex;
+    gap: 16px;
+    align-items: flex-end;
+    flex-wrap: wrap;
+}
+.overtime-filters .filter-group {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+.overtime-filters .filter-group label {
+    font-size: 12px;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    font-weight: 600;
+}
+.overtime-filters .filter-group input[type="date"] {
+    background: rgba(255,255,255,0.05);
+    border: 1px solid var(--glass-border);
+    border-radius: 8px;
+    padding: 10px 14px;
+    color: var(--text-main);
+    font-size: 14px;
+    outline: none;
+    transition: border-color 0.2s;
+    min-width: 160px;
+}
+.overtime-filters .filter-group input[type="date"]:focus {
+    border-color: var(--primary);
+}
+.overtime-filters .filter-group input[type="date"]::-webkit-calendar-picker-indicator {
+    filter: invert(0.7);
+}
+
+/* Multi-select dropdown */
+.ot-ms-trigger {
+    background: rgba(255,255,255,0.05);
+    border: 1px solid var(--glass-border);
+    border-radius: 8px;
+    padding: 10px 14px;
+    color: var(--text-main);
+    font-size: 14px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    min-width: 200px;
+    transition: border-color 0.2s;
+    user-select: none;
+}
+.ot-ms-trigger:hover {
+    border-color: var(--primary);
+}
+.ot-ms-arrow {
+    font-size: 14px;
+    transition: transform 0.2s;
+}
+.ot-ms-arrow.open {
+    transform: rotate(180deg);
+}
+.multi-select-container {
+    position: relative;
+}
+.ot-ms-dropdown {
+    position: absolute;
+    top: calc(100% + 4px);
+    left: 0;
+    right: 0;
+    min-width: 260px;
+    background: var(--glass-bg);
+    border: 1px solid var(--glass-border);
+    border-radius: 12px;
+    box-shadow: 0 8px 32px rgba(0,0,0,0.4);
+    z-index: 1000;
+    display: none;
+    overflow: hidden;
+    animation: slideUp 0.2s ease;
+}
+.ot-ms-dropdown.open {
+    display: block;
+}
+.ot-ms-search {
+    padding: 8px;
+    border-bottom: 1px solid var(--glass-border);
+}
+.ot-ms-search input {
+    width: 100%;
+    background: rgba(255,255,255,0.05);
+    border: 1px solid var(--glass-border);
+    border-radius: 6px;
+    padding: 8px 12px;
+    color: var(--text-main);
+    font-size: 13px;
+    outline: none;
+    box-sizing: border-box;
+}
+.ot-ms-search input:focus {
+    border-color: var(--primary);
+}
+.ot-ms-options {
+    max-height: 220px;
+    overflow-y: auto;
+}
+.ot-ms-option {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 10px 14px;
+    cursor: pointer;
+    font-size: 14px;
+    color: var(--text-main);
+    transition: background 0.15s;
+}
+.ot-ms-option:hover {
+    background: rgba(79, 70, 229, 0.15);
+}
+.ot-ms-option input[type="checkbox"] {
+    accent-color: var(--primary);
+    width: 16px;
+    height: 16px;
+    pointer-events: none;
+}
+.ot-ms-select-all {
+    border-bottom: 1px solid var(--glass-border);
+    font-weight: 600;
+    color: var(--primary);
+}
+
+/* Overtime badges */
+.ot-badge {
+    display: inline-block;
+    padding: 4px 12px;
+    border-radius: 20px;
+    font-size: 13px;
+    font-weight: 600;
+    letter-spacing: 0.3px;
+}
+.ot-badge-low {
+    background: rgba(52, 211, 153, 0.15);
+    color: #34d399;
+}
+.ot-badge-medium {
+    background: rgba(251, 191, 36, 0.15);
+    color: #fbbf24;
+}
+.ot-badge-high {
+    background: rgba(248, 113, 113, 0.15);
+    color: #f87171;
+}
+
+/* Sort active header */
+#overtime-table th[data-sort] {
+    cursor: pointer;
+    user-select: none;
+    transition: color 0.2s;
+}
+#overtime-table th[data-sort]:hover {
+    color: var(--primary);
+}
+#overtime-table th.sort-active {
+    color: var(--primary);
+}
+
+/* Empty state */
+.ot-empty-state {
+    text-align: center;
+    padding: 60px 20px;
+    color: var(--text-muted);
+}
+
+/* Responsive */
+@media (max-width: 768px) {
+    .overtime-filters {
+        flex-direction: column;
+        align-items: stretch;
+    }
+    .overtime-filters .filter-group input[type="date"] {
+        min-width: auto;
+        width: 100%;
+    }
+    .ot-ms-trigger {
+        min-width: auto;
+    }
+    #overtime-stats {
+        grid-template-columns: repeat(2, 1fr) !important;
+    }
+}

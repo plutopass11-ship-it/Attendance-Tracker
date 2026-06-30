@@ -699,6 +699,135 @@ app.put('/api/settings', async (req, res) => {
     }
 });
 
+// 10b. Overtime Report (Admin)
+app.get('/api/overtime', async (req, res) => {
+    const { from, to, userIds } = req.query;
+    if (!from || !to) {
+        return res.status(400).json({ error: 'from and to query params required' });
+    }
+    try {
+        let userFilter = '';
+        const params = [from, to];
+        if (userIds) {
+            const ids = userIds.split(',').map(s => s.trim()).filter(Boolean);
+            if (ids.length > 0) {
+                userFilter = ` AND a.user_id = ANY($3)`;
+                params.push(ids);
+            }
+        }
+
+        const result = await pool.query(`
+            SELECT a.user_id as "userId", u.name as "userName",
+                   CAST(a.date as text) as "date",
+                   a.check_in_time as "rawCheckIn",
+                   a.check_out_time as "rawCheckOut",
+                   a.status
+            FROM attendance a
+            JOIN users u ON u.user_id = a.user_id
+            WHERE a.date >= $1 AND a.date <= $2
+              AND a.check_out_time IS NOT NULL
+              ${userFilter}
+            ORDER BY a.date DESC, u.name ASC
+        `, params);
+
+        const OT_START_HOUR = 19; // 7 PM IST
+        const OT_END_HOUR = 25;   // 1 AM next day (represented as 25:00)
+        const OT_END_MIN = 30;    // 1:30 AM
+        const MAX_OT_MINUTES = 6 * 60 + 30; // 6h 30m
+
+        const records = [];
+        const perUserMap = {};
+
+        for (const row of result.rows) {
+            const checkIn = new Date(row.rawCheckIn);
+            const checkOut = new Date(row.rawCheckOut);
+
+            // Convert to IST components
+            const coIST = new Date(checkOut.toLocaleString('en-US', { timeZone: 'Asia/Kolkata' }));
+            const ciIST = new Date(checkIn.toLocaleString('en-US', { timeZone: 'Asia/Kolkata' }));
+
+            const coHour = coIST.getHours();
+            const coMin = coIST.getMinutes();
+
+            // Checkout must be after 19:00 IST to have overtime
+            // Handle next-day checkouts (0:00 - 1:30 AM = hours 0-1)
+            const isAfter7PM = coHour >= OT_START_HOUR;
+            const isNextDayEarly = coHour < 2 || (coHour === 1 && coMin <= 30);
+            
+            if (!isAfter7PM && !isNextDayEarly) continue;
+
+            // Calculate OT minutes
+            let otMinutes = 0;
+            if (isAfter7PM) {
+                // Same day: from 19:00 to checkout time
+                otMinutes = (coHour - OT_START_HOUR) * 60 + coMin;
+            } else if (isNextDayEarly) {
+                // Next day early morning: full evening (19:00-00:00 = 5 hours) + morning portion
+                otMinutes = (24 - OT_START_HOUR) * 60 + coHour * 60 + coMin;
+            }
+
+            // Cap at max
+            if (otMinutes > MAX_OT_MINUTES) otMinutes = MAX_OT_MINUTES;
+            if (otMinutes <= 0) continue;
+
+            const otHours = Math.floor(otMinutes / 60);
+            const otMins = otMinutes % 60;
+
+            const totalHoursWorked = ((checkOut - checkIn) / (1000 * 60 * 60)).toFixed(1);
+
+            // Format OT end time
+            let otEndTime;
+            if (otMinutes >= MAX_OT_MINUTES) {
+                otEndTime = '01:30 AM';
+            } else {
+                otEndTime = coIST.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true, timeZone: 'Asia/Kolkata' });
+            }
+
+            const record = {
+                userId: row.userId,
+                userName: row.userName,
+                date: row.date,
+                checkIn: ciIST.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true }),
+                checkOut: coIST.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true }),
+                totalHoursWorked,
+                overtimeStart: '07:00 PM',
+                overtimeEnd: otEndTime,
+                overtimeMinutes: otMinutes,
+                overtimeFormatted: `${otHours}h ${otMins}m`
+            };
+            records.push(record);
+
+            // Aggregate per user
+            if (!perUserMap[row.userId]) {
+                perUserMap[row.userId] = { userId: row.userId, userName: row.userName, totalMinutes: 0, daysWithOvertime: 0 };
+            }
+            perUserMap[row.userId].totalMinutes += otMinutes;
+            perUserMap[row.userId].daysWithOvertime += 1;
+        }
+
+        const perUser = Object.values(perUserMap).map(u => ({
+            ...u,
+            totalFormatted: `${Math.floor(u.totalMinutes / 60)}h ${u.totalMinutes % 60}m`
+        }));
+
+        const totalOvertimeMinutes = perUser.reduce((sum, u) => sum + u.totalMinutes, 0);
+
+        res.json({
+            records,
+            summary: {
+                totalOvertimeMinutes,
+                totalOvertimeFormatted: `${Math.floor(totalOvertimeMinutes / 60)}h ${totalOvertimeMinutes % 60}m`,
+                userCount: perUser.length,
+                recordCount: records.length,
+                perUser
+            }
+        });
+    } catch (err) {
+        console.error('Overtime report error:', err);
+        res.status(500).json({ error: 'Failed to generate overtime report', details: err.message });
+    }
+});
+
 
 // 11. User History (comprehensive data for Employee History tab)
 app.get('/api/users/:id/history', async (req, res) => {

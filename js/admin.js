@@ -80,6 +80,7 @@ window.AdminUI = {
                 if(target === 'admin-tab-reports' && window.ReportsUI) window.ReportsUI.init();
                 if(target === 'admin-tab-history') this.renderHistoryTab();
                 if(target === 'admin-tab-zkteco') this.renderZkteco();
+                if(target === 'admin-tab-overtime' && window.OvertimeUI) window.OvertimeUI.init();
             });
         });
 
