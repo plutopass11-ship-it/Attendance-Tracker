@@ -781,68 +781,7 @@
             </main>
         </div>
 
-        <!-- Biometric Live Enroll Modal -->
-        <div id="biometric-enroll-modal" class="modal-backdrop hidden">
-            <div class="modal-content" style="max-width:440px; text-align:center; padding:24px;">
-                
-                <!-- Initial Setup View -->
-                <div id="bio-modal-setup-view">
-                    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:16px; text-align:left;">
-                        <h3 style="margin:0; font-size:18px;"><ion-icon name="finger-print-outline" style="vertical-align:middle; margin-right:8px; color:var(--primary);"></ion-icon>Enroll Fingerprint</h3>
-                        <button style="background:none; border:none; color:var(--text-muted); cursor:pointer; font-size:20px;" onclick="window.AdminUI.closeBiometricModal()">✕</button>
-                    </div>
 
-                    <!-- Device Status Pill -->
-                    <div id="bio-device-status-pill" style="display:flex; align-items:center; justify-content:center; gap:8px; padding:8px 12px; border-radius:8px; background:rgba(16,185,129,0.1); color:#10b981; font-size:12px; font-weight:600; margin-bottom:16px;">
-                        <span style="display:inline-block; width:8px; height:8px; border-radius:50%; background:#10b981;"></span> Biometric Device Online
-                    </div>
-
-                    <div style="text-align:left; margin-bottom:14px;">
-                        <label style="display:block; margin-bottom:6px; font-size:13px; font-weight:600;">Select Employee</label>
-                        <select id="bio-enroll-user" style="width:100%; padding:10px 12px; border-radius:8px; border:1px solid var(--border); background:var(--bg-input); color:var(--text-main); font-size:14px;">
-                            <option value="">Select employee...</option>
-                        </select>
-                    </div>
-
-                    <div style="text-align:left; margin-bottom:20px;">
-                        <label style="display:block; margin-bottom:6px; font-size:13px; font-weight:600;">Sensor Slot # (Auto-assigned)</label>
-                        <input type="number" id="bio-enroll-slot" min="1" max="1000" placeholder="Auto-assigning..." style="width:100%; padding:10px 12px; border-radius:8px; border:1px solid var(--border); background:var(--bg-input); color:var(--text-main); font-size:14px;">
-                    </div>
-
-                    <div style="display:flex; gap:10px; justify-content:flex-end;">
-                        <button class="btn-small btn-neutral" onclick="window.AdminUI.closeBiometricModal()">Cancel</button>
-                        <button class="btn-small btn-primary" id="btn-start-live-enroll" onclick="window.AdminUI.startLiveWebEnroll()">
-                            <ion-icon name="flash-outline" style="vertical-align:middle; margin-right:4px;"></ion-icon> Start Live Scan
-                        </button>
-                    </div>
-                </div>
-
-                <!-- Live Interactive Scanning View -->
-                <div id="bio-modal-live-view" style="display:none;">
-                    <div style="position:relative; width:90px; height:90px; margin:0 auto 16px; display:flex; align-items:center; justify-content:center;">
-                        <div id="bio-live-ring" style="position:absolute; inset:0; border-radius:50%; border:3px solid var(--primary); animation:pulse 1.5s infinite;"></div>
-                        <ion-icon id="bio-live-icon" name="finger-print-outline" style="font-size:48px; color:var(--primary);"></ion-icon>
-                    </div>
-
-                    <h3 id="bio-live-title" style="margin:0 0 6px; font-size:18px;">Waiting for Device...</h3>
-                    <p id="bio-live-desc" style="font-size:13px; color:var(--text-muted); margin:0 0 20px; min-height:36px;">Connecting to the attendance monitor...</p>
-
-                    <!-- Progress Dots -->
-                    <div style="display:flex; justify-content:center; gap:8px; margin-bottom:20px;">
-                        <div id="bio-dot-1" style="width:10px; height:10px; border-radius:50%; background:var(--border);"></div>
-                        <div id="bio-dot-2" style="width:10px; height:10px; border-radius:50%; background:var(--border);"></div>
-                        <div id="bio-dot-3" style="width:10px; height:10px; border-radius:50%; background:var(--border);"></div>
-                    </div>
-
-                    <div style="display:flex; gap:10px; justify-content:center;">
-                        <button id="btn-bio-cancel" class="btn-small btn-neutral" onclick="window.AdminUI.cancelLiveWebEnroll()">Cancel Scan</button>
-                        <button id="btn-bio-retry" class="btn-small btn-primary" style="display:none;" onclick="window.AdminUI.startLiveWebEnroll()">Try Again</button>
-                        <button id="btn-bio-done" class="btn-small btn-primary" style="display:none;" onclick="window.AdminUI.closeBiometricModal()">Done</button>
-                    </div>
-                </div>
-
-            </div>
-        </div>
 
         <!-- Main App View -->
         <div id="app-view" class="view hidden">
@@ -1032,6 +971,69 @@
     </div>
 
     <!-- Admin Modals -->
+    <!-- Biometric Live Enroll Modal -->
+    <div id="biometric-enroll-modal" class="modal hidden">
+        <div class="modal-overlay" onclick="window.AdminUI.closeBiometricModal()"></div>
+        <div class="modal-content glass-panel" style="max-width:440px; text-align:center; padding:24px; position:relative; z-index:10;">
+            
+            <!-- Initial Setup View -->
+            <div id="bio-modal-setup-view">
+                <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:16px; text-align:left;">
+                    <h3 style="margin:0; font-size:18px;"><ion-icon name="finger-print-outline" style="vertical-align:middle; margin-right:8px; color:var(--primary);"></ion-icon>Enroll Fingerprint</h3>
+                    <button style="background:none; border:none; color:var(--text-muted); cursor:pointer; font-size:20px;" onclick="window.AdminUI.closeBiometricModal()">✕</button>
+                </div>
+
+                <!-- Device Status Pill -->
+                <div id="bio-device-status-pill" style="display:flex; align-items:center; justify-content:center; gap:8px; padding:8px 12px; border-radius:8px; background:rgba(16,185,129,0.1); color:#10b981; font-size:12px; font-weight:600; margin-bottom:16px;">
+                    <span style="display:inline-block; width:8px; height:8px; border-radius:50%; background:#10b981;"></span> Biometric Device Online
+                </div>
+
+                <div style="text-align:left; margin-bottom:14px;">
+                    <label style="display:block; margin-bottom:6px; font-size:13px; font-weight:600;">Select Employee</label>
+                    <select id="bio-enroll-user" style="width:100%; padding:10px 12px; border-radius:8px; border:1px solid var(--border); background:var(--bg-input); color:var(--text-main); font-size:14px;">
+                        <option value="">Select employee...</option>
+                    </select>
+                </div>
+
+                <div style="text-align:left; margin-bottom:20px;">
+                    <label style="display:block; margin-bottom:6px; font-size:13px; font-weight:600;">Sensor Slot # (Auto-assigned)</label>
+                    <input type="number" id="bio-enroll-slot" min="1" max="1000" placeholder="Auto-assigning..." style="width:100%; padding:10px 12px; border-radius:8px; border:1px solid var(--border); background:var(--bg-input); color:var(--text-main); font-size:14px;">
+                </div>
+
+                <div style="display:flex; gap:10px; justify-content:flex-end;">
+                    <button class="btn-small btn-neutral" onclick="window.AdminUI.closeBiometricModal()">Cancel</button>
+                    <button class="btn-small btn-primary" id="btn-start-live-enroll" onclick="window.AdminUI.startLiveWebEnroll()">
+                        <ion-icon name="flash-outline" style="vertical-align:middle; margin-right:4px;"></ion-icon> Start Live Scan
+                    </button>
+                </div>
+            </div>
+
+            <!-- Live Interactive Scanning View -->
+            <div id="bio-modal-live-view" style="display:none;">
+                <div style="position:relative; width:90px; height:90px; margin:0 auto 16px; display:flex; align-items:center; justify-content:center;">
+                    <div id="bio-live-ring" style="position:absolute; inset:0; border-radius:50%; border:3px solid var(--primary); animation:pulse 1.5s infinite;"></div>
+                    <ion-icon id="bio-live-icon" name="finger-print-outline" style="font-size:48px; color:var(--primary);"></ion-icon>
+                </div>
+
+                <h3 id="bio-live-title" style="margin:0 0 6px; font-size:18px;">Waiting for Device...</h3>
+                <p id="bio-live-desc" style="font-size:13px; color:var(--text-muted); margin:0 0 20px; min-height:36px;">Connecting to the attendance monitor...</p>
+
+                <!-- Progress Dots -->
+                <div style="display:flex; justify-content:center; gap:8px; margin-bottom:20px;">
+                    <div id="bio-dot-1" style="width:10px; height:10px; border-radius:50%; background:var(--border);"></div>
+                    <div id="bio-dot-2" style="width:10px; height:10px; border-radius:50%; background:var(--border);"></div>
+                    <div id="bio-dot-3" style="width:10px; height:10px; border-radius:50%; background:var(--border);"></div>
+                </div>
+
+                <div style="display:flex; gap:10px; justify-content:center;">
+                    <button id="btn-bio-cancel" class="btn-small btn-neutral" onclick="window.AdminUI.cancelLiveWebEnroll()">Cancel Scan</button>
+                    <button id="btn-bio-retry" class="btn-small btn-primary" style="display:none;" onclick="window.AdminUI.startLiveWebEnroll()">Try Again</button>
+                    <button id="btn-bio-done" class="btn-small btn-primary" style="display:none;" onclick="window.AdminUI.closeBiometricModal()">Done</button>
+                </div>
+            </div>
+
+        </div>
+    </div>
     <div id="holiday-modal" class="modal hidden">
         <div class="modal-overlay"></div>
         <div class="modal-content glass-panel">
