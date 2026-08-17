@@ -49,15 +49,21 @@ async function processPunch(pool, appUserId, punchTime) {
       const hoursWorked = (punchTime - checkInTime) / (1000 * 60 * 60);
       const baseStatus = isWfh ? 'wfh_' : '';
 
+      // End-of-day cutoff: check-outs at or after 6:00 PM IST do not need approval
+      const istTime = new Date(punchTime.toLocaleString('en-US', { timeZone: 'Asia/Kolkata' }));
+      const isAfter6PM = istTime.getHours() >= 18;
+
       let finalStatus = baseStatus + 'completed';
-      if (hoursWorked < 4) {
-        await pool.query(
-          `INSERT INTO leave_requests (user_id, type, start_date, end_date, reason, status)
-           VALUES ($1, $2, $3, $4, $5, $6)`,
-          [appUserId, 'Casual Leave (Half Day)', dateStr, dateStr, 'Auto-generated Short Shift (< 4 hours)', 'pending']
-        );
-      } else if (hoursWorked < 8) {
-        finalStatus = baseStatus + 'pending_early_clockout';
+      if (!isAfter6PM) {
+          if (hoursWorked < 4) {
+            await pool.query(
+              `INSERT INTO leave_requests (user_id, type, start_date, end_date, reason, status)
+               VALUES ($1, $2, $3, $4, $5, $6)`,
+              [appUserId, 'Casual Leave (Half Day)', dateStr, dateStr, 'Auto-generated Short Shift (< 4 hours)', 'pending']
+            );
+          } else if (hoursWorked < 8) {
+            finalStatus = baseStatus + 'pending_early_clockout';
+          }
       }
 
       await pool.query(

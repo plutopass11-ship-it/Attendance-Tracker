@@ -625,17 +625,22 @@ function registerTools(server) {
                     let newStatus = 'completed';
                     let extraMessage = '';
 
-                    if (hoursWorked < 4) {
-                        // Auto-generate Half Day Leave
-                        await client.query(
-                            `INSERT INTO leave_requests (user_id, type, start_date, end_date, reason, status)
-                             VALUES ($1, $2, $3, $4, $5, $6)`,
-                            [userId, 'Casual Leave (Half Day)', today, today, 'Auto-generated Short Shift (< 4 hours)', 'pending']
-                        );
-                        extraMessage = ' ⚠️ Short shift detected (< 4h). A half-day leave request has been auto-generated.';
-                    } else if (hoursWorked < 8) {
-                        newStatus = 'pending_early_clockout';
-                        extraMessage = ' ⏰ Early clock-out detected (< 8h). Pending admin approval.';
+                    const istTime = new Date(now.toLocaleString('en-US', { timeZone: 'Asia/Kolkata' }));
+                    const isAfter6PM = istTime.getHours() >= 18;
+
+                    if (!isAfter6PM) {
+                        if (hoursWorked < 4) {
+                            // Auto-generate Half Day Leave
+                            await client.query(
+                                `INSERT INTO leave_requests (user_id, type, start_date, end_date, reason, status)
+                                 VALUES ($1, $2, $3, $4, $5, $6)`,
+                                [userId, 'Casual Leave (Half Day)', today, today, 'Auto-generated Short Shift (< 4 hours)', 'pending']
+                            );
+                            extraMessage = ' ⚠️ Short shift detected (< 4h). A half-day leave request has been auto-generated.';
+                        } else if (hoursWorked < 8) {
+                            newStatus = 'pending_early_clockout';
+                            extraMessage = ' ⏰ Early clock-out detected (< 8h). Pending admin approval.';
+                        }
                     }
 
                     await client.query(

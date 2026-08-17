@@ -308,17 +308,26 @@ app.post('/api/attendance', async (req, res) => {
               const hoursWorked = (now - checkInTime) / (1000 * 60 * 60);
               const isWfhAttendance = typeof record.status === 'string' && record.status.startsWith('wfh_');
               
+              // End-of-day cutoff: check-outs at or after 6:00 PM IST do not need approval
+              const istTime = new Date(now.toLocaleString('en-US', { timeZone: 'Asia/Kolkata' }));
+              const isAfter6PM = istTime.getHours() >= 18;
+
               let newStatus = isWfhAttendance ? 'wfh_completed' : 'completed';
+              let isEarly = false;
               
-              if (hoursWorked < 4) {
-                 // Auto-generate Half Day Leave
-                 await client.query(
-                    `INSERT INTO leave_requests (user_id, type, start_date, end_date, reason, status)
-                     VALUES ($1, $2, $3, $4, $5, $6)`,
-                     [userId, 'Casual Leave (Half Day)', date, date, 'Auto-generated Short Shift (< 4 hours)', 'pending'] 
-                 );
-              } else if (hoursWorked < 8) {
-                 newStatus = isWfhAttendance ? 'wfh_pending_early_clockout' : 'pending_early_clockout';
+              if (!isAfter6PM) {
+                  if (hoursWorked < 4) {
+                     // Auto-generate Half Day Leave
+                     await client.query(
+                        `INSERT INTO leave_requests (user_id, type, start_date, end_date, reason, status)
+                         VALUES ($1, $2, $3, $4, $5, $6)`,
+                         [userId, 'Casual Leave (Half Day)', date, date, 'Auto-generated Short Shift (< 4 hours)', 'pending'] 
+                     );
+                     isEarly = true;
+                  } else if (hoursWorked < 8) {
+                     newStatus = isWfhAttendance ? 'wfh_pending_early_clockout' : 'pending_early_clockout';
+                     isEarly = true;
+                  }
               }
               
               await client.query(
@@ -333,7 +342,7 @@ app.post('/api/attendance', async (req, res) => {
                 const timeIST = new Date().toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Kolkata' });
                 const hours = Math.floor(hoursWorked);
                 const minutes = Math.floor((hoursWorked - hours) * 60);
-                slackNotifier.notifyCheckOut({ pool, name: userName, userId, timeIST, hoursWorked: `${hours}h ${minutes}m`, isEarly: hoursWorked < 8, method: 'Mobile Web App' });
+                slackNotifier.notifyCheckOut({ pool, name: userName, userId, timeIST, hoursWorked: `${hours}h ${minutes}m`, isEarly, method: 'Mobile Web App' });
               } catch (sErr) {
                 console.error('[Slack] Notify check-out error:', sErr.message);
               }
@@ -1275,15 +1284,25 @@ app.post('/api/biometric/punch', requireBioApiKey, async (req, res) => {
           const hoursWorkedStr = `${hours}h ${minutes}m`;
           
           const isWfhAttendance = typeof record.status === 'string' && record.status.startsWith('wfh_');
+
+          // End-of-day cutoff: check-outs at or after 6:00 PM IST do not need approval
+          const istTime = new Date(now.toLocaleString('en-US', { timeZone: 'Asia/Kolkata' }));
+          const isAfter6PM = istTime.getHours() >= 18;
+
           let newStatus = isWfhAttendance ? 'wfh_completed' : 'completed';
+          let isEarly = false;
           
-          if (hoursWorkedDecimal < 4) {
-            await client.query(
-              `INSERT INTO leave_requests (user_id, type, start_date, end_date, reason, status) VALUES ($1, $2, $3, $4, $5, $6)`,
-              [userId, 'Casual Leave (Half Day)', date, date, 'Auto-generated Short Shift (< 4 hours)', 'pending'] 
-            );
-          } else if (hoursWorkedDecimal < 8) {
-            newStatus = isWfhAttendance ? 'wfh_pending_early_clockout' : 'pending_early_clockout';
+          if (!isAfter6PM) {
+              if (hoursWorkedDecimal < 4) {
+                await client.query(
+                  `INSERT INTO leave_requests (user_id, type, start_date, end_date, reason, status) VALUES ($1, $2, $3, $4, $5, $6)`,
+                  [userId, 'Casual Leave (Half Day)', date, date, 'Auto-generated Short Shift (< 4 hours)', 'pending'] 
+                );
+                isEarly = true;
+              } else if (hoursWorkedDecimal < 8) {
+                newStatus = isWfhAttendance ? 'wfh_pending_early_clockout' : 'pending_early_clockout';
+                isEarly = true;
+              }
           }
           
           await client.query(
@@ -1296,7 +1315,7 @@ app.post('/api/biometric/punch', requireBioApiKey, async (req, res) => {
 
           // Send clean Slack notification
           try {
-            slackNotifier.notifyCheckOut({ pool, name, userId, timeIST, hoursWorked: hoursWorkedStr, isEarly: hoursWorkedDecimal < 8, method: `Biometric Scanner (Slot #${fingerprint_id})` });
+            slackNotifier.notifyCheckOut({ pool, name, userId, timeIST, hoursWorked: hoursWorkedStr, isEarly, method: `Biometric Scanner (Slot #${fingerprint_id})` });
           } catch (sErr) {
             console.error('[Slack] Biometric check-out notify error:', sErr.message);
           }
