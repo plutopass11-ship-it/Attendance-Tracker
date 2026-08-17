@@ -2168,61 +2168,79 @@ window.AdminUI.renderBiometricTab = async function() {
     }
 };
 
-window.AdminUI.openBiometricEnrollModal = async function() {
+window.AdminUI.openBiometricEnrollModal = function() {
     const modal = document.getElementById('biometric-enroll-modal');
-    if (!modal) return;
-
-    // Reset view states
-    document.getElementById('bio-modal-setup-view').style.display = 'block';
-    document.getElementById('bio-modal-live-view').style.display = 'none';
-
-    // Populate employee dropdown from Store
-    const select = document.getElementById('bio-enroll-user');
-    select.innerHTML = '<option value="">Select employee...</option>';
-    const users = Store.getUsers ? Store.getUsers() : [];
-    users.forEach(u => {
-        const opt = document.createElement('option');
-        opt.value = u.user_id;
-        opt.textContent = `${u.name} (${u.user_id})`;
-        select.appendChild(opt);
-    });
-
-    // Auto-fetch next available slot
-    try {
-        const res = await fetch('/api/biometric/next-slot');
-        const data = await res.json();
-        if (data.success && data.next_slot) {
-            document.getElementById('bio-enroll-slot').value = data.next_slot;
-        }
-    } catch (e) {
-        document.getElementById('bio-enroll-slot').value = '1';
+    if (!modal) {
+        console.error('biometric-enroll-modal element not found!');
+        return;
     }
 
-    // Check device status
-    try {
-        const statusRes = await fetch('/api/biometric/device/status');
-        const statusData = await statusRes.json();
-        const pill = document.getElementById('bio-device-status-pill');
-        if (pill) {
-            if (statusData.online) {
-                pill.style.background = 'rgba(16,185,129,0.1)';
-                pill.style.color = '#10b981';
-                pill.innerHTML = '<span style="display:inline-block; width:8px; height:8px; border-radius:50%; background:#10b981;"></span> Biometric Device Online';
-            } else {
-                pill.style.background = 'rgba(239,68,68,0.1)';
-                pill.style.color = '#ef4444';
-                pill.innerHTML = '<span style="display:inline-block; width:8px; height:8px; border-radius:50%; background:#ef4444;"></span> Device Offline (Connecting...)';
-            }
-        }
-    } catch (e) {}
-
+    // 1. Open modal immediately
     modal.classList.remove('hidden');
+
+    // 2. Reset view states
+    const setupView = document.getElementById('bio-modal-setup-view');
+    const liveView = document.getElementById('bio-modal-live-view');
+    if (setupView) setupView.style.display = 'block';
+    if (liveView) liveView.style.display = 'none';
+
+    // 3. Populate employee dropdown
+    const select = document.getElementById('bio-enroll-user');
+    if (select) {
+        select.innerHTML = '<option value="">Select employee...</option>';
+        const users = (window.AdminUI._cachedUsers && window.AdminUI._cachedUsers.length)
+            ? window.AdminUI._cachedUsers
+            : (Store.getUsers ? Store.getUsers() : []);
+        
+        users.forEach(u => {
+            const opt = document.createElement('option');
+            const uid = u.user_id || u.id;
+            opt.value = uid;
+            opt.textContent = `${u.name || uid} (${uid})`;
+            select.appendChild(opt);
+        });
+    }
+
+    // 4. Auto-fetch next available slot in background
+    fetch('/api/biometric/next-slot')
+        .then(res => res.json())
+        .then(data => {
+            const slotInput = document.getElementById('bio-enroll-slot');
+            if (slotInput && data.success && data.next_slot) {
+                slotInput.value = data.next_slot;
+            }
+        })
+        .catch(e => {
+            const slotInput = document.getElementById('bio-enroll-slot');
+            if (slotInput && !slotInput.value) slotInput.value = '1';
+        });
+
+    // 5. Check device status in background
+    fetch('/api/biometric/device/status')
+        .then(res => res.json())
+        .then(statusData => {
+            const pill = document.getElementById('bio-device-status-pill');
+            if (pill) {
+                if (statusData.online) {
+                    pill.style.background = 'rgba(16,185,129,0.1)';
+                    pill.style.color = '#10b981';
+                    pill.innerHTML = '<span style="display:inline-block; width:8px; height:8px; border-radius:50%; background:#10b981;"></span> Biometric Device Online';
+                } else {
+                    pill.style.background = 'rgba(239,68,68,0.1)';
+                    pill.style.color = '#ef4444';
+                    pill.innerHTML = '<span style="display:inline-block; width:8px; height:8px; border-radius:50%; background:#ef4444;"></span> Device Offline (Connecting...)';
+                }
+            }
+        })
+        .catch(() => {});
 };
 
 window.AdminUI.closeBiometricModal = function() {
     const modal = document.getElementById('biometric-enroll-modal');
     if (modal) modal.classList.add('hidden');
-    window.AdminUI.renderBiometricTab();
+    if (window.AdminUI && typeof window.AdminUI.renderBiometricTab === 'function') {
+        window.AdminUI.renderBiometricTab();
+    }
 };
 
 window.AdminUI.startLiveWebEnroll = async function() {
