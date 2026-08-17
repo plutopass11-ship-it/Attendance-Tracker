@@ -998,7 +998,8 @@ async function autoCheckoutMissing() {
     }
 }
 
-// 12. Auto Half-Day Leave Cron (runs at 11:05 AM IST)
+// 12. Auto Half-Day Leave Cron & Missing Check-in Alerts (runs at 11:00 AM IST)
+let lastMissingAlertDate = null;
 async function runAutoHalfDayLeave() {
     try {
         const now = new Date();
@@ -1033,7 +1034,7 @@ async function runAutoHalfDayLeave() {
         // Get all active non-admin users
         const hasIsActiveCol = await columnExists('users', 'is_active');
         const activeCondition = hasIsActiveCol ? 'AND is_active = true' : '';
-        const users = await pool.query(`SELECT user_id FROM users WHERE role != 'admin' ${activeCondition}`);
+        const users = await pool.query(`SELECT user_id, name FROM users WHERE role != 'admin' ${activeCondition}`);
 
         // Leave type priority order (lowercase slug matching)
         const priorityOrder = ['earned', 'casual', 'sick'];
@@ -1054,9 +1055,11 @@ async function runAutoHalfDayLeave() {
         const currentMonthStr = `${currentYear}-${String(istTime.getMonth()+1).padStart(2,'0')}`;
 
         let autoApplied = 0;
+        const missingEmployees = [];
 
         for (const user of users.rows) {
             const uid = user.user_id;
+            const uName = user.name || uid;
 
             // Check if user already has attendance today
             const attCheck = await pool.query(
@@ -1071,6 +1074,9 @@ async function runAutoHalfDayLeave() {
                 [uid, todayStr]
             );
             if (leaveCheck.rowCount > 0) continue;
+
+            // This employee has not logged in and is not on approved leave
+            missingEmployees.push(uName);
 
             // Check if already auto-applied today
             const hasAutoCol = await columnExists('leave_requests', 'is_auto_applied');
@@ -1129,7 +1135,7 @@ async function runAutoHalfDayLeave() {
                 const remaining = quota - used;
 
                 if (remaining >= 0.5) {
-                    selectedType = policy.label;
+                    selectedType = policy.type;
                     selectedLabel = `${policy.label} (Half Day)`;
                     break;
                 }
@@ -1156,6 +1162,17 @@ async function runAutoHalfDayLeave() {
 
             console.log(`[Auto Half-Day] Applied '${selectedLabel}' for user ${uid}`);
             autoApplied++;
+        }
+
+        // Send missing login alert to Admins (once per day)
+        if (missingEmployees.length > 0 && lastMissingAlertDate !== todayStr) {
+            lastMissingAlertDate = todayStr;
+            await slackNotifier.notifyMissingCheckIns({
+                pool,
+                missingEmployees,
+                timeIST: '11:00 AM'
+            });
+            console.log(`[Slack] Sent missing check-in alert to Admins for ${missingEmployees.length} employees.`);
         }
 
         if (autoApplied > 0) {

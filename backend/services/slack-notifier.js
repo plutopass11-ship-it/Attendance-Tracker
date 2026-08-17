@@ -246,11 +246,39 @@ async function notifyCheckOut({ pool, name, userId, email, timeIST, hoursWorked,
     }
 }
 
+/**
+ * Notifies Admins at 11:00 AM if employees have not checked in and are not on leave
+ */
+async function notifyMissingCheckIns({ pool, missingEmployees, timeIST = '11:00 AM' }) {
+    if (!missingEmployees || missingEmployees.length === 0) return;
+    try {
+        const settings = await getSlackSettings(pool);
+        const adminRecipients = Array.isArray(settings.adminRecipients) ? settings.adminRecipients : [];
+        if (adminRecipients.length === 0) return;
+
+        const employeeListStr = missingEmployees.map(e => `- ${e}`).join('\n');
+        const portalUrl = settings.portalUrl || 'https://attendance.flyingpluto.ai';
+
+        const message = `Missing Check-In Alert (${timeIST})\nThe following employees have not checked in today and are not on approved leave:\n${employeeListStr}\n\nFor More Details - ${portalUrl}`;
+
+        for (const adminEmail of adminRecipients) {
+            const adminSlackId = await resolveSlackUserId({ email: adminEmail });
+            if (adminSlackId) {
+                await sendDirectMessage(adminSlackId, message);
+            }
+        }
+    } catch (err) {
+        console.error('[Slack] notifyMissingCheckIns error:', err);
+    }
+}
+
 module.exports = {
     DEFAULT_SLACK_SETTINGS,
     getSlackSettings,
     notifyCheckIn,
     notifyCheckOut,
+    notifyMissingCheckIns,
     sendDirectMessage,
     resolveSlackUserId
 };
+
