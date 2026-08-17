@@ -24,6 +24,7 @@ const pool = new Pool({
 
 const KITSU_URL = process.env.KITSU_URL || 'http://host.docker.internal:3002';
 const N8N_WEBHOOK_URL = process.env.N8N_WEBHOOK_URL || '';  // e.g. http://n8n:5678/webhook/leave-status-changed
+const slackNotifier = require('./services/slack-notifier');
 
 // --- Service Account (Admin Token Cache) ---
 // Uses a dedicated Kitsu admin account to fetch person data,
@@ -279,6 +280,16 @@ app.post('/api/attendance', async (req, res) => {
          ON CONFLICT (user_id, date) DO UPDATE SET status = EXCLUDED.status`,
         [userId, date, checkInStatus]
       );
+
+      // Send private Slack DM
+      try {
+        const uRes = await pool.query('SELECT name FROM users WHERE user_id = $1', [userId]);
+        const userName = uRes.rows[0]?.name || userId;
+        const timeIST = new Date().toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Kolkata' });
+        slackNotifier.notifyCheckIn({ name: userName, userId, timeIST, method: 'Mobile Web App', isWfh: checkInStatus === 'wfh_working' });
+      } catch (sErr) {
+        console.error('[Slack] Notify check-in error:', sErr.message);
+      }
     } else {
       const client = await pool.connect();
       try {
@@ -314,6 +325,18 @@ app.post('/api/attendance', async (req, res) => {
                   `UPDATE attendance SET check_out_time = NOW(), status = $3 WHERE user_id = $1 AND date = $2`,
                   [userId, date, newStatus]
               );
+
+              // Send private Slack DM
+              try {
+                const uRes = await client.query('SELECT name FROM users WHERE user_id = $1', [userId]);
+                const userName = uRes.rows[0]?.name || userId;
+                const timeIST = new Date().toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Kolkata' });
+                const hours = Math.floor(hoursWorked);
+                const minutes = Math.floor((hoursWorked - hours) * 60);
+                slackNotifier.notifyCheckOut({ name: userName, userId, timeIST, hoursWorked: `${hours}h ${minutes}m`, status: newStatus, method: 'Mobile Web App' });
+              } catch (sErr) {
+                console.error('[Slack] Notify check-out error:', sErr.message);
+              }
           }
           await client.query('COMMIT');
       } catch(txnErr) {
@@ -1176,6 +1199,13 @@ app.post('/api/biometric/punch', requireBioApiKey, async (req, res) => {
         );
         await client.query(`INSERT INTO biometric_logs (fingerprint_id, user_id, action, status) VALUES ($1, $2, 'check_in', 'success')`, [fingerprint_id, userId]);
         responseObj = { success: true, action: 'check_in', name, time: timeIST, status: 'working', hours_worked: null, message: 'Welcome!' };
+
+        // Send private Slack DM
+        try {
+          slackNotifier.notifyCheckIn({ name, userId, timeIST, method: `Biometric Scanner (Slot #${fingerprint_id})`, isWfh: checkInStatus === 'wfh_working' });
+        } catch (sErr) {
+          console.error('[Slack] Biometric check-in notify error:', sErr.message);
+        }
       } else {
         const record = attRes.rows[0];
         if (record.check_out_time) {
@@ -1210,6 +1240,13 @@ app.post('/api/biometric/punch', requireBioApiKey, async (req, res) => {
           await client.query(`INSERT INTO biometric_logs (fingerprint_id, user_id, action, status, hours_worked) VALUES ($1, $2, 'check_out', 'success', $3)`, [fingerprint_id, userId, hoursWorkedDecimal.toFixed(2)]);
           
           responseObj = { success: true, action: 'check_out', name, time: timeIST, status: newStatus.replace('wfh_', ''), hours_worked: hoursWorkedStr, message: 'Goodbye!' };
+
+          // Send private Slack DM
+          try {
+            slackNotifier.notifyCheckOut({ name, userId, timeIST, hoursWorked: hoursWorkedStr, status: newStatus, method: `Biometric Scanner (Slot #${fingerprint_id})` });
+          } catch (sErr) {
+            console.error('[Slack] Biometric check-out notify error:', sErr.message);
+          }
         }
       }
       await client.query('COMMIT');

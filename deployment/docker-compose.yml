@@ -57,6 +57,9 @@ services:
       KITSU_ADMIN_EMAIL: ${KITSU_ADMIN_EMAIL}
       KITSU_ADMIN_PASSWORD: ${KITSU_ADMIN_PASSWORD}
       N8N_WEBHOOK_URL: ${N8N_WEBHOOK_URL:-}
+      BIOMETRIC_API_KEY: ${BIOMETRIC_API_KEY:-pluto-bio-2026}
+      SLACK_BOT_TOKEN: ${SLACK_BOT_TOKEN:-}
+      SLACK_WEBHOOK_URL: ${SLACK_WEBHOOK_URL:-}
     networks:
       - default
       - kitsu
