@@ -732,7 +732,7 @@
                         <div class="glass-panel" style="margin-bottom:20px;">
                             <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:16px;">
                                 <h3 style="margin:0; font-size:16px;"><ion-icon name="people-outline" style="vertical-align:middle; margin-right:6px;"></ion-icon>Fingerprint ↔ Employee Mapping</h3>
-                                <button id="btn-map-fingerprint" class="btn-primary" style="width:auto; padding:8px 16px; margin:0; font-size:13px;" onclick="if(window.AdminUI && window.AdminUI.openBiometricEnrollModal){window.AdminUI.openBiometricEnrollModal();}else{document.getElementById('biometric-enroll-modal').classList.remove('hidden');}">
+                                <button id="btn-map-fingerprint" type="button" class="btn-primary" style="width:auto; padding:8px 16px; margin:0; font-size:13px;" onclick="window.openBioModal()">
                                     <ion-icon name="add-outline" style="vertical-align:middle; margin-right:4px;"></ion-icon> Map Fingerprint
                                 </button>
                             </div>
@@ -1001,8 +1001,8 @@
                 </div>
 
                 <div style="display:flex; gap:10px; justify-content:flex-end;">
-                    <button type="button" class="btn-small btn-neutral" onclick="window.AdminUI.closeBiometricModal()">Cancel</button>
-                    <button type="button" class="btn-small btn-primary" id="btn-start-live-enroll" onclick="window.AdminUI.startLiveWebEnroll()">
+                    <button type="button" class="btn-small btn-neutral" onclick="window.closeBioModal()">Cancel</button>
+                    <button type="button" class="btn-small btn-primary" id="btn-start-live-enroll" onclick="window.startBioLiveEnroll()">
                         <ion-icon name="flash-outline" style="vertical-align:middle; margin-right:4px;"></ion-icon> Start Live Scan
                     </button>
                 </div>
@@ -1026,14 +1026,109 @@
                 </div>
 
                 <div style="display:flex; gap:10px; justify-content:center;">
-                    <button type="button" id="btn-bio-cancel" class="btn-small btn-neutral" onclick="window.AdminUI.cancelLiveWebEnroll()">Cancel Scan</button>
-                    <button type="button" id="btn-bio-retry" class="btn-small btn-primary" style="display:none;" onclick="window.AdminUI.startLiveWebEnroll()">Try Again</button>
-                    <button type="button" id="btn-bio-done" class="btn-small btn-primary" style="display:none;" onclick="window.AdminUI.closeBiometricModal()">Done</button>
+                    <button type="button" id="btn-bio-cancel" class="btn-small btn-neutral" onclick="window.cancelBioLiveEnroll()">Cancel Scan</button>
+                    <button type="button" id="btn-bio-retry" class="btn-small btn-primary" style="display:none;" onclick="window.startBioLiveEnroll()">Try Again</button>
+                    <button type="button" id="btn-bio-done" class="btn-small btn-primary" style="display:none;" onclick="window.closeBioModal()">Done</button>
                 </div>
             </div>
 
         </div>
     </div>
+    
+    <!-- Self-Contained Biometric Modal Controller -->
+    <script>
+        window.openBioModal = function() {
+            const modal = document.getElementById('biometric-enroll-modal');
+            if (!modal) return;
+            modal.style.display = 'flex';
+            modal.classList.remove('hidden');
+            const setupView = document.getElementById('bio-modal-setup-view');
+            const liveView = document.getElementById('bio-modal-live-view');
+            if (setupView) setupView.style.display = 'block';
+            if (liveView) liveView.style.display = 'none';
+            const select = document.getElementById('bio-enroll-user');
+            if (select) {
+                select.innerHTML = '<option value="">Select employee...</option>';
+                fetch('/api/sync/store')
+                    .then(r => r.json())
+                    .then(data => {
+                        const users = (data && data.users) ? data.users.filter(u => u.is_active !== false) : [];
+                        users.forEach(u => {
+                            const opt = document.createElement('option');
+                            const uid = u.user_id || u.id;
+                            opt.value = uid;
+                            opt.textContent = (u.name ? u.name + ' (' + uid + ')' : uid);
+                            select.appendChild(opt);
+                        });
+                    }).catch(e => console.error('Failed to fetch users:', e));
+            }
+            fetch('/api/biometric/next-slot')
+                .then(r => r.json())
+                .then(data => {
+                    const slotInput = document.getElementById('bio-enroll-slot');
+                    if (slotInput && data.success && data.next_slot) slotInput.value = data.next_slot;
+                }).catch(() => {
+                    const slotInput = document.getElementById('bio-enroll-slot');
+                    if (slotInput && !slotInput.value) slotInput.value = '1';
+                });
+            fetch('/api/biometric/device/status')
+                .then(r => r.json())
+                .then(statusData => {
+                    const pill = document.getElementById('bio-device-status-pill');
+                    if (pill) {
+                        if (statusData && statusData.online) {
+                            pill.style.background = 'rgba(16,185,129,0.1)';
+                            pill.style.color = '#10b981';
+                            pill.innerHTML = '<span style="display:inline-block; width:8px; height:8px; border-radius:50%; background:#10b981;"></span> Biometric Device Online';
+                        } else {
+                            pill.style.background = 'rgba(239,68,68,0.1)';
+                            pill.style.color = '#ef4444';
+                            pill.innerHTML = '<span style="display:inline-block; width:8px; height:8px; border-radius:50%; background:#ef4444;"></span> Device Offline (Connecting...)';
+                        }
+                    }
+                }).catch(() => {});
+        };
+        window.closeBioModal = function() {
+            const modal = document.getElementById('biometric-enroll-modal');
+            if (modal) {
+                modal.style.display = 'none';
+                modal.classList.add('hidden');
+            }
+        };
+        window.startBioLiveEnroll = async function() {
+            const slotInput = document.getElementById('bio-enroll-slot');
+            const userSelect = document.getElementById('bio-enroll-user');
+            const slot = slotInput ? parseInt(slotInput.value) : 1;
+            const userId = userSelect ? userSelect.value : '';
+            if (!slot || slot < 1) return alert('Enter a valid slot number.');
+            if (!userId) return alert('Please select an employee.');
+            const setupView = document.getElementById('bio-modal-setup-view');
+            const liveView = document.getElementById('bio-modal-live-view');
+            if (setupView) setupView.style.display = 'none';
+            if (liveView) liveView.style.display = 'block';
+            document.getElementById('bio-live-title').textContent = 'Connecting to Device...';
+            try {
+                const res = await fetch('/api/biometric/enroll/start', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ fingerprint_id: slot, user_id: userId })
+                });
+                const data = await res.json();
+                if (!data.success) {
+                    alert(data.message || 'Failed to start enrollment.');
+                    window.closeBioModal();
+                }
+            } catch (err) {
+                alert('Network error: ' + err.message);
+                window.closeBioModal();
+            }
+        };
+        window.cancelBioLiveEnroll = async function() {
+            try { await fetch('/api/biometric/enroll/cancel', { method: 'POST' }); } catch (e) {}
+            window.closeBioModal();
+        };
+    </script>
+
     <div id="holiday-modal" class="modal hidden">
         <div class="modal-overlay"></div>
         <div class="modal-content glass-panel">
