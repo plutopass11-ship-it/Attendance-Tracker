@@ -93,6 +93,9 @@
                     <button class="admin-nav-item" data-target="admin-tab-biometric">
                         <ion-icon name="finger-print-outline"></ion-icon> Biometric
                     </button>
+                    <button class="admin-nav-item" data-target="admin-tab-slack">
+                        <ion-icon name="logo-slack"></ion-icon> Slack Settings
+                    </button>
                 </nav>
                 <button id="admin-logout-btn" class="btn-primary" style="margin:20px; width:calc(100% - 40px); background:var(--danger)">Logout</button>
             </aside>
@@ -776,12 +779,19 @@
                             </div>
                         </div>
 
-                        <!-- Slack Notification Settings -->
-                        <div class="glass-panel" style="margin-top:20px;">
+                    </section>
+
+                    <!-- Slack Notification Settings Tab -->
+                    <section id="admin-tab-slack" class="admin-tab hidden">
+                        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom: 20px;">
+                            <h2 class="section-title" style="margin:0"><ion-icon name="logo-slack" style="vertical-align:middle; margin-right:8px; color:#36c5f0;"></ion-icon>Slack Notification Settings</h2>
+                        </div>
+
+                        <div class="glass-panel">
                             <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:16px; flex-wrap:wrap; gap:10px;">
                                 <div>
-                                    <h3 style="margin:0 0 4px 0; font-size:16px;"><ion-icon name="notifications-outline" style="vertical-align:middle; margin-right:6px; color:var(--primary);"></ion-icon>Slack Notification Settings</h3>
-                                    <p style="margin:0; font-size:13px; color:var(--text-muted);">Manage admin alert recipients and customize clean, professional messages for check-ins and check-outs.</p>
+                                    <h3 style="margin:0 0 4px 0; font-size:16px;"><ion-icon name="notifications-outline" style="vertical-align:middle; margin-right:6px; color:var(--primary);"></ion-icon>Direct Messages & Alerts</h3>
+                                    <p style="margin:0; font-size:13px; color:var(--text-muted);">Manage admin alert recipients and customize clean, professional messages for check-ins, check-outs, and rejections.</p>
                                 </div>
                                 <button type="button" class="btn-primary" style="width:auto; padding:8px 18px; margin:0; font-size:13px;" onclick="window.saveSlackSettings()">
                                     <ion-icon name="save-outline" style="vertical-align:middle; margin-right:4px;"></ion-icon> Save Slack Settings
