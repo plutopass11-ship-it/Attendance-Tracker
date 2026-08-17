@@ -281,12 +281,12 @@ app.post('/api/attendance', async (req, res) => {
         [userId, date, checkInStatus]
       );
 
-      // Send private Slack DM
+      // Send clean Slack notification
       try {
         const uRes = await pool.query('SELECT name FROM users WHERE user_id = $1', [userId]);
         const userName = uRes.rows[0]?.name || userId;
         const timeIST = new Date().toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Kolkata' });
-        slackNotifier.notifyCheckIn({ name: userName, userId, timeIST, method: 'Mobile Web App', isWfh: checkInStatus === 'wfh_working' });
+        slackNotifier.notifyCheckIn({ pool, name: userName, userId, timeIST, method: 'Mobile Web App', isWfh: checkInStatus === 'wfh_working' });
       } catch (sErr) {
         console.error('[Slack] Notify check-in error:', sErr.message);
       }
@@ -326,14 +326,14 @@ app.post('/api/attendance', async (req, res) => {
                   [userId, date, newStatus]
               );
 
-              // Send private Slack DM
+              // Send clean Slack notification
               try {
                 const uRes = await client.query('SELECT name FROM users WHERE user_id = $1', [userId]);
                 const userName = uRes.rows[0]?.name || userId;
                 const timeIST = new Date().toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Kolkata' });
                 const hours = Math.floor(hoursWorked);
                 const minutes = Math.floor((hoursWorked - hours) * 60);
-                slackNotifier.notifyCheckOut({ name: userName, userId, timeIST, hoursWorked: `${hours}h ${minutes}m`, status: newStatus, method: 'Mobile Web App' });
+                slackNotifier.notifyCheckOut({ pool, name: userName, userId, timeIST, hoursWorked: `${hours}h ${minutes}m`, isEarly: hoursWorked < 8, method: 'Mobile Web App' });
               } catch (sErr) {
                 console.error('[Slack] Notify check-out error:', sErr.message);
               }
@@ -718,6 +718,32 @@ app.put('/api/settings', async (req, res) => {
         res.json({ success: true });
     } catch (err) {
         console.error('Settings save error:', err);
+        res.status(500).json({ success: false, error: err.message });
+    }
+});
+
+// 10c. Slack Notification Settings
+app.get('/api/slack/settings', async (req, res) => {
+    try {
+        const settings = await slackNotifier.getSlackSettings(pool);
+        res.json({ success: true, settings });
+    } catch (err) {
+        console.error('Slack settings fetch error:', err);
+        res.status(500).json({ success: false, error: err.message });
+    }
+});
+
+app.put('/api/slack/settings', async (req, res) => {
+    try {
+        const value = JSON.stringify(req.body);
+        await pool.query(
+            `INSERT INTO studio_settings (key, value) VALUES ('slackSettings', $1)
+             ON CONFLICT (key) DO UPDATE SET value = $1`,
+            [value]
+        );
+        res.json({ success: true, message: 'Slack settings saved successfully.' });
+    } catch (err) {
+        console.error('Slack settings save error:', err);
         res.status(500).json({ success: false, error: err.message });
     }
 });
@@ -1200,9 +1226,9 @@ app.post('/api/biometric/punch', requireBioApiKey, async (req, res) => {
         await client.query(`INSERT INTO biometric_logs (fingerprint_id, user_id, action, status) VALUES ($1, $2, 'check_in', 'success')`, [fingerprint_id, userId]);
         responseObj = { success: true, action: 'check_in', name, time: timeIST, status: 'working', hours_worked: null, message: 'Welcome!' };
 
-        // Send private Slack DM
+        // Send clean Slack notification
         try {
-          slackNotifier.notifyCheckIn({ name, userId, timeIST, method: `Biometric Scanner (Slot #${fingerprint_id})`, isWfh: checkInStatus === 'wfh_working' });
+          slackNotifier.notifyCheckIn({ pool, name, userId, timeIST, method: `Biometric Scanner (Slot #${fingerprint_id})`, isWfh: checkInStatus === 'wfh_working' });
         } catch (sErr) {
           console.error('[Slack] Biometric check-in notify error:', sErr.message);
         }
@@ -1241,9 +1267,9 @@ app.post('/api/biometric/punch', requireBioApiKey, async (req, res) => {
           
           responseObj = { success: true, action: 'check_out', name, time: timeIST, status: newStatus.replace('wfh_', ''), hours_worked: hoursWorkedStr, message: 'Goodbye!' };
 
-          // Send private Slack DM
+          // Send clean Slack notification
           try {
-            slackNotifier.notifyCheckOut({ name, userId, timeIST, hoursWorked: hoursWorkedStr, status: newStatus, method: `Biometric Scanner (Slot #${fingerprint_id})` });
+            slackNotifier.notifyCheckOut({ pool, name, userId, timeIST, hoursWorked: hoursWorkedStr, isEarly: hoursWorkedDecimal < 8, method: `Biometric Scanner (Slot #${fingerprint_id})` });
           } catch (sErr) {
             console.error('[Slack] Biometric check-out notify error:', sErr.message);
           }

@@ -775,6 +775,77 @@
                                 </table>
                             </div>
                         </div>
+
+                        <!-- Slack Notification Settings -->
+                        <div class="glass-panel" style="margin-top:20px;">
+                            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:16px; flex-wrap:wrap; gap:10px;">
+                                <div>
+                                    <h3 style="margin:0 0 4px 0; font-size:16px;"><ion-icon name="notifications-outline" style="vertical-align:middle; margin-right:6px; color:var(--primary);"></ion-icon>Slack Notification Settings</h3>
+                                    <p style="margin:0; font-size:13px; color:var(--text-muted);">Manage admin alert recipients and customize clean, professional messages for check-ins and check-outs.</p>
+                                </div>
+                                <button type="button" class="btn-primary" style="width:auto; padding:8px 18px; margin:0; font-size:13px;" onclick="window.saveSlackSettings()">
+                                    <ion-icon name="save-outline" style="vertical-align:middle; margin-right:4px;"></ion-icon> Save Slack Settings
+                                </button>
+                            </div>
+
+                            <!-- Admin Alert Recipients -->
+                            <div style="margin-bottom:20px; padding:16px; background:var(--bg-input, rgba(0,0,0,0.2)); border-radius:10px; border:1px solid var(--border, rgba(255,255,255,0.08));">
+                                <label style="display:block; font-size:13px; font-weight:600; margin-bottom:8px; color:var(--text-main);">Admin Punch Alert Recipients (Direct Messages to Admins)</label>
+                                <p style="font-size:12px; color:var(--text-muted); margin:0 0 10px 0;">These admins will receive clean notifications whenever any employee checks in or checks out.</p>
+                                
+                                <div id="slack-admin-chips" style="display:flex; flex-wrap:wrap; gap:8px; margin-bottom:12px;">
+                                    <!-- Populated by JS -->
+                                </div>
+
+                                <div style="display:flex; gap:10px; max-width:480px;">
+                                    <input type="email" id="slack-new-admin-email" placeholder="e.g. admin@flyingpluto.ai" style="flex:1; padding:8px 12px; border-radius:6px; border:1px solid var(--border); background:var(--bg-card, rgba(0,0,0,0.4)); color:var(--text-main); font-size:13px;">
+                                    <button type="button" class="btn-small btn-primary" onclick="window.addSlackAdminRecipient()" style="margin:0; width:auto; padding:8px 14px;">+ Add Admin</button>
+                                </div>
+                            </div>
+
+                            <!-- Late Threshold & Portal Link -->
+                            <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap:16px; margin-bottom:20px;">
+                                <div>
+                                    <label style="display:block; font-size:13px; font-weight:600; margin-bottom:6px; color:var(--text-main);">Late Check-In Threshold</label>
+                                    <input type="time" id="slack-late-threshold" value="11:00" style="width:100%; padding:8px 12px; border-radius:6px; border:1px solid var(--border); background:var(--bg-input, rgba(0,0,0,0.3)); color:var(--text-main); font-size:13px;">
+                                    <small style="color:var(--text-muted); font-size:11px; display:block; margin-top:4px;">Check-ins after this time are marked as (Late Check-In).</small>
+                                </div>
+                                <div>
+                                    <label style="display:block; font-size:13px; font-weight:600; margin-bottom:6px; color:var(--text-main);">Portal URL Link</label>
+                                    <input type="url" id="slack-portal-url" value="https://attendance.flyingpluto.ai" style="width:100%; padding:8px 12px; border-radius:6px; border:1px solid var(--border); background:var(--bg-input, rgba(0,0,0,0.3)); color:var(--text-main); font-size:13px;">
+                                    <small style="color:var(--text-muted); font-size:11px; display:block; margin-top:4px;">Included in admin summary alerts.</small>
+                                </div>
+                            </div>
+
+                            <!-- Templates Grid -->
+                            <h4 style="margin:0 0 12px 0; font-size:14px; color:var(--text-main); border-top:1px solid var(--border, rgba(255,255,255,0.08)); padding-top:16px;">Custom Notification Message Templates</h4>
+                            <p style="font-size:12px; color:var(--text-muted); margin:0 0 14px 0;">Available variables: <code>{name}</code>, <code>{time}</code>, <code>{status}</code>, <code>{method}</code>, <code>{location}</code>, <code>{portalUrl}</code></p>
+
+                            <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap:16px;">
+                                <div>
+                                    <label style="display:block; font-size:12px; font-weight:600; margin-bottom:6px; color:var(--text-main);">Employee Check-In DM</label>
+                                    <textarea id="slack-tpl-emp-checkin" rows="4" style="width:100%; padding:10px; border-radius:6px; border:1px solid var(--border); background:var(--bg-input, rgba(0,0,0,0.3)); color:var(--text-main); font-family:monospace; font-size:12px; resize:vertical;"></textarea>
+                                </div>
+                                <div>
+                                    <label style="display:block; font-size:12px; font-weight:600; margin-bottom:6px; color:var(--text-main);">Employee Standard Check-Out DM</label>
+                                    <textarea id="slack-tpl-emp-checkout" rows="4" style="width:100%; padding:10px; border-radius:6px; border:1px solid var(--border); background:var(--bg-input, rgba(0,0,0,0.3)); color:var(--text-main); font-family:monospace; font-size:12px; resize:vertical;"></textarea>
+                                </div>
+                                <div>
+                                    <label style="display:block; font-size:12px; font-weight:600; margin-bottom:6px; color:var(--text-main);">Employee Early Check-Out DM (Sent for Approval)</label>
+                                    <textarea id="slack-tpl-emp-early" rows="4" style="width:100%; padding:10px; border-radius:6px; border:1px solid var(--border); background:var(--bg-input, rgba(0,0,0,0.3)); color:var(--text-main); font-family:monospace; font-size:12px; resize:vertical;"></textarea>
+                                </div>
+                                <div>
+                                    <label style="display:block; font-size:12px; font-weight:600; margin-bottom:6px; color:var(--text-main);">Admin Punch Alert</label>
+                                    <textarea id="slack-tpl-admin-alert" rows="4" style="width:100%; padding:10px; border-radius:6px; border:1px solid var(--border); background:var(--bg-input, rgba(0,0,0,0.3)); color:var(--text-main); font-family:monospace; font-size:12px; resize:vertical;"></textarea>
+                                </div>
+                            </div>
+
+                            <div style="margin-top:16px; display:flex; justify-content:flex-end;">
+                                <button type="button" class="btn-primary" style="width:auto; padding:8px 20px; margin:0; font-size:13px;" onclick="window.saveSlackSettings()">
+                                    <ion-icon name="save-outline" style="vertical-align:middle; margin-right:4px;"></ion-icon> Save Slack Settings
+                                </button>
+                            </div>
+                        </div>
                     </section>
 
                 </div>
@@ -1191,12 +1262,113 @@
             }
         };
 
+        // Slack Settings Manager
+        let currentSlackAdminRecipients = ['joyel@flyingpluto.ai', 'albert@flyingpluto.ai'];
+
+        window.loadSlackSettings = function() {
+            fetch('/api/slack/settings')
+                .then(r => r.json())
+                .then(data => {
+                    if (data && data.success && data.settings) {
+                        const s = data.settings;
+                        currentSlackAdminRecipients = Array.isArray(s.adminRecipients) ? s.adminRecipients : ['joyel@flyingpluto.ai', 'albert@flyingpluto.ai'];
+                        window.renderSlackAdminChips();
+
+                        const lateInput = document.getElementById('slack-late-threshold');
+                        if (lateInput && s.lateThreshold) lateInput.value = s.lateThreshold;
+
+                        const portalInput = document.getElementById('slack-portal-url');
+                        if (portalInput && s.portalUrl) portalInput.value = s.portalUrl;
+
+                        const tplCheckin = document.getElementById('slack-tpl-emp-checkin');
+                        if (tplCheckin && s.employeeCheckInTemplate) tplCheckin.value = s.employeeCheckInTemplate;
+
+                        const tplCheckout = document.getElementById('slack-tpl-emp-checkout');
+                        if (tplCheckout && s.employeeCheckOutTemplate) tplCheckout.value = s.employeeCheckOutTemplate;
+
+                        const tplEarly = document.getElementById('slack-tpl-emp-early');
+                        if (tplEarly && s.employeeEarlyCheckOutTemplate) tplEarly.value = s.employeeEarlyCheckOutTemplate;
+
+                        const tplAdmin = document.getElementById('slack-tpl-admin-alert');
+                        if (tplAdmin && s.adminCheckInTemplate) tplAdmin.value = s.adminCheckInTemplate;
+                    }
+                })
+                .catch(e => console.error('Failed to load Slack settings:', e));
+        };
+
+        window.renderSlackAdminChips = function() {
+            const container = document.getElementById('slack-admin-chips');
+            if (!container) return;
+            container.innerHTML = '';
+            currentSlackAdminRecipients.forEach(email => {
+                const chip = document.createElement('div');
+                chip.style.cssText = 'display:inline-flex; align-items:center; gap:6px; padding:4px 10px; border-radius:20px; background:rgba(59,130,246,0.15); color:var(--primary); font-size:12px; font-weight:600;';
+                chip.innerHTML = '<span>' + email + '</span><button type="button" style="background:none; border:none; color:var(--text-muted); cursor:pointer; font-size:14px; padding:0 2px; line-height:1;" onclick="window.removeSlackAdminRecipient(\'' + email + '\')">✕</button>';
+                container.appendChild(chip);
+            });
+            if (currentSlackAdminRecipients.length === 0) {
+                container.innerHTML = '<span style="color:var(--text-muted); font-size:12px;">No admin alert recipients added.</span>';
+            }
+        };
+
+        window.addSlackAdminRecipient = function() {
+            const input = document.getElementById('slack-new-admin-email');
+            if (!input) return;
+            const email = input.value.trim().toLowerCase();
+            if (!email || !email.includes('@')) return alert('Please enter a valid email address.');
+            if (currentSlackAdminRecipients.includes(email)) return alert('This email is already in the list.');
+            currentSlackAdminRecipients.push(email);
+            input.value = '';
+            window.renderSlackAdminChips();
+        };
+
+        window.removeSlackAdminRecipient = function(email) {
+            currentSlackAdminRecipients = currentSlackAdminRecipients.filter(e => e !== email);
+            window.renderSlackAdminChips();
+        };
+
+        window.saveSlackSettings = async function() {
+            const payload = {
+                adminRecipients: currentSlackAdminRecipients,
+                lateThreshold: document.getElementById('slack-late-threshold')?.value || '11:00',
+                portalUrl: document.getElementById('slack-portal-url')?.value || 'https://attendance.flyingpluto.ai',
+                employeeCheckInTemplate: document.getElementById('slack-tpl-emp-checkin')?.value || '',
+                employeeCheckOutTemplate: document.getElementById('slack-tpl-emp-checkout')?.value || '',
+                employeeEarlyCheckOutTemplate: document.getElementById('slack-tpl-emp-early')?.value || '',
+                adminCheckInTemplate: document.getElementById('slack-tpl-admin-alert')?.value || '',
+                adminCheckOutTemplate: document.getElementById('slack-tpl-admin-alert')?.value || ''
+            };
+
+            try {
+                const res = await fetch('/api/slack/settings', {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+                const data = await res.json();
+                if (data.success) {
+                    alert('✓ Slack settings saved successfully!');
+                } else {
+                    alert('Failed to save settings: ' + (data.error || 'Unknown error'));
+                }
+            } catch (err) {
+                alert('Network error while saving settings.');
+            }
+        };
+
+        if (document.readyState === 'loading') {
+            document.addEventListener('DOMContentLoaded', window.loadSlackSettings);
+        } else {
+            window.loadSlackSettings();
+        }
+
         if (!window.AdminUI) window.AdminUI = {};
         window.AdminUI.updateEnrollStepUI = window.updateBioEnrollStepUI;
         window.AdminUI.openBiometricEnrollModal = window.openBioModal;
         window.AdminUI.closeBiometricModal = window.closeBioModal;
         window.AdminUI.startLiveWebEnroll = window.startBioLiveEnroll;
         window.AdminUI.cancelLiveWebEnroll = window.cancelBioLiveEnroll;
+        window.AdminUI.loadSlackSettings = window.loadSlackSettings;
     </script>
 
     <div id="holiday-modal" class="modal hidden">

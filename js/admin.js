@@ -78,8 +78,10 @@ window.AdminUI = {
                 if(target === 'admin-tab-holidays') this.renderHolidays();
                 if(target === 'admin-tab-migration') this.renderMigrationTab();
                 if(target === 'admin-tab-reports' && window.ReportsUI) window.ReportsUI.init();
-                if(target === 'admin-tab-history') this.renderHistoryTab();
-                if(target === 'admin-tab-biometric') this.renderBiometricTab();
+                if(target === 'admin-tab-biometric') {
+                    this.renderBiometricTab();
+                    if (window.loadSlackSettings) window.loadSlackSettings();
+                }
                 if(target === 'admin-tab-overtime' && window.OvertimeUI) window.OvertimeUI.init();
             });
         });
