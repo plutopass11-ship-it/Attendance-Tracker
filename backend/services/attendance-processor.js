@@ -1,5 +1,5 @@
 // attendance-processor.js
-// Reusable attendance logic shared between web check-in and ZKTeco device punches
+// Reusable attendance logic shared between web check-in and Biometric / FP device punches
 
 function getTodayStr() {
   const now = new Date();

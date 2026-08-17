@@ -1131,6 +1131,266 @@ app.post('/api/cron/auto-halfday', async (req, res) => {
     }
 });
 
+// --- Biometric Device Integration ---
+const BIOMETRIC_API_KEY = process.env.BIOMETRIC_API_KEY || 'pluto-bio-2026';
+function requireBioApiKey(req, res, next) {
+  const key = req.headers['x-api-key'];
+  if (key !== BIOMETRIC_API_KEY) return res.status(401).json({ success: false, error: 'Invalid API key' });
+  next();
+}
+
+app.post('/api/biometric/punch', requireBioApiKey, async (req, res) => {
+  const { fingerprint_id } = req.body;
+  if (!fingerprint_id) return res.status(400).json({ success: false, message: 'Missing fingerprint_id' });
+  
+  try {
+    const userRes = await pool.query(`SELECT u.user_id, u.name FROM biometric_users b JOIN users u ON b.user_id = u.user_id WHERE b.fingerprint_id = $1`, [fingerprint_id]);
+    if (userRes.rowCount === 0) {
+      return res.json({ success: false, action: 'unknown', message: 'Fingerprint not enrolled' });
+    }
+    const { user_id: userId, name } = userRes.rows[0];
+    // Date in IST using standard string format (YYYY-MM-DD)
+    const date = new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Kolkata' })).toISOString().split('T')[0];
+    
+    // Check today's attendance
+    const client = await pool.connect();
+    let responseObj;
+    
+    try {
+      await client.query('BEGIN');
+      const attRes = await client.query(`SELECT check_in_time, check_out_time, status FROM attendance WHERE user_id = $1 AND date = $2 FOR UPDATE`, [userId, date]);
+      
+      const timeIST = new Date().toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Kolkata' });
+
+      if (attRes.rowCount === 0) {
+        // CHECK-IN
+        const wfhRes = await client.query(
+          `SELECT 1 FROM leave_requests WHERE user_id = $1 AND status = 'approved' AND start_date <= $2 AND end_date >= $2 AND (LOWER(type) LIKE '%wfh%' OR LOWER(type) = 'work from home') LIMIT 1`,
+          [userId, date]
+        );
+        const checkInStatus = wfhRes.rowCount > 0 ? 'wfh_working' : 'working';
+        
+        await client.query(
+          `INSERT INTO attendance (user_id, date, check_in_time, status) VALUES ($1, $2, NOW(), $3)`,
+          [userId, date, checkInStatus]
+        );
+        await client.query(`INSERT INTO biometric_logs (fingerprint_id, user_id, action, status) VALUES ($1, $2, 'check_in', 'success')`, [fingerprint_id, userId]);
+        responseObj = { success: true, action: 'check_in', name, time: timeIST, status: 'working', hours_worked: null, message: 'Welcome!' };
+      } else {
+        const record = attRes.rows[0];
+        if (record.check_out_time) {
+          // Already checked out
+          await client.query(`INSERT INTO biometric_logs (fingerprint_id, user_id, action, status) VALUES ($1, $2, 'already_completed', 'success')`, [fingerprint_id, userId]);
+          responseObj = { success: true, action: 'already_completed', name, time: null, status: 'completed', hours_worked: null, message: 'Already completed today' };
+        } else {
+          // CHECK-OUT
+          const checkInTime = new Date(record.check_in_time);
+          const now = new Date();
+          const hoursWorkedDecimal = (now - checkInTime) / (1000 * 60 * 60);
+          const hours = Math.floor(hoursWorkedDecimal);
+          const minutes = Math.floor((hoursWorkedDecimal - hours) * 60);
+          const hoursWorkedStr = `${hours}h ${minutes}m`;
+          
+          const isWfhAttendance = typeof record.status === 'string' && record.status.startsWith('wfh_');
+          let newStatus = isWfhAttendance ? 'wfh_completed' : 'completed';
+          
+          if (hoursWorkedDecimal < 4) {
+            await client.query(
+              `INSERT INTO leave_requests (user_id, type, start_date, end_date, reason, status) VALUES ($1, $2, $3, $4, $5, $6)`,
+              [userId, 'Casual Leave (Half Day)', date, date, 'Auto-generated Short Shift (< 4 hours)', 'pending'] 
+            );
+          } else if (hoursWorkedDecimal < 8) {
+            newStatus = isWfhAttendance ? 'wfh_pending_early_clockout' : 'pending_early_clockout';
+          }
+          
+          await client.query(
+            `UPDATE attendance SET check_out_time = NOW(), status = $3 WHERE user_id = $1 AND date = $2`,
+            [userId, date, newStatus]
+          );
+          await client.query(`INSERT INTO biometric_logs (fingerprint_id, user_id, action, status, hours_worked) VALUES ($1, $2, 'check_out', 'success', $3)`, [fingerprint_id, userId, hoursWorkedDecimal.toFixed(2)]);
+          
+          responseObj = { success: true, action: 'check_out', name, time: timeIST, status: newStatus.replace('wfh_', ''), hours_worked: hoursWorkedStr, message: 'Goodbye!' };
+        }
+      }
+      await client.query('COMMIT');
+    } catch (txnErr) {
+      await client.query('ROLLBACK');
+      throw txnErr;
+    } finally {
+      client.release();
+    }
+    
+    io.emit('attendance:update', { userId });
+    res.json(responseObj);
+  } catch (err) {
+    console.error('Biometric punch error:', err);
+    res.status(500).json({ success: false, message: err.message });
+  }
+});
+
+app.get('/api/biometric/users', async (req, res) => {
+  try {
+    const result = await pool.query(`SELECT b.fingerprint_id, b.user_id, u.name, b.enrolled_at FROM biometric_users b JOIN users u ON b.user_id = u.user_id`);
+    res.json({ success: true, users: result.rows });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+});
+
+app.post('/api/biometric/enroll', async (req, res) => {
+  const { fingerprint_id, user_id } = req.body;
+  try {
+    const userRes = await pool.query('SELECT name FROM users WHERE user_id = $1', [user_id]);
+    if (userRes.rowCount === 0) return res.status(404).json({ success: false, message: 'User not found' });
+    const name = userRes.rows[0].name;
+    
+    await pool.query(
+      `INSERT INTO biometric_users (fingerprint_id, user_id, name) VALUES ($1, $2, $3)`,
+      [fingerprint_id, user_id, name]
+    );
+    res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+});
+
+app.delete('/api/biometric/users/:fingerprintId', async (req, res) => {
+  try {
+    await pool.query('DELETE FROM biometric_users WHERE fingerprint_id = $1', [req.params.fingerprintId]);
+    res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+});
+
+app.get('/api/biometric/logs', async (req, res) => {
+  try {
+    const result = await pool.query(`
+      SELECT l.*, u.name 
+      FROM biometric_logs l 
+      LEFT JOIN users u ON l.user_id = u.user_id 
+      ORDER BY l.created_at DESC 
+      LIMIT 50
+    `);
+    res.json({ success: true, logs: result.rows });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+});
+
+// --- Live Biometric Web Enrollment & Heartbeat State ---
+let lastDeviceHeartbeat = null;
+let activeEnrollment = null; // { id, user_id, name, slot, step, started_at }
+
+app.get('/api/biometric/device/poll', (req, res) => {
+  lastDeviceHeartbeat = Date.now();
+  if (activeEnrollment && (Date.now() - activeEnrollment.started_at < 45000)) {
+    return res.json({
+      command: 'enroll',
+      slot: activeEnrollment.slot,
+      session_id: activeEnrollment.id
+    });
+  }
+  res.json({ command: 'idle' });
+});
+
+app.get('/api/biometric/device/status', (req, res) => {
+  const isOnline = lastDeviceHeartbeat && (Date.now() - lastDeviceHeartbeat < 15000);
+  res.json({
+    success: true,
+    online: !!isOnline,
+    last_seen: lastDeviceHeartbeat,
+    active_enrollment: activeEnrollment
+  });
+});
+
+app.get('/api/biometric/next-slot', async (req, res) => {
+  try {
+    const result = await pool.query('SELECT fingerprint_id FROM biometric_users ORDER BY fingerprint_id ASC');
+    const usedSlots = new Set(result.rows.map(r => r.fingerprint_id));
+    let nextSlot = 1;
+    while (usedSlots.has(nextSlot) && nextSlot <= 1000) {
+      nextSlot++;
+    }
+    res.json({ success: true, next_slot: nextSlot });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+});
+
+app.post('/api/biometric/enroll/start', async (req, res) => {
+  const { user_id, fingerprint_id } = req.body;
+  if (!user_id) return res.status(400).json({ success: false, message: 'Missing user_id' });
+  try {
+    const userRes = await pool.query('SELECT name FROM users WHERE user_id = $1', [user_id]);
+    if (userRes.rowCount === 0) return res.status(404).json({ success: false, message: 'User not found' });
+    const name = userRes.rows[0].name;
+
+    let slot = parseInt(fingerprint_id);
+    if (!slot) {
+      const slotRes = await pool.query('SELECT fingerprint_id FROM biometric_users ORDER BY fingerprint_id ASC');
+      const usedSlots = new Set(slotRes.rows.map(r => r.fingerprint_id));
+      slot = 1;
+      while (usedSlots.has(slot)) slot++;
+    }
+
+    const sessionId = 'ses_' + Date.now();
+    activeEnrollment = {
+      id: sessionId,
+      user_id,
+      name,
+      slot,
+      step: 'waiting_for_device',
+      started_at: Date.now()
+    };
+
+    io.emit('biometric:enroll-step', activeEnrollment);
+    res.json({ success: true, session: activeEnrollment });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+});
+
+app.post('/api/biometric/enroll/progress', async (req, res) => {
+  const { session_id, step, status, message } = req.body;
+  if (!activeEnrollment || activeEnrollment.id !== session_id) {
+    return res.json({ success: false, message: 'No matching active session' });
+  }
+
+  activeEnrollment.step = step;
+  io.emit('biometric:enroll-step', { ...activeEnrollment, step, status, message });
+
+  if (step === 'success') {
+    try {
+      const { user_id, name, slot } = activeEnrollment;
+      await pool.query(
+        `INSERT INTO biometric_users (fingerprint_id, user_id, name)
+         VALUES ($1, $2, $3)
+         ON CONFLICT (fingerprint_id) DO UPDATE SET user_id = EXCLUDED.user_id, name = EXCLUDED.name, enrolled_at = NOW()`,
+        [slot, user_id, name]
+      );
+      await pool.query(
+        `INSERT INTO biometric_logs (fingerprint_id, user_id, action, status) VALUES ($1, $2, 'enroll', 'success')`,
+        [slot, user_id]
+      );
+      io.emit('biometric:users-updated');
+    } catch (err) {
+      console.error('Error saving enrolled fingerprint:', err);
+    }
+    activeEnrollment = null;
+  } else if (step === 'fail' || step === 'timeout') {
+    activeEnrollment = null;
+  }
+
+  res.json({ success: true });
+});
+
+app.post('/api/biometric/enroll/cancel', (req, res) => {
+  activeEnrollment = null;
+  io.emit('biometric:enroll-step', { step: 'cancelled' });
+  res.json({ success: true });
+});
+
 
 // ============================================================
 // Socket.IO Connection Handler
@@ -1161,6 +1421,28 @@ async function runMigrations() {
         if (await tableExists('attendance') && !(await columnExists('attendance', 'status'))) {
             await pool.query("ALTER TABLE attendance ADD COLUMN status VARCHAR(30) DEFAULT 'working';");
         }
+
+        // Biometric tables auto-migration
+        await pool.query(`
+          CREATE TABLE IF NOT EXISTS biometric_users (
+            id SERIAL PRIMARY KEY,
+            fingerprint_id INTEGER NOT NULL UNIQUE,
+            user_id VARCHAR(50) NOT NULL REFERENCES users(user_id) ON DELETE CASCADE,
+            name VARCHAR(100),
+            enrolled_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+          );
+        `);
+        await pool.query(`
+          CREATE TABLE IF NOT EXISTS biometric_logs (
+            id SERIAL PRIMARY KEY,
+            fingerprint_id INTEGER,
+            user_id VARCHAR(50),
+            action VARCHAR(30),
+            status VARCHAR(30),
+            hours_worked NUMERIC(4,2),
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+          );
+        `);
 
         // Fix stuck records from deployment transition: checked out but status still 'working'
         if (await tableExists('attendance')) {

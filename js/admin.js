@@ -79,7 +79,7 @@ window.AdminUI = {
                 if(target === 'admin-tab-migration') this.renderMigrationTab();
                 if(target === 'admin-tab-reports' && window.ReportsUI) window.ReportsUI.init();
                 if(target === 'admin-tab-history') this.renderHistoryTab();
-                if(target === 'admin-tab-zkteco') this.renderZkteco();
+                if(target === 'admin-tab-biometric') this.renderBiometricTab();
                 if(target === 'admin-tab-overtime' && window.OvertimeUI) window.OvertimeUI.init();
             });
         });
@@ -2091,6 +2091,267 @@ window.AdminUI = {
         link.download = `employee_history_${name.replace(/\s+/g, '_')}_${new Date().toISOString().slice(0,10)}.csv`;
         link.click();
         URL.revokeObjectURL(link.href);
+    }
+};
+
+// ============================================
+// Biometric Tab Functions
+// ============================================
+
+window.AdminUI.renderBiometricTab = async function() {
+    // Fetch mapped users
+    try {
+        const res = await fetch('/api/biometric/users');
+        const data = await res.json();
+        const tbody = document.getElementById('biometric-users-tbody');
+        if (!tbody) return;
+        tbody.innerHTML = '';
+
+        if (!data.success || !data.users || data.users.length === 0) {
+            tbody.innerHTML = '<tr><td colspan="5" style="text-align:center; color:var(--text-muted); padding:30px;"><ion-icon name="finger-print-outline" style="font-size:32px; opacity:0.3; display:block; margin:0 auto 8px;"></ion-icon>No fingerprints mapped yet.<br><small>Enroll a finger on the device, then map it here.</small></td></tr>';
+        } else {
+            data.users.forEach(u => {
+                const tr = document.createElement('tr');
+                const enrollDate = u.enrolled_at ? new Date(u.enrolled_at).toLocaleDateString('en-IN', { day:'2-digit', month:'short', year:'numeric' }) : '-';
+                tr.innerHTML = `
+                    <td><strong style="font-size:16px;">#${u.fingerprint_id}</strong></td>
+                    <td>${u.name || '-'}</td>
+                    <td><code style="font-size:12px; background:var(--bg-input); padding:2px 6px; border-radius:4px;">${u.user_id}</code></td>
+                    <td>${enrollDate}</td>
+                    <td>
+                        <button class="btn-small btn-reject" onclick="window.AdminUI.deleteBiometricMapping(${u.fingerprint_id}, '${(u.name || '').replace(/'/g, "\\'")}')">
+                            <ion-icon name="trash-outline" style="vertical-align:middle;"></ion-icon> Remove
+                        </button>
+                    </td>
+                `;
+                tbody.appendChild(tr);
+            });
+        }
+    } catch (err) {
+        console.error('Failed to load biometric users:', err);
+    }
+
+    // Fetch recent logs
+    try {
+        const res = await fetch('/api/biometric/logs');
+        const data = await res.json();
+        const tbody = document.getElementById('biometric-logs-tbody');
+        if (!tbody) return;
+        tbody.innerHTML = '';
+
+        if (!data.success || !data.logs || data.logs.length === 0) {
+            tbody.innerHTML = '<tr><td colspan="6" style="text-align:center; color:var(--text-muted); padding:30px;">No biometric punches recorded yet.</td></tr>';
+        } else {
+            data.logs.forEach(log => {
+                const tr = document.createElement('tr');
+                const time = log.created_at ? new Date(log.created_at).toLocaleString('en-IN', { day:'2-digit', month:'short', hour:'2-digit', minute:'2-digit', hour12:true }) : '-';
+                const actionBadge = {
+                    'check_in': '<span style="color:#10b981; font-weight:600;">✓ Check-In</span>',
+                    'check_out': '<span style="color:#3b82f6; font-weight:600;">✓ Check-Out</span>',
+                    'already_completed': '<span style="color:#f59e0b; font-weight:600;">⊘ Already Done</span>',
+                    'unknown': '<span style="color:#ef4444; font-weight:600;">✗ Unknown</span>',
+                    'error': '<span style="color:#ef4444; font-weight:600;">⚠ Error</span>',
+                };
+                tr.innerHTML = `
+                    <td>${time}</td>
+                    <td><strong>#${log.fingerprint_id || '-'}</strong></td>
+                    <td>${log.name || log.user_id || '-'}</td>
+                    <td>${actionBadge[log.action] || log.action || '-'}</td>
+                    <td>${log.status || '-'}</td>
+                    <td>${log.hours_worked ? log.hours_worked + 'h' : '-'}</td>
+                `;
+                tbody.appendChild(tr);
+            });
+        }
+    } catch (err) {
+        console.error('Failed to load biometric logs:', err);
+    }
+};
+
+window.AdminUI.openBiometricEnrollModal = async function() {
+    const modal = document.getElementById('biometric-enroll-modal');
+    if (!modal) return;
+
+    // Reset view states
+    document.getElementById('bio-modal-setup-view').style.display = 'block';
+    document.getElementById('bio-modal-live-view').style.display = 'none';
+
+    // Populate employee dropdown from Store
+    const select = document.getElementById('bio-enroll-user');
+    select.innerHTML = '<option value="">Select employee...</option>';
+    const users = Store.getUsers ? Store.getUsers() : [];
+    users.forEach(u => {
+        const opt = document.createElement('option');
+        opt.value = u.user_id;
+        opt.textContent = `${u.name} (${u.user_id})`;
+        select.appendChild(opt);
+    });
+
+    // Auto-fetch next available slot
+    try {
+        const res = await fetch('/api/biometric/next-slot');
+        const data = await res.json();
+        if (data.success && data.next_slot) {
+            document.getElementById('bio-enroll-slot').value = data.next_slot;
+        }
+    } catch (e) {
+        document.getElementById('bio-enroll-slot').value = '1';
+    }
+
+    // Check device status
+    try {
+        const statusRes = await fetch('/api/biometric/device/status');
+        const statusData = await statusRes.json();
+        const pill = document.getElementById('bio-device-status-pill');
+        if (pill) {
+            if (statusData.online) {
+                pill.style.background = 'rgba(16,185,129,0.1)';
+                pill.style.color = '#10b981';
+                pill.innerHTML = '<span style="display:inline-block; width:8px; height:8px; border-radius:50%; background:#10b981;"></span> Biometric Device Online';
+            } else {
+                pill.style.background = 'rgba(239,68,68,0.1)';
+                pill.style.color = '#ef4444';
+                pill.innerHTML = '<span style="display:inline-block; width:8px; height:8px; border-radius:50%; background:#ef4444;"></span> Device Offline (Connecting...)';
+            }
+        }
+    } catch (e) {}
+
+    modal.classList.remove('hidden');
+};
+
+window.AdminUI.closeBiometricModal = function() {
+    const modal = document.getElementById('biometric-enroll-modal');
+    if (modal) modal.classList.add('hidden');
+    window.AdminUI.renderBiometricTab();
+};
+
+window.AdminUI.startLiveWebEnroll = async function() {
+    const slot = parseInt(document.getElementById('bio-enroll-slot').value);
+    const userId = document.getElementById('bio-enroll-user').value;
+    if (!slot || slot < 1) return alert('Enter a valid slot number.');
+    if (!userId) return alert('Please select an employee.');
+
+    // Switch to live scanning view
+    document.getElementById('bio-modal-setup-view').style.display = 'none';
+    document.getElementById('bio-modal-live-view').style.display = 'block';
+
+    // Reset live scanning UI
+    document.getElementById('bio-live-title').textContent = 'Connecting to Device...';
+    document.getElementById('bio-live-desc').textContent = 'Sending enrollment command to the attendance monitor...';
+    document.getElementById('bio-live-icon').style.color = 'var(--primary)';
+    document.getElementById('bio-live-icon').setAttribute('name', 'finger-print-outline');
+    document.getElementById('bio-live-ring').style.borderColor = 'var(--primary)';
+    document.getElementById('bio-dot-1').style.background = 'var(--border)';
+    document.getElementById('bio-dot-2').style.background = 'var(--border)';
+    document.getElementById('bio-dot-3').style.background = 'var(--border)';
+    document.getElementById('btn-bio-cancel').style.display = 'inline-block';
+    document.getElementById('btn-bio-retry').style.display = 'none';
+    document.getElementById('btn-bio-done').style.display = 'none';
+
+    try {
+        const res = await fetch('/api/biometric/enroll/start', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ fingerprint_id: slot, user_id: userId })
+        });
+        const data = await res.json();
+        if (!data.success) {
+            alert(data.message || 'Failed to start enrollment session.');
+            window.AdminUI.closeBiometricModal();
+        }
+    } catch (err) {
+        alert('Network error: ' + err.message);
+        window.AdminUI.closeBiometricModal();
+    }
+};
+
+window.AdminUI.updateEnrollStepUI = function(stepData) {
+    const liveView = document.getElementById('bio-modal-live-view');
+    if (!liveView || liveView.style.display === 'none') return;
+
+    const title = document.getElementById('bio-live-title');
+    const desc = document.getElementById('bio-live-desc');
+    const icon = document.getElementById('bio-live-icon');
+    const ring = document.getElementById('bio-live-ring');
+    const dot1 = document.getElementById('bio-dot-1');
+    const dot2 = document.getElementById('bio-dot-2');
+    const dot3 = document.getElementById('bio-dot-3');
+    const btnCancel = document.getElementById('btn-bio-cancel');
+    const btnRetry = document.getElementById('btn-bio-retry');
+    const btnDone = document.getElementById('btn-bio-done');
+
+    const step = stepData.step;
+
+    if (step === 'place_finger' || step === 'waiting_for_device') {
+        title.textContent = 'Place Finger on Scanner';
+        desc.textContent = 'Have employee place their finger pad firmly on the sensor.';
+        icon.style.color = '#f59e0b';
+        ring.style.borderColor = '#f59e0b';
+        dot1.style.background = '#f59e0b';
+        dot2.style.background = 'var(--border)';
+        dot3.style.background = 'var(--border)';
+    } else if (step === 'scan1_ok') {
+        title.textContent = '✓ Scan 1 OK — Remove Finger';
+        desc.textContent = 'First scan captured! Lift finger off the sensor now.';
+        icon.style.color = '#3b82f6';
+        ring.style.borderColor = '#3b82f6';
+        dot1.style.background = '#10b981';
+        dot2.style.background = '#3b82f6';
+        dot3.style.background = 'var(--border)';
+    } else if (step === 'place_again') {
+        title.textContent = 'Place Same Finger Again';
+        desc.textContent = 'Place the exact same finger back on the sensor for confirmation.';
+        icon.style.color = '#8b5cf6';
+        ring.style.borderColor = '#8b5cf6';
+        dot1.style.background = '#10b981';
+        dot2.style.background = '#8b5cf6';
+        dot3.style.background = 'var(--border)';
+    } else if (step === 'success') {
+        title.textContent = '🎉 Fingerprint Enrolled!';
+        desc.textContent = `Successfully mapped Slot #${stepData.slot} to ${stepData.name || 'employee'}!`;
+        icon.setAttribute('name', 'checkmark-circle-outline');
+        icon.style.color = '#10b981';
+        ring.style.borderColor = '#10b981';
+        dot1.style.background = '#10b981';
+        dot2.style.background = '#10b981';
+        dot3.style.background = '#10b981';
+        btnCancel.style.display = 'none';
+        btnRetry.style.display = 'none';
+        btnDone.style.display = 'inline-block';
+        window.AdminUI.renderBiometricTab();
+    } else if (step === 'fail' || step === 'timeout' || step === 'error') {
+        title.textContent = '✗ Scan Failed';
+        desc.textContent = stepData.error || stepData.message || 'Prints did not match. Please try again.';
+        icon.setAttribute('name', 'alert-circle-outline');
+        icon.style.color = '#ef4444';
+        ring.style.borderColor = '#ef4444';
+        btnCancel.style.display = 'inline-block';
+        btnRetry.style.display = 'inline-block';
+        btnDone.style.display = 'none';
+    } else if (step === 'cancelled') {
+        window.AdminUI.closeBiometricModal();
+    }
+};
+
+window.AdminUI.cancelLiveWebEnroll = async function() {
+    try {
+        await fetch('/api/biometric/enroll/cancel', { method: 'POST' });
+    } catch (e) {}
+    window.AdminUI.closeBiometricModal();
+};
+
+window.AdminUI.deleteBiometricMapping = async function(fingerprintId, name) {
+    if (!confirm(`Remove fingerprint mapping for ${name || 'Slot #' + fingerprintId}?`)) return;
+    try {
+        const res = await fetch(`/api/biometric/users/${fingerprintId}`, { method: 'DELETE' });
+        const data = await res.json();
+        if (data.success) {
+            window.AdminUI.renderBiometricTab();
+        } else {
+            alert(data.error || 'Failed to remove mapping.');
+        }
+    } catch (err) {
+        alert('Network error: ' + err.message);
     }
 };
 

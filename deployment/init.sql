@@ -109,23 +109,22 @@ INSERT INTO holidays (name, date, type) VALUES
 ON CONFLICT (date) DO NOTHING;
 
 -- =============================================
--- ZKTeco Biometric Device Integration Tables
+-- Biometric Fingerprint Device Integration
 -- =============================================
-CREATE TABLE IF NOT EXISTS zkteco_users (
+CREATE TABLE IF NOT EXISTS biometric_users (
     id SERIAL PRIMARY KEY,
+    fingerprint_id INTEGER NOT NULL UNIQUE,
     user_id VARCHAR(50) NOT NULL REFERENCES users(user_id) ON DELETE CASCADE,
-    zkteco_uid INTEGER NOT NULL,
-    zkteco_user_id VARCHAR(20) NOT NULL UNIQUE,
-    status VARCHAR(30) DEFAULT 'pending_enrollment',
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    UNIQUE(user_id, zkteco_uid)
+    name VARCHAR(100),
+    enrolled_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
-CREATE TABLE IF NOT EXISTS zkteco_sync_log (
+CREATE TABLE IF NOT EXISTS biometric_logs (
     id SERIAL PRIMARY KEY,
-    direction VARCHAR(30),
-    records_processed INTEGER,
-    status VARCHAR(20),
-    message TEXT,
+    fingerprint_id INTEGER,
+    user_id VARCHAR(50),
+    action VARCHAR(30),
+    status VARCHAR(30),
+    hours_worked NUMERIC(4,2),
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );

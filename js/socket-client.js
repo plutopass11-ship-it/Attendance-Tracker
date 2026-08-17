@@ -64,38 +64,32 @@
             }
         });
 
-        // ─── Device Status ───
-        // Fired when ZKTeco connection status changes
-        socket.on('device:status', (status) => {
-            console.log('[Socket] device:status', status);
-            window._zktecoDeviceStatus = status;
-
-            // Update admin ZKTeco tab if it's currently visible
-            const zktecoTab = document.getElementById('admin-tab-zkteco');
-            if (zktecoTab && !zktecoTab.classList.contains('hidden')) {
-                if (window.AdminUI && typeof window.AdminUI.renderZktecoStatus === 'function') {
-                    window.AdminUI.renderZktecoStatus();
-                }
-            }
-
-            // Update device status indicator in sidebar if it exists
-            const indicator = document.getElementById('zkteco-status-indicator');
-            if (indicator) {
-                if (status.connected) {
-                    indicator.innerHTML = '<span style="color:#10b981;font-size:10px;">●</span> Connected';
-                } else {
-                    indicator.innerHTML = '<span style="color:#ef4444;font-size:10px;">●</span> Disconnected';
+        // ─── Biometric Device Status & Live Enrollment ───
+        socket.on('biometric:status', (status) => {
+            console.log('[Socket] biometric:status', status);
+            window._biometricDeviceStatus = status;
+            const biometricTab = document.getElementById('admin-tab-biometric');
+            if (biometricTab && !biometricTab.classList.contains('hidden')) {
+                if (window.AdminUI && typeof window.AdminUI.renderBiometricTab === 'function') {
+                    window.AdminUI.renderBiometricTab();
                 }
             }
         });
 
-        // ─── Sync Progress ───
-        socket.on('sync:progress', (data) => {
-            console.log('[Socket] sync:progress', data);
-            const progressEl = document.getElementById('zkteco-sync-progress');
-            if (progressEl) {
-                progressEl.textContent = data.message || '';
-                progressEl.style.display = data.message ? 'block' : 'none';
+        socket.on('biometric:enroll-step', (stepData) => {
+            console.log('[Socket] biometric:enroll-step', stepData);
+            if (window.AdminUI && typeof window.AdminUI.updateEnrollStepUI === 'function') {
+                window.AdminUI.updateEnrollStepUI(stepData);
+            }
+        });
+
+        socket.on('biometric:users-updated', () => {
+            console.log('[Socket] biometric:users-updated');
+            const biometricTab = document.getElementById('admin-tab-biometric');
+            if (biometricTab && !biometricTab.classList.contains('hidden')) {
+                if (window.AdminUI && typeof window.AdminUI.renderBiometricTab === 'function') {
+                    window.AdminUI.renderBiometricTab();
+                }
             }
         });
     }

@@ -24,6 +24,10 @@ Thumbs.db
 # Data
 postgres_data/
 
+# Embedded / PlatformIO
+.pio/
+firmware/**/.pio/
+
 # Temporary
 *.tmp
 *.log
