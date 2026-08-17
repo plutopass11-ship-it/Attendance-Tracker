@@ -8,6 +8,8 @@ const DEFAULT_SLACK_SETTINGS = {
     employeeCheckInTemplate: 'Check-In Confirmed\nTime: {time} ({location})\nHave a productive day at Flying Pluto.',
     employeeCheckOutTemplate: 'Check-Out Confirmed\nTime: {time}\nHave a great evening.',
     employeeEarlyCheckOutTemplate: 'Check-Out Recorded\nTime: {time}\nEarly Checkout has been submitted for admin approval.',
+    employeeEarlyRejectedTemplate: 'Early Check-Out Request Rejected\nYour early checkout request for {date} was rejected by Admin. Please resume your shift.',
+    employeeEarlyApprovedTemplate: 'Early Check-Out Approved\nYour early checkout request for {date} has been approved. Shift completed.',
     adminCheckInTemplate: 'Check-In: {name}\nTime: {time} ({status})\nMethod: {method}\nFor More Details - {portalUrl}',
     adminCheckOutTemplate: 'Check-Out: {name}\nTime: {time} ({status})\nMethod: {method}\nFor More Details - {portalUrl}'
 };
@@ -272,13 +274,42 @@ async function notifyMissingCheckIns({ pool, missingEmployees, timeIST = '11:00 
     }
 }
 
+/**
+ * Notifies employee when admin approves or rejects early checkout
+ */
+async function notifyEarlyClockoutDecision({ pool, userId, name, email, date, action }) {
+    try {
+        const settings = await getSlackSettings(pool);
+        const template = action === 'reject'
+            ? (settings.employeeEarlyRejectedTemplate || 'Early Check-Out Request Rejected\nYour early checkout request for {date} was rejected by Admin. Please resume your shift.')
+            : (settings.employeeEarlyApprovedTemplate || 'Early Check-Out Approved\nYour early checkout request for {date} has been approved. Shift completed.');
+
+        const templateVars = {
+            name: name || userId || 'Employee',
+            userId: userId || '',
+            date: date || 'today',
+            portalUrl: settings.portalUrl || 'https://attendance.flyingpluto.ai'
+        };
+
+        const employeeSlackId = await resolveSlackUserId({ userId, name, email });
+        if (employeeSlackId) {
+            const message = renderTemplate(template, templateVars);
+            await sendDirectMessage(employeeSlackId, message);
+        }
+    } catch (err) {
+        console.error('[Slack] notifyEarlyClockoutDecision error:', err);
+    }
+}
+
 module.exports = {
     DEFAULT_SLACK_SETTINGS,
     getSlackSettings,
     notifyCheckIn,
     notifyCheckOut,
     notifyMissingCheckIns,
+    notifyEarlyClockoutDecision,
     sendDirectMessage,
     resolveSlackUserId
 };
+
 

@@ -835,6 +835,10 @@
                                     <textarea id="slack-tpl-emp-early" rows="4" style="width:100%; padding:10px; border-radius:6px; border:1px solid var(--border); background:var(--bg-input, rgba(0,0,0,0.3)); color:var(--text-main); font-family:monospace; font-size:12px; resize:vertical;"></textarea>
                                 </div>
                                 <div>
+                                    <label style="display:block; font-size:12px; font-weight:600; margin-bottom:6px; color:var(--text-main);">Employee Early Check-Out Rejection DM</label>
+                                    <textarea id="slack-tpl-emp-rejected" rows="4" style="width:100%; padding:10px; border-radius:6px; border:1px solid var(--border); background:var(--bg-input, rgba(0,0,0,0.3)); color:var(--text-main); font-family:monospace; font-size:12px; resize:vertical;"></textarea>
+                                </div>
+                                <div>
                                     <label style="display:block; font-size:12px; font-weight:600; margin-bottom:6px; color:var(--text-main);">Admin Punch Alert</label>
                                     <textarea id="slack-tpl-admin-alert" rows="4" style="width:100%; padding:10px; border-radius:6px; border:1px solid var(--border); background:var(--bg-input, rgba(0,0,0,0.3)); color:var(--text-main); font-family:monospace; font-size:12px; resize:vertical;"></textarea>
                                 </div>
@@ -1289,6 +1293,9 @@
                         const tplEarly = document.getElementById('slack-tpl-emp-early');
                         if (tplEarly && s.employeeEarlyCheckOutTemplate) tplEarly.value = s.employeeEarlyCheckOutTemplate;
 
+                        const tplRejected = document.getElementById('slack-tpl-emp-rejected');
+                        if (tplRejected && s.employeeEarlyRejectedTemplate) tplRejected.value = s.employeeEarlyRejectedTemplate;
+
                         const tplAdmin = document.getElementById('slack-tpl-admin-alert');
                         if (tplAdmin && s.adminCheckInTemplate) tplAdmin.value = s.adminCheckInTemplate;
                     }
@@ -1335,6 +1342,7 @@
                 employeeCheckInTemplate: document.getElementById('slack-tpl-emp-checkin')?.value || '',
                 employeeCheckOutTemplate: document.getElementById('slack-tpl-emp-checkout')?.value || '',
                 employeeEarlyCheckOutTemplate: document.getElementById('slack-tpl-emp-early')?.value || '',
+                employeeEarlyRejectedTemplate: document.getElementById('slack-tpl-emp-rejected')?.value || '',
                 adminCheckInTemplate: document.getElementById('slack-tpl-admin-alert')?.value || '',
                 adminCheckOutTemplate: document.getElementById('slack-tpl-admin-alert')?.value || ''
             };

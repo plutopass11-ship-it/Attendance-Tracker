@@ -373,6 +373,16 @@ app.put('/api/attendance/approve', async (req, res) => {
         }
         await pool.query(q, params);
         io.emit('attendance:update', { userId });
+
+        // Notify employee of approval/rejection via Slack DM
+        try {
+            const uRes = await pool.query('SELECT name FROM users WHERE user_id = $1', [userId]);
+            const userName = uRes.rows[0]?.name || userId;
+            slackNotifier.notifyEarlyClockoutDecision({ pool, userId, name: userName, date, action });
+        } catch (sErr) {
+            console.error('[Slack] Notify early clockout decision error:', sErr.message);
+        }
+
         res.json({ success: true });
     } catch(err) {
         console.error(err);
