@@ -2176,6 +2176,7 @@ window.AdminUI.openBiometricEnrollModal = function() {
     }
 
     // 1. Open modal immediately
+    modal.style.display = 'flex';
     modal.classList.remove('hidden');
 
     // 2. Reset view states
@@ -2237,7 +2238,10 @@ window.AdminUI.openBiometricEnrollModal = function() {
 
 window.AdminUI.closeBiometricModal = function() {
     const modal = document.getElementById('biometric-enroll-modal');
-    if (modal) modal.classList.add('hidden');
+    if (modal) {
+        modal.style.display = 'none';
+        modal.classList.add('hidden');
+    }
     if (window.AdminUI && typeof window.AdminUI.renderBiometricTab === 'function') {
         window.AdminUI.renderBiometricTab();
     }
