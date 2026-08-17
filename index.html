@@ -1123,10 +1123,80 @@
                 window.closeBioModal();
             }
         };
-        window.cancelBioLiveEnroll = async function() {
-            try { await fetch('/api/biometric/enroll/cancel', { method: 'POST' }); } catch (e) {}
-            window.closeBioModal();
+        window.updateBioEnrollStepUI = function(stepData) {
+            const liveView = document.getElementById('bio-modal-live-view');
+            if (!liveView || liveView.style.display === 'none') return;
+
+            const title = document.getElementById('bio-live-title');
+            const desc = document.getElementById('bio-live-desc');
+            const icon = document.getElementById('bio-live-icon');
+            const ring = document.getElementById('bio-live-ring');
+            const dot1 = document.getElementById('bio-dot-1');
+            const dot2 = document.getElementById('bio-dot-2');
+            const dot3 = document.getElementById('bio-dot-3');
+            const btnCancel = document.getElementById('btn-bio-cancel');
+            const btnRetry = document.getElementById('btn-bio-retry');
+            const btnDone = document.getElementById('btn-bio-done');
+
+            const step = stepData.step;
+
+            if (step === 'place_finger' || step === 'waiting_for_device') {
+                if (title) title.textContent = 'Place Finger on Scanner';
+                if (desc) desc.textContent = 'Place finger firmly on the sensor...';
+                if (icon) { icon.style.color = '#f59e0b'; icon.setAttribute('name', 'finger-print-outline'); }
+                if (ring) ring.style.borderColor = '#f59e0b';
+                if (dot1) dot1.style.background = '#f59e0b';
+                if (dot2) dot2.style.background = 'var(--border, #334155)';
+                if (dot3) dot3.style.background = 'var(--border, #334155)';
+            } else if (step === 'scan1_ok') {
+                if (title) title.textContent = '✓ Scan 1 OK — Remove Finger';
+                if (desc) desc.textContent = 'First scan captured! Lift finger now.';
+                if (icon) { icon.style.color = '#3b82f6'; icon.setAttribute('name', 'finger-print-outline'); }
+                if (ring) ring.style.borderColor = '#3b82f6';
+                if (dot1) dot1.style.background = '#10b981';
+                if (dot2) dot2.style.background = '#3b82f6';
+                if (dot3) dot3.style.background = 'var(--border, #334155)';
+            } else if (step === 'place_again') {
+                if (title) title.textContent = 'Place Same Finger Again';
+                if (desc) desc.textContent = 'Place the exact same finger back on the sensor.';
+                if (icon) { icon.style.color = '#8b5cf6'; icon.setAttribute('name', 'finger-print-outline'); }
+                if (ring) ring.style.borderColor = '#8b5cf6';
+                if (dot1) dot1.style.background = '#10b981';
+                if (dot2) dot2.style.background = '#8b5cf6';
+                if (dot3) dot3.style.background = 'var(--border, #334155)';
+            } else if (step === 'success') {
+                if (title) title.textContent = '🎉 Fingerprint Enrolled!';
+                if (desc) desc.textContent = 'Successfully mapped Slot #' + stepData.slot + ' to ' + (stepData.name || 'employee') + '!';
+                if (icon) { icon.setAttribute('name', 'checkmark-circle-outline'); icon.style.color = '#10b981'; }
+                if (ring) ring.style.borderColor = '#10b981';
+                if (dot1) dot1.style.background = '#10b981';
+                if (dot2) dot2.style.background = '#10b981';
+                if (dot3) dot3.style.background = '#10b981';
+                if (btnCancel) btnCancel.style.display = 'none';
+                if (btnRetry) btnRetry.style.display = 'none';
+                if (btnDone) btnDone.style.display = 'inline-block';
+                if (window.AdminUI && typeof window.AdminUI.renderBiometricTab === 'function') {
+                    window.AdminUI.renderBiometricTab();
+                }
+            } else if (step === 'fail' || step === 'timeout' || step === 'error') {
+                if (title) title.textContent = '✗ Scan Failed';
+                if (desc) desc.textContent = stepData.error || stepData.message || 'Prints did not match. Please try again.';
+                if (icon) { icon.setAttribute('name', 'alert-circle-outline'); icon.style.color = '#ef4444'; }
+                if (ring) ring.style.borderColor = '#ef4444';
+                if (btnCancel) btnCancel.style.display = 'inline-block';
+                if (btnRetry) btnRetry.style.display = 'inline-block';
+                if (btnDone) btnDone.style.display = 'none';
+            } else if (step === 'cancelled') {
+                window.closeBioModal();
+            }
         };
+
+        if (!window.AdminUI) window.AdminUI = {};
+        window.AdminUI.updateEnrollStepUI = window.updateBioEnrollStepUI;
+        window.AdminUI.openBiometricEnrollModal = window.openBioModal;
+        window.AdminUI.closeBiometricModal = window.closeBioModal;
+        window.AdminUI.startLiveWebEnroll = window.startBioLiveEnroll;
+        window.AdminUI.cancelLiveWebEnroll = window.cancelBioLiveEnroll;
     </script>
 
     <div id="holiday-modal" class="modal hidden">
