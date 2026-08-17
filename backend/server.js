@@ -1021,18 +1021,26 @@ async function autoCheckoutMissing() {
 let lastMissingAlertDate = null;
 async function runAutoHalfDayLeave() {
     try {
+        const slackSettings = await slackNotifier.getSlackSettings(pool);
+        if (slackSettings.lateCheckInEnabled === false) {
+            return;
+        }
+
         const now = new Date();
         // Get IST time
         const istTime = new Date(now.toLocaleString('en-US', { timeZone: 'Asia/Kolkata' }));
         const istHour = istTime.getHours();
         const istDay = istTime.getDay(); // 0=Sunday
+        const [tHours, tMins] = (slackSettings.lateThreshold || '11:00').split(':').map(Number);
+        const istMins = istHour * 60 + istTime.getMinutes();
+        const targetMins = tHours * 60 + (tMins || 0);
 
-        // Only run on working days (Mon-Sat) and only at/after 11 AM
-        if (istDay === 0 || istHour < 11) return;
+        // Only run on working days (Mon-Sat) and only at/after configured late cutoff
+        if (istDay === 0 || istMins < targetMins) return;
 
         const todayStr = `${istTime.getFullYear()}-${String(istTime.getMonth()+1).padStart(2,'0')}-${String(istTime.getDate()).padStart(2,'0')}`;
 
-        console.log(`[Auto Half-Day] Checking for missing logins on ${todayStr}...`);
+        console.log(`[Auto Half-Day] Checking for missing logins on ${todayStr} (threshold: ${slackSettings.lateThreshold || '11:00'})...`);
 
         // Check if today is a holiday (holidays may be stored in localStorage only)
         try {

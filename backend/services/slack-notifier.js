@@ -2,8 +2,9 @@
 const https = require('https');
 
 const DEFAULT_SLACK_SETTINGS = {
-    adminRecipients: ['joyel@flyingpluto.ai', 'albert@flyingpluto.ai'],
+    lateCheckInEnabled: true,
     lateThreshold: '11:00',
+    adminRecipients: ['joyel@flyingpluto.ai', 'albert@flyingpluto.ai'],
     portalUrl: 'https://attendance.flyingpluto.ai',
     employeeCheckInTemplate: 'Check-In Confirmed\nTime: {time} ({location})\nHave a productive day at Flying Pluto.',
     employeeCheckOutTemplate: 'Check-Out Confirmed\nTime: {time}\nHave a great evening.',
@@ -169,7 +170,7 @@ function renderTemplate(template, vars) {
 async function notifyCheckIn({ pool, name, userId, email, timeIST, method = 'Biometric Scanner', isWfh = false }) {
     try {
         const settings = await getSlackSettings(pool);
-        const isLate = isLateCheckIn(settings.lateThreshold);
+        const isLate = (settings.lateCheckInEnabled !== false) && isLateCheckIn(settings.lateThreshold);
         const locationText = isWfh ? 'Work From Home' : 'In Office';
         const statusText = isLate ? 'Late Check-In' : 'On-Time';
 
@@ -255,6 +256,7 @@ async function notifyMissingCheckIns({ pool, missingEmployees, timeIST = '11:00 
     if (!missingEmployees || missingEmployees.length === 0) return;
     try {
         const settings = await getSlackSettings(pool);
+        if (settings.lateCheckInEnabled === false) return;
         const adminRecipients = Array.isArray(settings.adminRecipients) ? settings.adminRecipients : [];
         if (adminRecipients.length === 0) return;
 
