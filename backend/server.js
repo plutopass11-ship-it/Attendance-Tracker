@@ -1475,10 +1475,26 @@ app.get('/api/biometric/device/poll', (req, res) => {
   res.json({ command: 'idle' });
 });
 
-app.get('/api/biometric/device/status', (req, res) => {
-  const isOnline = lastDeviceHeartbeat && (Date.now() - lastDeviceHeartbeat < 15000);
-  const lastSeen = lastDeviceHeartbeat;
-  const activeEnroll = activeEnrollment;
+app.get('/api/biometric/device/status', async (req, res) => {
+  let isOnline = lastDeviceHeartbeat && (Date.now() - lastDeviceHeartbeat < 15000);
+  let lastSeen = lastDeviceHeartbeat;
+  let activeEnroll = activeEnrollment;
+
+  // When running outside Docker (local dev), the ESP32 sends heartbeats to the NAS backend
+  // directly, not to this server. Bridge the status from the NAS if we haven't seen a local heartbeat.
+  const pgHost = process.env.POSTGRES_HOST || '';
+  if (!isOnline && pgHost !== 'attendance-db' && pgHost !== 'localhost' && pgHost !== '127.0.0.1') {
+    try {
+      const nasUrl = `http://${pgHost}:4000/api/biometric/device/status`;
+      const nasRes = await fetch(nasUrl, { signal: AbortSignal.timeout(2000) });
+      if (nasRes.ok) {
+        const nasData = await nasRes.json();
+        isOnline = nasData.online;
+        lastSeen = nasData.last_seen;
+        if (!activeEnroll) activeEnroll = nasData.active_enrollment;
+      }
+    } catch (e) { /* NAS unreachable, leave offline */ }
+  }
 
   res.json({
     success: true,
