@@ -31,3 +31,6 @@ firmware/**/.pio/
 # Temporary
 *.tmp
 *.log
+
+# Local Dev
+dev-server.js

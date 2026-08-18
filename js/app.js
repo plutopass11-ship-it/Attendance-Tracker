@@ -81,25 +81,39 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // --- NAVIGATION ---
     function showLogin() {
-        loginView.classList.remove('hidden');
-        appView.classList.add('hidden');
+        const adminView = document.getElementById('admin-view');
+        if (loginView) loginView.classList.remove('hidden');
+        if (appView) appView.classList.add('hidden');
+        if (adminView) adminView.classList.add('hidden');
     }
 
     function showApp() {
-        loginView.classList.add('hidden');
-        appView.classList.remove('hidden');
+        if (!currentUser) return;
         
-        // Setup User Info
-        userNameEl.textContent = currentUser.name;
-        userInitialEl.textContent = currentUser.name.charAt(0).toUpperCase();
+        const adminView = document.getElementById('admin-view');
 
-        // Admin check
-        if(currentUser.role === 'admin') {
-            appView.classList.add('hidden');
-            document.getElementById('admin-view').classList.remove('hidden');
-            if(window.AdminUI) window.AdminUI.init(currentUser);
+        if (loginView) loginView.classList.add('hidden');
+
+        // Admin check first
+        if (currentUser.role === 'admin') {
+            if (appView) appView.classList.add('hidden');
+            if (adminView) adminView.classList.remove('hidden');
+            if (window.AdminUI) window.AdminUI.init(currentUser);
             return;
         }
+
+        // Employee view: ALWAYS hide adminView and show appView
+        if (adminView) adminView.classList.add('hidden');
+        if (appView) appView.classList.remove('hidden');
+        
+        // Setup User Info safely
+        if (userNameEl) userNameEl.textContent = currentUser.name;
+        if (userInitialEl) userInitialEl.textContent = (currentUser.name || 'U').charAt(0).toUpperCase();
+
+        const roleDeptEl = document.getElementById('user-role-dept');
+        if (roleDeptEl) roleDeptEl.textContent = currentUser.department ? `Flying Pluto Studios · ${currentUser.department}` : 'Flying Pluto Studios · Team';
+
+        startClock();
 
         // Sync with backend, then render. If sync fails, still render from localStorage.
         Store.syncWithBackend()
@@ -114,22 +128,31 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function switchTab(targetId) {
-        // Update Nav UI
-        navItems.forEach(nav => {
-            if(nav.dataset.target === targetId) nav.classList.add('active');
+        const allNavs = document.querySelectorAll('.bottom-nav .nav-item, .nav-item');
+        const allTabs = document.querySelectorAll('.tab-content');
+
+        allNavs.forEach(nav => {
+            if (nav.dataset.target === targetId) nav.classList.add('active');
             else nav.classList.remove('active');
         });
         
-        // Update Content
-        tabs.forEach(tab => {
-            if(tab.id === targetId) tab.classList.add('active');
-            else tab.classList.remove('active');
+        allTabs.forEach(tab => {
+            if (tab.id === targetId) {
+                tab.classList.add('active');
+                tab.style.display = 'block';
+            } else {
+                tab.classList.remove('active');
+                tab.style.display = 'none';
+            }
         });
         
-        if(targetId === 'tab-attendance') updateAttendanceUI();
-        if(targetId === 'tab-calendar') renderUserCalendar();
-        if(targetId === 'tab-leaves') renderLeaveHistory();
-        if(targetId === 'tab-holidays') renderHolidays();
+        if (targetId === 'tab-attendance') updateAttendanceUI();
+        if (targetId === 'tab-calendar') renderUserCalendar();
+        if (targetId === 'tab-leaves') {
+            renderLeaveBalances();
+            renderLeaveHistory();
+        }
+        if (targetId === 'tab-holidays') renderHolidays();
     }
 
     // --- CLOCK ---
@@ -159,26 +182,31 @@ document.addEventListener('DOMContentLoaded', () => {
         const todayStr = getTodayDateString();
         const record = Store.getAttendanceToday(currentUser.id, todayStr);
         
-        mainActionBtn.classList.remove('check-in', 'check-out', 'completed', 'disabled');
-        statusDot.classList.remove('unverified', 'verified', 'completed', 'warning', 'pending');
+        mainActionBtn.className = 'punch-circle-btn';
+        if (statusText) statusText.className = 'status-pill';
         mainActionBtn.style.pointerEvents = "auto";
         mainActionBtn.style.opacity = "1";
         
         if (!record) {
             // Not checked in yet
-            statusText.textContent = "Not Checked In";
-            statusDot.classList.add('unverified');
+            if (statusText) {
+                statusText.textContent = "Not Checked In";
+                statusText.className = 'status-pill pill-late';
+            }
             
-            mainActionBtn.classList.add('check-in');
+            mainActionBtn.classList.add('punch-in');
             mainActionLabel.textContent = "Check In";
             
             attendanceDetails.classList.add('hidden');
         } else if (!record.checkOutTime) {
             // Checked in, not checked out
-            statusText.textContent = _isWfhAttendanceStatus(record.status) ? "Working From Home" : "Working";
-            statusDot.classList.add('verified');
+            const isWfh = _isWfhAttendanceStatus(record.status);
+            if (statusText) {
+                statusText.textContent = isWfh ? "WFH Remote Active" : "In Office Working";
+                statusText.className = isWfh ? 'status-pill pill-wfh' : 'status-pill pill-active';
+            }
             
-            mainActionBtn.classList.add('check-out');
+            mainActionBtn.classList.add('punch-out');
             mainActionLabel.textContent = "Check Out";
             
             attendanceDetails.classList.remove('hidden');
@@ -186,13 +214,15 @@ document.addEventListener('DOMContentLoaded', () => {
             valCheckOut.textContent = "--:--";
         } else if (_isPendingAttendanceStatus(record.status)) {
             // Pending Early Checkout
-            statusText.textContent = "Pending Approval";
-            statusDot.classList.add('warning', 'pending');
-            statusDot.style.background = "#f59e0b"; // Orange fallback
+            if (statusText) {
+                statusText.textContent = "Pending Early Clockout Approval";
+                statusText.className = 'status-pill pill-late';
+            }
             
-            mainActionBtn.classList.add('disabled');
+            mainActionBtn.classList.add('punch-in');
             mainActionBtn.style.pointerEvents = "none";
-            mainActionBtn.style.background = "#334155"; // Greyed out
+            mainActionBtn.style.background = "#1a1e27";
+            mainActionBtn.style.color = "var(--text-tertiary)";
             mainActionLabel.textContent = "Pending";
             
             attendanceDetails.classList.remove('hidden');
@@ -200,10 +230,16 @@ document.addEventListener('DOMContentLoaded', () => {
             valCheckOut.textContent = record.checkOutTime;
         } else {
             // Checked out (day completed)
-            statusText.textContent = _isWfhAttendanceStatus(record.status) ? "WFH Day Completed" : "Day Completed";
-            statusDot.classList.add('completed');
+            const isWfh = _isWfhAttendanceStatus(record.status);
+            if (statusText) {
+                statusText.textContent = isWfh ? "WFH Completed" : "Shift Completed";
+                statusText.className = 'status-pill pill-completed';
+            }
             
-            mainActionBtn.classList.add('completed');
+            mainActionBtn.classList.add('punch-in');
+            mainActionBtn.style.pointerEvents = "none";
+            mainActionBtn.style.background = "#1a1e27";
+            mainActionBtn.style.color = "var(--text-tertiary)";
             mainActionLabel.textContent = "Done";
             
             attendanceDetails.classList.remove('hidden');
@@ -239,6 +275,8 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function renderLeaveBalances() {
+        if (!currentUser) currentUser = Auth.getCurrentUser();
+        if (!currentUser) return;
         const leaveTypes = Store.getLeaveTypes();
         const allUserLeaves = Store.getUserLeaves(currentUser.id);
         const approvedLeaves = allUserLeaves.filter(l => l.status === 'Approved');
@@ -248,15 +286,15 @@ document.addEventListener('DOMContentLoaded', () => {
 
         // Populate the leave type dropdown (excluding WFH)
         const select = document.getElementById('leave-type');
-        select.innerHTML = '';
+        if (select) select.innerHTML = '';
 
         const grid = document.getElementById('user-balances-grid');
-        grid.innerHTML = '';
+        if (grid) grid.innerHTML = '';
 
         // --- Leave balance cards (excluding WFH) ---
         const nonWfhTypes = leaveTypes.filter(t => !_isWfh(t.name));
         nonWfhTypes.forEach(t => {
-            select.innerHTML += `<option value="${t.name}">${t.name}</option>`;
+            if (select) select.innerHTML += `<option value="${t.name}">${t.name}</option>`;
             
             let used = 0;
             const relevant = approvedLeaves.filter(l => _matchesType(l.type, t.name));
@@ -274,27 +312,29 @@ document.addEventListener('DOMContentLoaded', () => {
             const pct = limit > 0 ? Math.min(100, (used / limit) * 100) : 0;
             const barColor = pct > 80 ? '#ef4444' : pct > 50 ? '#f59e0b' : '#10b981';
 
-            grid.innerHTML += `
-                <div style="background:var(--glass-bg); border:1px solid var(--glass-border); border-radius:10px; padding:14px;">
-                    <div style="display:flex; justify-content:space-between; margin-bottom:6px;">
-                        <strong style="font-size:13px;">${t.name}</strong>
-                        <span style="font-size:12px; color:var(--text-muted);">${t.cycle || 'Yearly'}</span>
+            if (grid) {
+                grid.innerHTML += `
+                    <div style="background:rgba(255,255,255,0.03); border:1px solid rgba(255,255,255,0.08); border-radius:12px; padding:16px;">
+                        <div style="display:flex; justify-content:space-between; margin-bottom:8px;">
+                            <strong style="font-size:13.5px; color:#f8fafc;">${t.name}</strong>
+                            <span style="font-size:11.5px; color:#64748b; font-weight:600; text-transform:uppercase;">${t.cycle || 'Yearly'}</span>
+                        </div>
+                        <div style="display:flex; justify-content:space-between; font-size:12.5px; color:#94a3b8; margin-bottom:8px;">
+                            <span>Used: <strong style="color:#ffffff">${used}</strong></span>
+                            <span>Left: <strong style="color:${barColor}">${remaining}</strong> / ${limit}</span>
+                        </div>
+                        <div style="background:rgba(255,255,255,0.08); border-radius:4px; height:6px; overflow:hidden;">
+                            <div style="width:${pct}%; height:100%; background:${barColor}; border-radius:4px; transition:width 0.3s;"></div>
+                        </div>
                     </div>
-                    <div style="display:flex; justify-content:space-between; font-size:12px; color:var(--text-muted); margin-bottom:6px;">
-                        <span>Used: <strong style="color:var(--text-main)">${used}</strong></span>
-                        <span>Left: <strong style="color:${barColor}">${remaining}</strong> / ${limit}</span>
-                    </div>
-                    <div style="background:rgba(255,255,255,0.08); border-radius:4px; height:6px; overflow:hidden;">
-                        <div style="width:${pct}%; height:100%; background:${barColor}; border-radius:4px; transition:width 0.3s;"></div>
-                    </div>
-                </div>
-            `;
+                `;
+            }
         });
 
-        if (extra.leaves > 0) {
+        if (extra.leaves > 0 && grid) {
             grid.innerHTML += `
-                <div style="background:var(--glass-bg); border:1px solid var(--glass-border); border-radius:10px; padding:14px;">
-                    <strong style="font-size:13px;">Extra Leave Allowance</strong>
+                <div style="background:rgba(255,255,255,0.03); border:1px solid rgba(255,255,255,0.08); border-radius:12px; padding:16px;">
+                    <strong style="font-size:13.5px; color:#f8fafc;">Extra Leave Allowance</strong>
                     <div style="font-size:22px; font-weight:700; color:#10b981; margin-top:8px;">+${extra.leaves} days</div>
                 </div>
             `;
@@ -326,33 +366,37 @@ document.addEventListener('DOMContentLoaded', () => {
         const wfhAllTime = wfhApproved.reduce((a, l) => a + _calcDays(l), 0);
 
         const wfhDiv = document.getElementById('user-wfh-balance');
-        wfhDiv.innerHTML = `
-            <div style="background:rgba(59,130,246,0.08); border:1px solid rgba(59,130,246,0.25); border-radius:10px; padding:16px;">
-                <div style="display:flex; justify-content:space-between; margin-bottom:8px;">
-                    <strong style="font-size:14px;">Work From Home</strong>
-                    <span style="font-size:12px; color:var(--text-muted);">${wfhCycle}${wfhExtra > 0 ? ' (+' + wfhExtra + ' extra)' : ''}</span>
+        if (wfhDiv) {
+            wfhDiv.innerHTML = `
+                <div style="background:rgba(59,130,246,0.06); border:1px solid rgba(59,130,246,0.25); border-radius:12px; padding:18px;">
+                    <div style="display:flex; justify-content:space-between; margin-bottom:8px;">
+                        <strong style="font-size:14px; color:#f8fafc;">Work From Home</strong>
+                        <span style="font-size:12px; color:#94a3b8;">${wfhCycle}${wfhExtra > 0 ? ' (+' + wfhExtra + ' extra)' : ''}</span>
+                    </div>
+                    ${isMonthly ? `<div style="font-size:12px; color:#64748b; margin-bottom:10px;">📅 ${monthName} ${now.getFullYear()}</div>` : ''}
+                    <div style="display:flex; gap:24px; margin-bottom:10px;">
+                        <div><span style="font-size:24px; font-weight:700; color:#38bdf8;">${wfhUsed}</span> <span style="font-size:12px; color:#94a3b8;">used ${isMonthly ? 'this month' : ''}</span></div>
+                        <div><span style="font-size:24px; font-weight:700; color:${wfhBarColor};">${wfhRemaining}</span> <span style="font-size:12px; color:#94a3b8;">remaining</span></div>
+                        <div><span style="font-size:24px; font-weight:700; color:#64748b;">${wfhTotalLimit}</span> <span style="font-size:12px; color:#94a3b8;">limit</span></div>
+                    </div>
+                    <div style="background:rgba(255,255,255,0.08); border-radius:4px; height:6px; overflow:hidden; margin-bottom:12px;">
+                        <div style="width:${wfhPct}%; height:100%; background:${wfhBarColor}; border-radius:4px; transition:width 0.3s;"></div>
+                    </div>
+                    <div style="display:flex; justify-content:space-between; padding-top:12px; border-top:1px solid rgba(255,255,255,0.06);">
+                        <span style="font-size:13px; color:#94a3b8;">📊 All-Time WFH Total</span>
+                        <strong style="font-size:15px; color:#38bdf8;">${wfhAllTime} day${wfhAllTime !== 1 ? 's' : ''}</strong>
+                    </div>
                 </div>
-                ${isMonthly ? `<div style="font-size:12px; color:var(--text-muted); margin-bottom:10px;">📅 ${monthName} ${now.getFullYear()}</div>` : ''}
-                <div style="display:flex; gap:24px; margin-bottom:8px;">
-                    <div><span style="font-size:24px; font-weight:700; color:#3b82f6;">${wfhUsed}</span> <span style="font-size:12px; color:var(--text-muted);">used ${isMonthly ? 'this month' : ''}</span></div>
-                    <div><span style="font-size:24px; font-weight:700; color:${wfhBarColor};">${wfhRemaining}</span> <span style="font-size:12px; color:var(--text-muted);">remaining</span></div>
-                    <div><span style="font-size:24px; font-weight:700; color:var(--text-muted);">${wfhTotalLimit}</span> <span style="font-size:12px; color:var(--text-muted);">limit</span></div>
-                </div>
-                <div style="background:rgba(255,255,255,0.08); border-radius:4px; height:6px; overflow:hidden; margin-bottom:12px;">
-                    <div style="width:${wfhPct}%; height:100%; background:${wfhBarColor}; border-radius:4px; transition:width 0.3s;"></div>
-                </div>
-                <div style="display:flex; justify-content:space-between; padding-top:10px; border-top:1px solid rgba(255,255,255,0.06);">
-                    <span style="font-size:13px; color:var(--text-muted);">📊 All-Time WFH Total</span>
-                    <strong style="font-size:15px; color:#3b82f6;">${wfhAllTime} day${wfhAllTime !== 1 ? 's' : ''}</strong>
-                </div>
-            </div>
-        `;
+            `;
+        }
     }
 
     // --- Filter state ---
     let _userReqFilter = 'all';
 
     function renderLeaveHistory(filterOverride) {
+        if (!currentUser) currentUser = Auth.getCurrentUser();
+        if (!currentUser) return;
         const filter = filterOverride || _userReqFilter;
         _userReqFilter = filter;
 
@@ -371,30 +415,40 @@ document.addEventListener('DOMContentLoaded', () => {
         const countEl = document.getElementById('user-req-count');
         if (countEl) countEl.textContent = `${leaves.length} request${leaves.length !== 1 ? 's' : ''}`;
 
-        leaveHistoryList.innerHTML = '';
+        const list = document.getElementById('leave-history-list');
+        if (!list) return;
+        list.innerHTML = '';
         
-        if(leaves.length === 0) {
-            leaveHistoryList.innerHTML = '<li style="color:var(--text-muted); font-size: 14px; text-align: center; padding: 20px;">No requests found.</li>';
+        if (leaves.length === 0) {
+            list.innerHTML = '<li style="color:#64748b; font-size: 13px; text-align: center; padding: 24px; background: rgba(255,255,255,0.02); border-radius: 12px; border: 1px dashed rgba(255,255,255,0.08);">No leave or WFH requests found.</li>';
             return;
         }
         
         leaves.forEach(leave => {
             const isW = _isWfh(leave.type);
             const days = _calcDays(leave);
-            const catBadge = isW
-                ? '<span class="badge" style="background:#3b82f6;color:white;font-size:10px;margin-left:6px;">WFH</span>'
-                : '<span class="badge" style="background:#8b5cf6;color:white;font-size:10px;margin-left:6px;">Leave</span>';
+            const statusClass = (leave.status || '').toLowerCase();
+            const statusColor = statusClass === 'approved' ? '#10b981' : statusClass === 'rejected' ? '#ef4444' : '#f59e0b';
+            const statusBg = statusClass === 'approved' ? 'rgba(16,185,129,0.15)' : statusClass === 'rejected' ? 'rgba(239,68,68,0.15)' : 'rgba(245,158,11,0.15)';
 
             const li = document.createElement('li');
-            li.className = 'history-card';
+            li.className = 'history-item';
             li.innerHTML = `
-                <div class="card-main">
-                    <span class="card-title">${leave.type} ${catBadge} ${leave.isHalfDay ? '<span class="badge" style="background:var(--warning); color:white; font-size:10px; margin-left:6px;">Half Day</span>' : ''}</span>
-                    <span class="card-sub">${leave.startDate}${leave.startDate !== leave.endDate ? ' → ' + leave.endDate : ''} <small style="color:var(--text-muted);">(${days} day${days!==1?'s':''})</small></span>
+                <div class="history-info">
+                    <div style="display:flex; align-items:center; gap:8px; margin-bottom:4px;">
+                        <h4 style="margin:0; font-size:14px; color:#f8fafc;">${leave.type}</h4>
+                        <span class="badge" style="background:${isW ? 'rgba(6,182,212,0.15)' : 'rgba(139,92,246,0.15)'}; color:${isW ? '#06b6d4' : '#8b5cf6'}; font-size:11px; padding:2px 8px;">${isW ? 'WFH' : 'Leave'}</span>
+                        ${leave.isHalfDay ? '<span class="badge" style="background:rgba(245,158,11,0.15); color:#f59e0b; font-size:11px; padding:2px 8px;">Half Day</span>' : ''}
+                    </div>
+                    <p style="margin:0; font-size:12px; color:#94a3b8;">
+                        📅 ${leave.startDate}${leave.startDate !== leave.endDate ? ' → ' + leave.endDate : ''} 
+                        <span style="color:#64748b; margin-left:6px;">(${days} day${days!==1?'s':''})</span>
+                    </p>
+                    ${leave.reason ? `<p style="margin:4px 0 0; font-size:11.5px; color:#64748b; font-style:italic;">"${leave.reason}"</p>` : ''}
                 </div>
-                <span class="badge ${leave.status.toLowerCase()}">${leave.status}</span>
+                <span class="status-pill" style="background:${statusBg}; color:${statusColor}; border:1px solid ${statusColor}40;">${leave.status}</span>
             `;
-            leaveHistoryList.appendChild(li);
+            list.appendChild(li);
         });
     }
 
@@ -425,11 +479,11 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function renderHolidays() {
         const holidays = Store.getHolidays();
-        publicHolidaysList.innerHTML = '';
-        optionalHolidaysList.innerHTML = '';
+        if (publicHolidaysList) publicHolidaysList.innerHTML = '';
+        if (optionalHolidaysList) optionalHolidaysList.innerHTML = '';
         
-        const quota = Store.getRemainingQuota(currentUser.id);
-        optionalQuotaText.textContent = `${quota}/3 Remaining`;
+        const quota = Store.getRemainingQuota(currentUser ? currentUser.id : '');
+        if (optionalQuotaText) optionalQuotaText.textContent = `${quota}/3 Remaining`;
 
         holidays.forEach(h => {
             const isOptional = h.type === 'Optional';
@@ -480,69 +534,201 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
-    // --- CALENDAR LOGIC ---
+    // --- CALENDAR LOGIC (Employee View) ---
+    let selectedUserCalDate = null;
+
     function renderUserCalendar() {
+        if (!currentCalDate) currentCalDate = new Date();
         const year = currentCalDate.getFullYear();
         const month = currentCalDate.getMonth();
-        const monthName = currentCalDate.toLocaleString('default', { month: 'long', year: 'numeric' });
+        const todayStr = getTodayDateString();
         
-        const titleEl = document.getElementById('user-cal-month-title');
-        if(titleEl) titleEl.textContent = monthName;
-        
-        const calContainer = document.getElementById('user-calendar-grid');
-        if(!calContainer) return;
-        calContainer.innerHTML = '';
-        
-        const firstDay = new Date(year, month, 1).getDay();
-        const daysInMonth = new Date(year, month + 1, 0).getDate();
-        
-        const myLeaves = Store.getUserLeaves(currentUser.id).filter(l => l.status === 'Approved');
-        const myAttendance = Store.getAttendance().filter(r => r.userId === currentUser.id);
-        const holidays = Store.getHolidays();
-        
-        for(let i=0; i<firstDay; i++) {
-            calContainer.innerHTML += `<div class="calendar-day empty"></div>`;
+        if (!selectedUserCalDate) {
+            selectedUserCalDate = todayStr;
         }
-        
-        for(let day=1; day <= daysInMonth; day++) {
+
+        const monthName = currentCalDate.toLocaleString('default', { month: 'long', year: 'numeric' }).toUpperCase();
+        const titleEl = document.getElementById('user-cal-month-title');
+        if (titleEl) titleEl.textContent = monthName;
+
+        const todayDayNum = new Date().getDate();
+        const todayIcon = document.getElementById('user-cal-today-day-icon');
+        if (todayIcon) todayIcon.textContent = todayDayNum;
+
+        const calContainer = document.getElementById('user-calendar-grid');
+        if (!calContainer) return;
+        calContainer.innerHTML = '';
+
+        // Monday-first: 0=Mon, 1=Tue, ..., 6=Sun
+        const firstDaySundayBased = new Date(year, month, 1).getDay();
+        const firstDayIndex = (firstDaySundayBased + 6) % 7;
+        const daysInMonth = new Date(year, month + 1, 0).getDate();
+        const prevMonthDays = new Date(year, month, 0).getDate();
+
+        const myLeaves = currentUser ? Store.getUserLeaves(currentUser.id).filter(l => l.status === 'Approved') : [];
+        const myAttendance = currentUser ? Store.getAttendance().filter(r => r.userId === currentUser.id) : [];
+        const holidays = Store.getHolidays();
+
+        // 1. Previous Month Dimmed Days
+        for (let i = firstDayIndex - 1; i >= 0; i--) {
+            const prevDayNum = prevMonthDays - i;
+            const cell = document.createElement('div');
+            cell.className = 'cal-day-cell dimmed';
+            cell.innerHTML = `<span class="cal-day-num">${prevDayNum}</span>`;
+            calContainer.appendChild(cell);
+        }
+
+        // 2. Current Month Days
+        for (let day = 1; day <= daysInMonth; day++) {
             const dateStr = `${year}-${String(month+1).padStart(2,'0')}-${String(day).padStart(2,'0')}`;
-            const isOnLeave = myLeaves.some(l => l.startDate <= dateStr && l.endDate >= dateStr);
+            const isToday = (dateStr === todayStr);
+            const isSelected = (dateStr === selectedUserCalDate);
+            const dayOfWeek = (new Date(year, month, day).getDay() + 6) % 7;
+            const isSunday = (dayOfWeek === 6);
+
+            const leaveRecord = myLeaves.find(l => l.startDate <= dateStr && l.endDate >= dateStr);
             const attendanceRecord = myAttendance.find(a => a.date === dateStr);
             const holiday = holidays.find(h => h.date === dateStr);
-            
-            let badgesHTML = '';
-            if (isOnLeave) {
-                const leaveRecord = myLeaves.find(l => l.startDate <= dateStr && l.endDate >= dateStr);
-                const isOpt = leaveRecord.type === 'Optional Holiday';
-                const isWfh = leaveRecord.type?.toLowerCase().includes('wfh') || leaveRecord.type?.toLowerCase().includes('work from home');
-                let badgeClass = '';
-                if(isOpt) badgeClass = 'opt';
-                else if(isWfh) badgeClass = 'wfh';
-                
-                badgesHTML += `<div class="cal-leave-badge ${badgeClass}">${leaveRecord.type} ${leaveRecord.isHalfDay ? '(Half)' : ''}</div>`;
-            } else if (holiday && holiday.type !== 'Optional') {
-                badgesHTML += `<div class="cal-leave-badge holiday">${holiday.name}</div>`;
-            } else if (attendanceRecord) {
-                if (attendanceRecord.checkOutTime) {
-                    badgesHTML += `<div class="cal-leave-badge present">Present</div>`;
-                } else {
-                    badgesHTML += `<div class="cal-leave-badge working">Working</div>`;
-                }
-            } else if (new Date(dateStr) < new Date(getTodayDateString()) && new Date(dateStr).getDay() !== 0 && new Date(dateStr).getDay() !== 6) {
-                badgesHTML += `<div class="cal-leave-badge absent">Absent</div>`;
-            }
-            
-            // Mark Sundays for User Calendar too
-            if (new Date(year, month, day).getDay() === 0) {
-                badgesHTML += `<div class="cal-leave-badge holiday">Sunday</div>`;
-            }
-            
-            const isTodayStr = (dateStr === getTodayDateString()) ? ' today' : '';
+            const isWfh = leaveRecord && (leaveRecord.type?.toLowerCase().includes('wfh') || leaveRecord.type?.toLowerCase().includes('work from home'));
 
-            calContainer.innerHTML += `
-                <div class="calendar-day${isTodayStr}">
-                    <div class="cal-date">${day}</div>
-                    <div class="cal-badges">${badgesHTML}</div>
+            let barsHTML = '';
+            if (holiday) {
+                barsHTML += `<div class="cal-bar holiday" title="Holiday: ${holiday.name}"></div>`;
+            }
+            if (isWfh) {
+                barsHTML += `<div class="cal-bar wfh" title="Work From Home"></div>`;
+            } else if (leaveRecord) {
+                barsHTML += `<div class="cal-bar leave" title="${leaveRecord.type}"></div>`;
+            } else if (attendanceRecord) {
+                barsHTML += `<div class="cal-bar" style="background:#10b981;" title="Present"></div>`;
+            }
+
+            const cell = document.createElement('div');
+            let classes = ['cal-day-cell'];
+            if (isToday) classes.push('today');
+            if (isSelected) classes.push('selected');
+            if (isSunday) classes.push('sunday');
+            cell.className = classes.join(' ');
+            cell.setAttribute('data-date', dateStr);
+
+            cell.innerHTML = `
+                <span class="cal-day-num">${day}</span>
+                ${barsHTML ? '<div class="cal-bars-container">' + barsHTML + '</div>' : ''}
+            `;
+
+            cell.onclick = () => {
+                selectUserCalendarDay(dateStr);
+            };
+
+            calContainer.appendChild(cell);
+        }
+
+        // 3. Next Month Dimmed Days
+        const totalCellsSoFar = firstDayIndex + daysInMonth;
+        const totalRows = Math.ceil(totalCellsSoFar / 7);
+        const totalTargetCells = totalRows * 7;
+        const nextDaysCount = totalTargetCells - totalCellsSoFar;
+
+        for (let nextDay = 1; nextDay <= nextDaysCount; nextDay++) {
+            const cell = document.createElement('div');
+            cell.className = 'cal-day-cell dimmed';
+            cell.innerHTML = `<span class="cal-day-num">${nextDay}</span>`;
+            calContainer.appendChild(cell);
+        }
+
+        renderUserCalendarAgenda(selectedUserCalDate || todayStr);
+    }
+
+    function selectUserCalendarDay(dateStr) {
+        selectedUserCalDate = dateStr;
+        document.querySelectorAll('#user-calendar-grid .cal-day-cell').forEach(c => {
+            c.classList.remove('selected');
+            if (c.getAttribute('data-date') === dateStr) {
+                c.classList.add('selected');
+            }
+        });
+        renderUserCalendarAgenda(dateStr);
+    }
+
+    function renderUserCalendarAgenda(dateStr) {
+        const [y, m, d] = dateStr.split('-').map(Number);
+        const dateObj = new Date(y, m - 1, d);
+        const dayNum = d;
+        const dayName = dateObj.toLocaleString('default', { weekday: 'short' }).toUpperCase();
+
+        const numEl = document.getElementById('user-cal-sel-day-num');
+        const nameEl = document.getElementById('user-cal-sel-day-name');
+
+        if (numEl) numEl.textContent = dayNum;
+        if (nameEl) nameEl.textContent = dayName;
+
+        const container = document.getElementById('user-cal-agenda-container');
+        if (!container) return;
+        container.innerHTML = '';
+
+        const myLeaves = currentUser ? Store.getUserLeaves(currentUser.id).filter(l => l.status === 'Approved' && l.startDate <= dateStr && l.endDate >= dateStr) : [];
+        const myAttendance = currentUser ? Store.getAttendance().filter(r => r.userId === currentUser.id && r.date === dateStr) : [];
+        const holidays = Store.getHolidays().filter(h => h.date === dateStr);
+
+        let totalEvents = 0;
+
+        // Holidays
+        holidays.forEach(h => {
+            totalEvents++;
+            const card = document.createElement('div');
+            card.className = 'cal-event-card holiday';
+            card.innerHTML = `
+                <div class="cal-event-icon"><ion-icon name="calendar"></ion-icon></div>
+                <div class="cal-event-info">
+                    <h4>${h.name}</h4>
+                    <p>${h.type || 'Public Holiday'} • Studio Holiday</p>
+                </div>
+                <span class="cal-event-badge" style="background:rgba(16,185,129,0.2); color:#10b981;">Holiday</span>
+            `;
+            container.appendChild(card);
+        });
+
+        // Leaves & WFH
+        myLeaves.forEach(l => {
+            totalEvents++;
+            const isWfh = l.type?.toLowerCase().includes('wfh') || l.type?.toLowerCase().includes('work from home');
+            const isHalf = l.isHalfDay || (l.type || '').toLowerCase().includes('half day');
+
+            const card = document.createElement('div');
+            card.className = `cal-event-card ${isWfh ? 'wfh' : 'leave'}`;
+            card.innerHTML = `
+                <div class="cal-event-icon"><ion-icon name="${isWfh ? 'home' : 'airplane'}"></ion-icon></div>
+                <div class="cal-event-info">
+                    <h4>${isWfh ? 'Work From Home' : l.type}</h4>
+                    <p>Approved ${isHalf ? '• Half Day' : '• Full Day'}</p>
+                </div>
+                <span class="cal-event-badge" style="background:${isWfh ? 'rgba(6,182,212,0.2)' : 'rgba(139,92,246,0.2)'}; color:${isWfh ? '#06b6d4' : '#8b5cf6'};">${isWfh ? 'WFH' : 'Leave'}</span>
+            `;
+            container.appendChild(card);
+        });
+
+        // Attendance Record
+        myAttendance.forEach(a => {
+            totalEvents++;
+            const card = document.createElement('div');
+            card.className = 'cal-event-card';
+            card.innerHTML = `
+                <div class="cal-event-icon" style="background:rgba(37,99,235,0.2); color:#38bdf8;"><ion-icon name="finger-print"></ion-icon></div>
+                <div class="cal-event-info">
+                    <h4>Studio Shift Logged</h4>
+                    <p>In: ${a.checkInTime || '--:--'} • Out: ${a.checkOutTime || 'Active'}</p>
+                </div>
+                <span class="cal-event-badge" style="background:rgba(37,99,235,0.2); color:#38bdf8;">Shift</span>
+            `;
+            container.appendChild(card);
+        });
+
+        if (totalEvents === 0) {
+            container.innerHTML = `
+                <div class="cal-empty-day">
+                    <ion-icon name="calendar-outline" style="font-size:36px; color:#334155; margin-bottom:8px;"></ion-icon>
+                    <h4 style="color:#e2e8f0; margin:0 0 4px 0; font-size:14px;">No Events Scheduled</h4>
+                    <p>No studio holidays, shifts, or planned leaves on this date.</p>
                 </div>
             `;
         }
@@ -608,6 +794,12 @@ document.addEventListener('DOMContentLoaded', () => {
     
     document.getElementById('user-cal-next-btn')?.addEventListener('click', () => {
         currentCalDate.setMonth(currentCalDate.getMonth() + 1);
+        renderUserCalendar();
+    });
+
+    document.getElementById('user-cal-today-btn')?.addEventListener('click', () => {
+        currentCalDate = new Date();
+        selectedUserCalDate = getTodayDateString();
         renderUserCalendar();
     });
 

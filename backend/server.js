@@ -1,16 +1,22 @@
 const express = require('express');
 const cors = require('cors');
-const { Pool } = require('pg');
+const { Pool, types } = require('pg');
 const { createServer } = require('http');
 const { Server } = require('socket.io');
 
+// Return TIMESTAMP (1114) and DATE (1082) as raw strings to avoid local timezone offset mangling
+types.setTypeParser(1114, str => str);
+types.setTypeParser(1082, str => str);
+
 const app = express();
+const path = require('path');
 const httpServer = createServer(app);
 const io = new Server(httpServer, {
   cors: { origin: '*', methods: ['GET', 'POST'] }
 });
 app.use(cors());
 app.use(express.json());
+app.use(express.static(path.join(__dirname, '..')));
 
 const pool = new Pool({
   user: process.env.POSTGRES_USER || 'attendance_admin',
@@ -63,6 +69,61 @@ async function tableExists(tableName) {
   );
 
   return result.rowCount > 0;
+}
+
+function formatDBTimeToIST(timeVal) {
+  if (!timeVal || timeVal === '-' || timeVal === '--:--') return null;
+  const str = (timeVal instanceof Date) ? timeVal.toISOString() : String(timeVal).trim();
+  const match = str.match(/(\d{4}-\d{2}-\d{2})[T\s](\d{1,2}):(\d{2})(?::(\d{2}))?/);
+  if (match) {
+    let h = parseInt(match[2], 10);
+    let m = parseInt(match[3], 10);
+    if (h <= 16) {
+      const totalMins = h * 60 + m + 330;
+      h = Math.floor(totalMins / 60) % 24;
+      m = totalMins % 60;
+    }
+    const ampm = h >= 12 ? 'PM' : 'AM';
+    const h12 = h > 12 ? h - 12 : (h === 0 ? 12 : h);
+    return `${h12}:${String(m).padStart(2, '0')} ${ampm}`;
+  }
+  const tMatch = str.replace(/\s*\(.*?\)\s*/g, '').trim().match(/^(\d{1,2}):(\d{2})(?::\d{2})?\s*(am|pm)?$/i);
+  if (tMatch) {
+    let h = parseInt(tMatch[1], 10);
+    const m = parseInt(tMatch[2], 10);
+    const ampm = tMatch[3]?.toLowerCase();
+    if (ampm === 'pm' && h < 12) h += 12;
+    if (ampm === 'am' && h === 12) h = 0;
+    const h12 = h > 12 ? h - 12 : (h === 0 ? 12 : h);
+    return `${h12}:${String(m).padStart(2, '0')} ${h >= 12 ? 'PM' : 'AM'}`;
+  }
+  return null;
+}
+
+function parseDBTimeToDecimalIST(timeVal) {
+  if (!timeVal || timeVal === '-' || timeVal === '--:--') return null;
+  const str = (timeVal instanceof Date) ? timeVal.toISOString() : String(timeVal).trim();
+  const match = str.match(/(\d{4}-\d{2}-\d{2})[T\s](\d{1,2}):(\d{2})(?::(\d{2}))?/);
+  if (match) {
+    let h = parseInt(match[2], 10);
+    let m = parseInt(match[3], 10);
+    if (h <= 16) {
+      const totalMins = h * 60 + m + 330;
+      h = Math.floor(totalMins / 60) % 24;
+      m = totalMins % 60;
+    }
+    return Math.round((h + m / 60) * 100) / 100;
+  }
+  const tMatch = str.replace(/\s*\(.*?\)\s*/g, '').trim().match(/^(\d{1,2}):(\d{2})(?::\d{2})?\s*(am|pm)?$/i);
+  if (tMatch) {
+    let h = parseInt(tMatch[1], 10);
+    const m = parseInt(tMatch[2], 10);
+    const ampm = tMatch[3]?.toLowerCase();
+    if (ampm === 'pm' && h < 12) h += 12;
+    if (ampm === 'am' && h === 12) h = 0;
+    return Math.round((h + m / 60) * 100) / 100;
+  }
+  return null;
 }
 
 async function getAdminToken() {
@@ -247,8 +308,8 @@ app.get('/api/sync/store', async (req, res) => {
         holidays: dates.rows,
         attendance: attendance.rows.map(a => ({
           ...a,
-          checkInTime: a.checkInTime ? new Date(a.checkInTime).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Kolkata' }) : null,
-          checkOutTime: a.checkOutTime ? new Date(a.checkOutTime).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Kolkata' }) : null
+          checkInTime: formatDBTimeToIST(a.checkInTime),
+          checkOutTime: formatDBTimeToIST(a.checkOutTime)
         }))
     });
   } catch (err) {
@@ -769,10 +830,9 @@ app.put('/api/slack/settings', async (req, res) => {
 
 // 10b. Overtime Report (Admin)
 app.get('/api/overtime', async (req, res) => {
-    const { from, to, userIds } = req.query;
-    if (!from || !to) {
-        return res.status(400).json({ error: 'from and to query params required' });
-    }
+    const from = req.query.from || req.query.startDate || new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString().split('T')[0];
+    const to = req.query.to || req.query.endDate || new Date().toISOString().split('T')[0];
+    const { userIds } = req.query;
     try {
         let userFilter = '';
         const params = [from, to];
@@ -882,6 +942,7 @@ app.get('/api/overtime', async (req, res) => {
 
         res.json({
             records,
+            sessions: records,
             summary: {
                 totalOvertimeMinutes,
                 totalOvertimeFormatted: `${Math.floor(totalOvertimeMinutes / 60)}h ${totalOvertimeMinutes % 60}m`,
@@ -922,22 +983,25 @@ app.get('/api/users/:id/history', async (req, res) => {
         `, [userId]);
 
         // Format attendance times to IST
-        const formattedAttendance = attendance.rows.map(a => ({
-            ...a,
-            checkInTime: a.checkInTime ? new Date(a.checkInTime).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Kolkata' }) : null,
-            checkOutTime: a.checkOutTime ? new Date(a.checkOutTime).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Kolkata' }) : null,
-            // Compute hours worked from raw timestamps
-            hoursWorked: (a.checkInTime && a.checkOutTime) ? ((new Date(a.checkOutTime) - new Date(a.checkInTime)) / (1000 * 60 * 60)).toFixed(1) : null,
-            // Late login flag: check-in after 11:00 AM IST
-            isLateLogin: a.checkInTime ? (() => {
-                const checkIn = new Date(a.checkInTime);
-                const istHour = parseInt(checkIn.toLocaleTimeString('en-IN', { hour: '2-digit', hour12: false, timeZone: 'Asia/Kolkata' }));
-                const istMin = parseInt(checkIn.toLocaleTimeString('en-IN', { minute: '2-digit', timeZone: 'Asia/Kolkata' }));
-                return (istHour > 11 || (istHour === 11 && istMin > 0));
-            })() : false,
-            // Early checkout flag: checkout before 6 PM IST (less than 8 hours)
-            isEarlyLogout: (a.checkInTime && a.checkOutTime) ? ((new Date(a.checkOutTime) - new Date(a.checkInTime)) / (1000 * 60 * 60) < 8) : false
-        }));
+        const formattedAttendance = attendance.rows.map(a => {
+            const inDec = parseDBTimeToDecimalIST(a.checkInTime);
+            const outDec = parseDBTimeToDecimalIST(a.checkOutTime);
+            let hrs = null;
+            if (inDec !== null && outDec !== null && outDec > inDec) {
+                hrs = (outDec - inDec).toFixed(1);
+            }
+
+            return {
+                ...a,
+                checkInTime: formatDBTimeToIST(a.checkInTime),
+                checkOutTime: formatDBTimeToIST(a.checkOutTime),
+                hoursWorked: hrs,
+                // Late login: checked in after 11:00 AM IST
+                isLateLogin: inDec !== null ? (inDec > 11.0) : false,
+                // Early checkout: worked less than 8 hours
+                isEarlyLogout: (hrs !== null && parseFloat(hrs) < 8.0)
+            };
+        });
 
         // Capitalize leave statuses for frontend
         const formattedLeaves = leaves.rows.map(l => ({
@@ -1413,11 +1477,14 @@ app.get('/api/biometric/device/poll', (req, res) => {
 
 app.get('/api/biometric/device/status', (req, res) => {
   const isOnline = lastDeviceHeartbeat && (Date.now() - lastDeviceHeartbeat < 15000);
+  const lastSeen = lastDeviceHeartbeat;
+  const activeEnroll = activeEnrollment;
+
   res.json({
     success: true,
     online: !!isOnline,
-    last_seen: lastDeviceHeartbeat,
-    active_enrollment: activeEnrollment
+    last_seen: lastSeen,
+    active_enrollment: activeEnroll
   });
 });
 
@@ -1625,6 +1692,14 @@ async function runMigrations() {
         console.error('Migration error:', err);
     }
 }
+
+// Fallback for SPA routing
+app.get('*', (req, res, next) => {
+    if (req.path.startsWith('/api') || req.path.startsWith('/socket.io')) {
+        return next();
+    }
+    res.sendFile(path.join(__dirname, '../index.html'));
+});
 
 // Startup
 const PORT = process.env.PORT || 4000;

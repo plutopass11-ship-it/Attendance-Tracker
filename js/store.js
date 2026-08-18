@@ -1,33 +1,97 @@
-// store.js
+// store.js - Client State & LocalStorage Management
 const INITIAL_DATA_KEY = 'attendance_app_v2';
 
-// No dummy data needed
-const defaultLeaveTypes = [];
-const defaultUsers = [];
-const defaultHolidays = [];
+// 1. Rich Default Users
+const defaultUsers = [
+    { id: 'u_joel', name: 'Joel Robert', email: 'joel@flyingpluto.ai', role: 'admin', department: 'Management / Direction', active: true },
+    { id: 'u_albert', name: 'Albert', email: 'albert@flyingpluto.ai', role: 'admin', department: 'Management / Production', active: true },
+    { id: 'u_joyel', name: 'Joyel', email: 'joyel@flyingpluto.ai', role: 'admin', department: 'Management / Operations', active: true },
+    { id: 'u_rahul', name: 'Rahul Sharma', email: 'rahul@flyingpluto.ai', role: 'employee', department: '3D Animation', active: true },
+    { id: 'u_priya', name: 'Priya Nair', email: 'priya@flyingpluto.ai', role: 'employee', department: 'Compositing & VFX', active: true },
+    { id: 'u_arun', name: 'Arun Kumar', email: 'arun@flyingpluto.ai', role: 'employee', department: 'FX & Simulation', active: true },
+    { id: 'u_ananya', name: 'Ananya Rao', email: 'ananya@flyingpluto.ai', role: 'employee', department: 'Lighting & Lookdev', active: true },
+    { id: 'u_deepak', name: 'Deepak V', email: 'deepak@flyingpluto.ai', role: 'employee', department: 'Rigging', active: true },
+    { id: 'u_sneha', name: 'Sneha Menon', email: 'sneha@flyingpluto.ai', role: 'employee', department: 'Production Coordinator', active: true },
+    { id: 'u_vikram', name: 'Vikram Singh', email: 'vikram@flyingpluto.ai', role: 'employee', department: 'Pipeline TD', active: true }
+];
+
+// 2. Rich Default Leave Policies
+const defaultLeaveTypes = [
+    { id: '1', name: 'Casual Leave', limit: 12, cycle: 'yearly' },
+    { id: '2', name: 'Sick Leave', limit: 8, cycle: 'yearly' },
+    { id: '3', name: 'Annual Leave', limit: 15, cycle: 'yearly' },
+    { id: '4', name: 'Work From Home (WFH)', limit: 24, cycle: 'yearly' },
+    { id: '5', name: 'Compensatory Off', limit: 5, cycle: 'yearly' }
+];
+
+const defaultHolidays = [
+    { id: 1, date: '2026-01-01', name: "New Year's Day", type: 'Public' },
+    { id: 2, date: '2026-01-26', name: 'Republic Day', type: 'Public' },
+    { id: 3, date: '2026-08-15', name: 'Independence Day', type: 'Public' },
+    { id: 4, date: '2026-10-02', name: 'Gandhi Jayanti', type: 'Public' },
+    { id: 5, date: '2026-12-25', name: 'Christmas', type: 'Public' }
+];
+
 const GLOBAL_QUOTA = 3;
-const defaultLeaves = [];
 const isWfhAttendanceStatus = (status) => typeof status === 'string' && status.startsWith('wfh_');
 
+// Helper to get today's local date string YYYY-MM-DD
+function getLocalTodayStr() {
+    const d = new Date();
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
+const todayStrVal = getLocalTodayStr();
+
+const defaultLeaves = [
+    { id: '101', userId: 'u_sneha', type: 'Sick Leave', startDate: todayStrVal, endDate: todayStrVal, reason: 'Viral fever and doctor consultation', status: 'Approved' },
+    { id: '102', userId: 'u_rahul', type: 'Annual Leave', startDate: '2026-08-20', endDate: '2026-08-22', reason: 'Family vacation trip', status: 'Pending' },
+    { id: '103', userId: 'u_arun', type: 'Casual Leave', startDate: '2026-08-10', endDate: '2026-08-10', reason: 'Personal appointment', status: 'Approved' }
+];
+
+const defaultAttendance = [
+    { id: 1, userId: 'u_joel', date: todayStrVal, checkInTime: '09:15 AM', checkOutTime: null, status: 'working', isWfh: false },
+    { id: 2, userId: 'u_rahul', date: todayStrVal, checkInTime: '09:30 AM', checkOutTime: null, status: 'working', isWfh: false },
+    { id: 3, userId: 'u_priya', date: todayStrVal, checkInTime: '10:05 AM', checkOutTime: null, status: 'wfh_working', isWfh: true },
+    { id: 4, userId: 'u_arun', date: todayStrVal, checkInTime: '11:25 AM', checkOutTime: null, status: 'working', isWfh: false },
+    { id: 5, userId: 'u_ananya', date: todayStrVal, checkInTime: '09:00 AM', checkOutTime: '06:15 PM', status: 'completed', isWfh: false },
+    { id: 6, userId: 'u_deepak', date: todayStrVal, checkInTime: '09:45 AM', checkOutTime: '03:30 PM', status: 'pending_early_clockout', isWfh: false }
+];
+
 function initDB() {
-    if (!localStorage.getItem('v4_wfh_clear')) {
+    const existingUsers = JSON.parse(localStorage.getItem('users') || '[]');
+    if (!existingUsers || existingUsers.length === 0) {
         localStorage.setItem('users', JSON.stringify(defaultUsers));
         localStorage.setItem('holidays', JSON.stringify(defaultHolidays));
-        localStorage.setItem('attendance', JSON.stringify([]));
+        localStorage.setItem('attendance', JSON.stringify(defaultAttendance));
         localStorage.setItem('leaves', JSON.stringify(defaultLeaves));
         localStorage.setItem('leaveTypes', JSON.stringify(defaultLeaveTypes));
         localStorage.setItem('extraOff', JSON.stringify({}));
-        localStorage.setItem('v4_wfh_clear', 'true');
     }
 }
 
 const Store = {
     // Read with fallbacks
-    getUsers: () => JSON.parse(localStorage.getItem('users')) || defaultUsers,
-    getHolidays: () => JSON.parse(localStorage.getItem('holidays')) || defaultHolidays,
-    getAttendance: () => JSON.parse(localStorage.getItem('attendance')) || [],
-    getLeaves: () => JSON.parse(localStorage.getItem('leaves')) || [],
-    getLeaveTypes: () => JSON.parse(localStorage.getItem('leaveTypes')) || defaultLeaveTypes,
+    getUsers: () => {
+        const u = JSON.parse(localStorage.getItem('users') || '[]');
+        return u && u.length > 0 ? u : defaultUsers;
+    },
+    getHolidays: () => {
+        const h = JSON.parse(localStorage.getItem('holidays') || '[]');
+        return h && h.length > 0 ? h : defaultHolidays;
+    },
+    getAttendance: () => {
+        const a = JSON.parse(localStorage.getItem('attendance') || '[]');
+        return a && a.length > 0 ? a : defaultAttendance;
+    },
+    getLeaves: () => {
+        const l = JSON.parse(localStorage.getItem('leaves') || '[]');
+        return l && l.length > 0 ? l : defaultLeaves;
+    },
+    getLeaveTypes: () => {
+        const lt = JSON.parse(localStorage.getItem('leaveTypes') || '[]');
+        return lt && lt.length > 0 ? lt : defaultLeaveTypes;
+    },
     
     // Auth
     getUserById: (id) => Store.getUsers().find(u => u.id === id),

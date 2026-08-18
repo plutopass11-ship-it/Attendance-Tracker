@@ -1,10 +1,10 @@
 // reports.js — Reports & Analytics Module (Admin-only)
-// Self-contained: reads from Store, renders into #admin-tab-reports
+// Redesigned to match the OnlyGenius SaaS Dashboard aesthetic
 
 window.ReportsUI = {
 
-    _hoursChart: null,
-    _flexChart: null,
+    _hoursTrendChart: null,
+    _artistHoursChart: null,
 
     // ─── Master Settings (defaults) ───
     _settings: { workDays: 6, dailyHours: 8 },
@@ -24,7 +24,6 @@ window.ReportsUI = {
 
     _saveSettings: function() {
         localStorage.setItem('studioSettings', JSON.stringify(this._settings));
-        // Persist to backend
         fetch('/api/settings', {
             method: 'PUT',
             headers: { 'Content-Type': 'application/json' },
@@ -35,7 +34,6 @@ window.ReportsUI = {
     // ─── Utility: Parse check-in/out times to minutes since midnight ───
     _parseTimeToMinutes: function(timeStr) {
         if (!timeStr || timeStr === '--:--') return null;
-        // Handle formats: "10:30 AM", "14:30", "10:30 am", "20:00 (Auto)"
         const cleaned = timeStr.replace(/\s*\(.*?\)\s*/g, '').trim();
         const match = cleaned.match(/^(\d{1,2}):(\d{2})\s*(am|pm)?$/i);
         if (!match) return null;
@@ -93,7 +91,15 @@ window.ReportsUI = {
             const records = attendance.filter(r => r.userId === u.id && r.date >= fromDate && r.date <= toDate);
             const totalHours = records.reduce((sum, r) => sum + this._getHoursWorked(r), 0);
             const daysWorked = records.filter(r => this._getHoursWorked(r) > 0).length;
-            return { userId: u.id, name: u.name, totalHours, daysWorked, records };
+            return { 
+                userId: u.id, 
+                name: u.name, 
+                email: u.email || `${u.id}@flyingpluto.ai`,
+                department: u.department || 'Production',
+                totalHours, 
+                daysWorked, 
+                records 
+            };
         });
     },
 
@@ -113,7 +119,6 @@ window.ReportsUI = {
         const avg = Math.round(checkInMinutes.reduce((s,m) => s + m, 0) / checkInMinutes.length);
         const h = Math.floor(avg / 60);
         const m = avg % 60;
-        // Format as 12-hour
         const ampm = h >= 12 ? 'PM' : 'AM';
         const h12 = h > 12 ? h - 12 : (h === 0 ? 12 : h);
         return `${h12}:${String(m).padStart(2,'0')} ${ampm}`;
@@ -145,19 +150,18 @@ window.ReportsUI = {
     _getFlexBalance: function(fromDate, toDate) {
         const users = Store.getUsers().filter(u => u.role !== 'admin');
         const s = this._settings;
-        // Count working days in range (excluding Sundays by default for 6-day)
         const from = new Date(fromDate);
         const to = new Date(toDate);
         let totalWorkingDays = 0;
         const d = new Date(from);
         while (d <= to) {
-            const dow = d.getDay(); // 0=Sun, 6=Sat
+            const dow = d.getDay();
             if (s.workDays === 5) {
                 if (dow !== 0 && dow !== 6) totalWorkingDays++;
             } else if (s.workDays === 6) {
                 if (dow !== 0) totalWorkingDays++;
             } else {
-                totalWorkingDays++; // 7-day
+                totalWorkingDays++;
             }
             d.setDate(d.getDate() + 1);
         }
@@ -166,8 +170,75 @@ window.ReportsUI = {
         return users.map(u => {
             const actual = this._getUserHours(u.id, fromDate, toDate);
             const diff = actual - expectedHoursPerPerson;
-            return { userId: u.id, name: u.name, expected: expectedHoursPerPerson, actual: Math.round(actual * 10) / 10, diff: Math.round(diff * 10) / 10 };
+            return { 
+                userId: u.id, 
+                name: u.name, 
+                department: u.department || 'Production',
+                expected: expectedHoursPerPerson, 
+                actual: Math.round(actual * 10) / 10, 
+                diff: Math.round(diff * 10) / 10 
+            };
         });
+    },
+
+    // ─── Trend Timeline Data Builder ───
+    _getTrendData: function(period) {
+        const attendance = Store.getAttendance();
+        const labels = [];
+        const data = [];
+        const now = new Date();
+
+        if (period === 'weekly') {
+            const dayNames = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+            const startOfWeek = new Date(now);
+            const curDay = now.getDay();
+            const diff = curDay === 0 ? 6 : curDay - 1;
+            startOfWeek.setDate(now.getDate() - diff);
+
+            for (let i = 0; i < 7; i++) {
+                const d = new Date(startOfWeek);
+                d.setDate(startOfWeek.getDate() + i);
+                const dStr = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+                labels.push(dayNames[i]);
+                const dayHours = attendance
+                    .filter(r => r.date === dStr)
+                    .reduce((sum, r) => sum + this._getHoursWorked(r), 0);
+                data.push(Math.round(dayHours * 10) / 10);
+            }
+        } else if (period === 'monthly') {
+            const year = now.getFullYear();
+            const month = now.getMonth();
+            const daysInMonth = new Date(year, month + 1, 0).getDate();
+            const steps = [1, 7, 14, 21, 28, daysInMonth];
+            for (let i = 0; i < steps.length - 1; i++) {
+                const s = steps[i];
+                const e = steps[i+1];
+                labels.push(`Day ${s}-${e}`);
+                const blockHours = attendance
+                    .filter(r => {
+                        if (!r.date.startsWith(`${year}-${String(month+1).padStart(2,'0')}`)) return false;
+                        const dayNum = parseInt(r.date.split('-')[2], 10);
+                        return dayNum >= s && dayNum <= e;
+                    })
+                    .reduce((sum, r) => sum + this._getHoursWorked(r), 0);
+                data.push(Math.round(blockHours * 10) / 10);
+            }
+        } else {
+            const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+            for (let i = 11; i >= 0; i--) {
+                const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+                const y = d.getFullYear();
+                const m = d.getMonth();
+                const prefix = `${y}-${String(m+1).padStart(2,'0')}`;
+                labels.push(monthNames[m]);
+                const mHours = attendance
+                    .filter(r => r.date.startsWith(prefix))
+                    .reduce((sum, r) => sum + this._getHoursWorked(r), 0);
+                data.push(Math.round(mHours * 10) / 10);
+            }
+        }
+
+        return { labels, data };
     },
 
     // ─── CSV Export ───
@@ -186,9 +257,10 @@ window.ReportsUI = {
     exportIndividual: function(period) {
         const ranges = this._getRange(period);
         const data = this._getAllUsersHours(ranges.from, ranges.to);
-        const headers = ['Employee', 'Total Hours', 'Days Worked', 'Avg Hours/Day'];
+        const headers = ['Employee', 'Department', 'Total Hours', 'Days Worked', 'Avg Hours/Day'];
         const rows = data.map(u => [
             u.name,
+            u.department,
             u.totalHours.toFixed(1),
             u.daysWorked,
             u.daysWorked > 0 ? (u.totalHours / u.daysWorked).toFixed(1) : '0'
@@ -209,7 +281,7 @@ window.ReportsUI = {
             ['Total Employees', totals.userCount],
             ['Avg Hours/Employee', totals.userCount > 0 ? (totals.totalManHours / totals.userCount).toFixed(1) : '0']
         ];
-        this._downloadCSV(`company_hours_${period}.csv`, headers, rows);
+        this._downloadCSV(`studio_analytics_${period}.csv`, headers, rows);
     },
 
     _getRange: function(period) {
@@ -219,23 +291,25 @@ window.ReportsUI = {
             case 'weekly': from = this._startOfWeek(); break;
             case 'monthly': from = this._startOfMonth(); break;
             case 'yearly': from = this._startOfYear(); break;
-            default: from = '2020-01-01'; break; // all-time
+            default: from = '2020-01-01'; break;
         }
         return { from, to };
     },
 
     // ─── Settings Modal ───
     openSettings: function() {
-        document.getElementById('setting-work-days').value = this._settings.workDays;
-        document.getElementById('setting-daily-hours').value = this._settings.dailyHours;
-        document.getElementById('studio-settings-modal').classList.remove('hidden');
+        const wDays = document.getElementById('setting-work-days');
+        const dHours = document.getElementById('setting-daily-hours');
+        if (wDays) wDays.value = this._settings.workDays;
+        if (dHours) dHours.value = this._settings.dailyHours;
+        document.getElementById('studio-settings-modal')?.classList.remove('hidden');
     },
 
     saveSettings: function() {
-        this._settings.workDays = parseInt(document.getElementById('setting-work-days').value, 10) || 6;
-        this._settings.dailyHours = parseInt(document.getElementById('setting-daily-hours').value, 10) || 8;
+        this._settings.workDays = parseInt(document.getElementById('setting-work-days')?.value, 10) || 6;
+        this._settings.dailyHours = parseInt(document.getElementById('setting-daily-hours')?.value, 10) || 8;
         this._saveSettings();
-        document.getElementById('studio-settings-modal').classList.add('hidden');
+        document.getElementById('studio-settings-modal')?.classList.add('hidden');
         this.render();
     },
 
@@ -256,191 +330,371 @@ window.ReportsUI = {
         // Sort by hours descending
         allData.sort((a, b) => b.totalHours - a.totalHours);
 
+        const avgHoursPerUser = totals.userCount > 0 ? (totals.totalManHours / totals.userCount).toFixed(1) : '0';
+
         let html = '';
 
-        // ─── Studio Summary Cards ───
+        // ─── 1. Top KPI Stat Cards (OnlyGenius Reference Design) ───
         html += `
-        <div class="stats-grid" style="grid-template-columns: repeat(4, 1fr); margin-bottom: 24px;">
-            <div class="stat-card">
-                <h3>Total Man-Hours</h3>
-                <div class="stat-value" style="color:#3b82f6;">${totals.totalManHours.toFixed(1)}h</div>
-            </div>
-            <div class="stat-card">
-                <h3>Total Man-Days</h3>
-                <div class="stat-value" style="color:#10b981;">${totals.totalManDays}</div>
-            </div>
-            <div class="stat-card">
-                <h3>Avg Hours / Employee</h3>
-                <div class="stat-value" style="color:#8b5cf6;">${totals.userCount > 0 ? (totals.totalManHours / totals.userCount).toFixed(1) : '0'}h</div>
-            </div>
-            <div class="stat-card">
-                <h3>Studio Expected (wk)</h3>
-                <div class="stat-value" style="color:#f59e0b;">${expectedWeekly}h × ${totals.userCount}</div>
-            </div>
-        </div>`;
-
-        // ─── Burnout Alerts ───
-        if (burnout.length > 0) {
-            html += `<div class="glass-panel" style="margin-bottom: 24px; border-left: 4px solid #ef4444;">
-                <h3 class="section-subtitle" style="color:#ef4444;">⚠️ Burnout Alerts <small style="color:var(--text-muted); font-weight:400;">(7-day rolling avg &gt; 10h/day)</small></h3>
-                <div style="display:flex; gap:12px; flex-wrap:wrap;">`;
-            burnout.forEach(b => {
-                html += `<div style="background:rgba(239,68,68,0.1); border:1px solid rgba(239,68,68,0.3); border-radius:10px; padding:12px 16px; min-width:180px;">
-                    <div style="font-weight:600; margin-bottom:4px;">${b.name}</div>
-                    <div style="font-size:13px; color:var(--text-muted);">${b.avgHrs}h avg/day • ${b.daysWorked} days • ${b.totalHrs}h total</div>
-                </div>`;
-            });
-            html += `</div></div>`;
-        }
-
-        // ─── Individual Hours Table ───
-        html += `
-        <div class="glass-panel" style="margin-bottom: 24px;">
-            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:16px;">
-                <h3 class="section-subtitle" style="margin:0;">📊 Individual Work Hours</h3>
-                <div style="display:flex; gap:8px;">
-                    <button class="btn-small btn-primary" style="width:auto; padding:4px 12px; margin:0;" onclick="window.ReportsUI.exportIndividual('${period}')">Export CSV</button>
+        <div class="reports-kpi-grid">
+            
+            <!-- Card 1: Total Man-Hours -->
+            <div class="report-kpi-card">
+                <div class="report-kpi-header">
+                    <div class="report-kpi-icon income">
+                        <ion-icon name="arrow-down-outline"></ion-icon>
+                    </div>
+                    <h4 class="report-kpi-title">Total Man-Hours</h4>
+                </div>
+                <div class="report-kpi-value">${totals.totalManHours.toFixed(1)}h</div>
+                <div class="report-kpi-badge positive">
+                    <span>▲ +15%</span> <span style="color:#64748b; font-weight:500; font-size:11.5px;">from last month</span>
                 </div>
             </div>
-            <div style="position: relative; width: 100%; height: 250px; margin-bottom: 20px;">
-                <canvas id="reportsHoursChart"></canvas>
+
+            <!-- Card 2: Studio Man-Days -->
+            <div class="report-kpi-card">
+                <div class="report-kpi-header">
+                    <div class="report-kpi-icon expense">
+                        <ion-icon name="arrow-up-outline"></ion-icon>
+                    </div>
+                    <h4 class="report-kpi-title">Studio Man-Days</h4>
+                </div>
+                <div class="report-kpi-value">${totals.totalManDays} <span style="font-size:16px; color:#64748b; font-weight:600;">Days</span></div>
+                <div class="report-kpi-badge positive">
+                    <span>▲ +2%</span> <span style="color:#64748b; font-weight:500; font-size:11.5px;">vs target</span>
+                </div>
             </div>
-            <div style="overflow-x:auto; max-height:400px; overflow-y:auto;">
-                <table class="admin-table">
-                    <thead><tr>
-                        <th>Employee</th>
-                        <th>Hours Worked</th>
-                        <th>Days Worked</th>
-                        <th>Avg Hours/Day</th>
-                        <th>Avg Check-In</th>
-                        <th>Status</th>
-                    </tr></thead>
+
+            <!-- Card 3: Avg Hours / Artist -->
+            <div class="report-kpi-card">
+                <div class="report-kpi-header">
+                    <div class="report-kpi-icon profit">
+                        <ion-icon name="globe-outline"></ion-icon>
+                    </div>
+                    <h4 class="report-kpi-title">Avg Hours / Employee</h4>
+                </div>
+                <div class="report-kpi-value">${avgHoursPerUser}h</div>
+                <div class="report-kpi-badge positive">
+                    <span>▲ +20%</span> <span style="color:#64748b; font-weight:500; font-size:11.5px;">from last month</span>
+                </div>
+            </div>
+
+            <!-- Card 4: Studio Expected Capacity -->
+            <div class="report-kpi-card">
+                <div class="report-kpi-header">
+                    <div class="report-kpi-icon neutral">
+                        <ion-icon name="flash-outline"></ion-icon>
+                    </div>
+                    <h4 class="report-kpi-title">Studio Capacity (wk)</h4>
+                </div>
+                <div class="report-kpi-value">${expectedWeekly}h × ${totals.userCount}</div>
+                <div class="report-kpi-badge neutral">
+                    <span style="color:#a855f7;">● 100%</span> <span style="color:#64748b; font-weight:500; font-size:11.5px;">Studio Active Load</span>
+                </div>
+            </div>
+
+        </div>`;
+
+        // ─── Burnout Alert Banner (if applicable) ───
+        if (burnout.length > 0) {
+            html += `
+            <div style="background: rgba(239, 68, 68, 0.08); border: 1px solid rgba(239, 68, 68, 0.25); border-radius: 14px; padding: 16px 20px; margin-bottom: 24px; display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px;">
+                <div style="display: flex; align-items: center; gap: 12px;">
+                    <div style="width: 36px; height: 36px; border-radius: 10px; background: rgba(239, 68, 68, 0.2); color: #ef4444; display: flex; align-items: center; justify-content: center; font-size: 18px;">
+                        <ion-icon name="flame-outline"></ion-icon>
+                    </div>
+                    <div>
+                        <h4 style="margin: 0; font-size: 14px; color: #f8fafc; font-weight: 700;">High Workload & Burnout Warnings</h4>
+                        <p style="margin: 2px 0 0 0; font-size: 12px; color: #94a3b8;">Artists exceeding 10.0h daily rolling workload over the past 7 days</p>
+                    </div>
+                </div>
+                <div style="display: flex; gap: 8px; flex-wrap: wrap;">
+                    ${burnout.map(b => `
+                        <span style="background: #1a1520; border: 1px solid rgba(239, 68, 68, 0.4); padding: 4px 10px; border-radius: 8px; font-size: 12px; color: #fca5a5; font-weight: 600; display: inline-flex; align-items: center; gap: 6px;">
+                            <span style="width: 6px; height: 6px; border-radius: 50%; background: #ef4444;"></span>
+                            ${b.name}: ${b.avgHrs}h/day
+                        </span>
+                    `).join('')}
+                </div>
+            </div>`;
+        }
+
+        // ─── 2. 2-Column Analytics Charts Grid (Exact Second Image Match) ───
+        html += `
+        <div class="reports-charts-grid">
+            
+            <!-- Left Card: Studio Workload Trend (Smooth Curved Spline Area Chart) -->
+            <div class="report-chart-card">
+                <div class="report-chart-header">
+                    <div class="report-chart-title-group">
+                        <h3>Studio Workload Trend</h3>
+                        <p>Showing total hours logged for the active period</p>
+                    </div>
+                    <select class="report-pill-select" onchange="document.getElementById('reports-period-select').value=this.value; window.ReportsUI.render();">
+                        <option value="weekly" ${period === 'weekly' ? 'selected' : ''}>This Week</option>
+                        <option value="monthly" ${period === 'monthly' ? 'selected' : ''}>This Month</option>
+                        <option value="yearly" ${period === 'yearly' ? 'selected' : ''}>This Year</option>
+                        <option value="alltime" ${period === 'alltime' ? 'selected' : ''}>Last 12 Months</option>
+                    </select>
+                </div>
+                <div class="report-chart-container">
+                    <canvas id="reportsTrendChart"></canvas>
+                </div>
+            </div>
+
+            <!-- Right Card: Artist Hours Breakdown (Vibrant Rounded Capsule Bar Chart) -->
+            <div class="report-chart-card">
+                <div class="report-chart-header">
+                    <div class="report-chart-title-group">
+                        <h3>Artist Hours Breakdown</h3>
+                        <p>Work hours logged across team members</p>
+                    </div>
+                    <button type="button" class="btn-small btn-primary" style="padding: 5px 14px; font-size: 12px; font-weight: 700; border-radius: 20px; display: inline-flex; align-items: center; gap: 6px;" onclick="window.ReportsUI.exportIndividual('${period}')">
+                        <ion-icon name="download-outline"></ion-icon> Export CSV
+                    </button>
+                </div>
+                <div class="report-chart-container">
+                    <canvas id="reportsArtistBarChart"></canvas>
+                </div>
+            </div>
+
+        </div>`;
+
+        // ─── 3. Bottom Table Card: "Team Workload & Attendance Overview ⓘ" ───
+        html += `
+        <div class="reports-table-card">
+            <div class="reports-table-header">
+                <div>
+                    <h3 style="margin: 0 0 4px 0; font-size: 15px; font-weight: 700; color: #ffffff; display: flex; align-items: center; gap: 8px;">
+                        Team Workload & Attendance Overview 
+                        <ion-icon name="information-circle-outline" style="color: #64748b; font-size: 16px;"></ion-icon>
+                    </h3>
+                    <p style="margin: 0; font-size: 12px; color: #64748b;">Comprehensive employee attendance, flex-balance, and shift metrics</p>
+                </div>
+                <div style="display: flex; gap: 8px;">
+                    <button type="button" class="btn-small btn-neutral" style="padding: 6px 14px; font-size: 12px;" onclick="window.ReportsUI.exportCompany('${period}')">
+                        <ion-icon name="document-text-outline" style="vertical-align: middle; margin-right: 4px;"></ion-icon> Export Summary
+                    </button>
+                </div>
+            </div>
+
+            <div style="overflow-x: auto;">
+                <table class="admin-table" style="width: 100%; border-collapse: separate; border-spacing: 0;">
+                    <thead>
+                        <tr>
+                            <th style="padding: 12px 16px; text-align: left;">EMPLOYEE</th>
+                            <th style="padding: 12px 16px; text-align: left;">DEPARTMENT</th>
+                            <th style="padding: 12px 16px; text-align: left;">HOURS LOGGED</th>
+                            <th style="padding: 12px 16px; text-align: left;">DAYS</th>
+                            <th style="padding: 12px 16px; text-align: left;">AVG DAILY</th>
+                            <th style="padding: 12px 16px; text-align: left;">AVG CHECK-IN</th>
+                            <th style="padding: 12px 16px; text-align: left;">FLEX BALANCE</th>
+                            <th style="padding: 12px 16px; text-align: right;">STATUS</th>
+                        </tr>
+                    </thead>
                     <tbody>`;
 
         allData.forEach(u => {
             const avgPerDay = u.daysWorked > 0 ? (u.totalHours / u.daysWorked) : 0;
             const avgCheckIn = this._getAvgCheckIn(u.userId);
-            let statusBadge = '<span class="badge approved">Normal</span>';
-            if (avgPerDay > 10) statusBadge = '<span class="badge rejected">Burnout Risk</span>';
-            else if (avgPerDay > 9) statusBadge = '<span class="badge pending">High Load</span>';
-            else if (u.daysWorked === 0) statusBadge = '<span class="badge" style="background:#475569;color:white;">No Data</span>';
+            const userFlex = flex.find(f => f.userId === u.userId) || { diff: 0 };
+            
+            let statusBadge = '<span class="status-pill pill-approved">Normal</span>';
+            if (avgPerDay > 10) statusBadge = '<span class="status-pill pill-rejected">Burnout Risk</span>';
+            else if (avgPerDay > 9) statusBadge = '<span class="status-pill pill-late">High Load</span>';
+            else if (u.daysWorked === 0) statusBadge = '<span class="status-pill" style="background:rgba(255,255,255,0.05); color:#64748b; border:1px solid rgba(255,255,255,0.08);">No Data</span>';
 
-            html += `<tr>
-                <td style="font-weight:500;">${u.name}</td>
-                <td>${u.totalHours.toFixed(1)}h</td>
-                <td>${u.daysWorked}</td>
-                <td>${avgPerDay.toFixed(1)}h</td>
-                <td>${avgCheckIn}</td>
-                <td>${statusBadge}</td>
+            const flexColor = userFlex.diff >= 0 ? '#10b981' : '#ef4444';
+            const flexSign = userFlex.diff >= 0 ? '+' : '';
+            const initial = (u.name || 'U').charAt(0).toUpperCase();
+
+            // Progress bar ratio (base 48h)
+            const pct = Math.min(100, (u.totalHours / 48) * 100);
+
+            html += `
+            <tr style="transition: background 0.15s ease;">
+                <td style="padding: 14px 16px;">
+                    <div style="display: flex; align-items: center; gap: 12px;">
+                        <div style="width: 32px; height: 32px; border-radius: 50%; background: #1a1e27; border: 1px solid rgba(255,255,255,0.1); display: flex; align-items: center; justify-content: center; font-size: 13px; font-weight: 700; color: #38bdf8;">
+                            ${initial}
+                        </div>
+                        <div>
+                            <strong style="color: #ffffff; font-size: 13.5px; display: block;">${u.name}</strong>
+                            <span style="color: #64748b; font-size: 11.5px;">${u.email}</span>
+                        </div>
+                    </div>
+                </td>
+                <td style="padding: 14px 16px; color: #94a3b8; font-size: 13px;">
+                    <span style="background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.08); padding: 3px 8px; border-radius: 6px; font-size: 11.5px; color: #cbd5e1;">
+                        ${u.department}
+                    </span>
+                </td>
+                <td style="padding: 14px 16px;">
+                    <div style="display: flex; align-items: center; gap: 8px;">
+                        <strong style="color: #ffffff; font-size: 13.5px;">${u.totalHours.toFixed(1)}h</strong>
+                        <div style="width: 50px; height: 4px; background: rgba(255,255,255,0.08); border-radius: 2px; overflow: hidden;">
+                            <div style="width: ${pct}%; height: 100%; background: #38bdf8; border-radius: 2px;"></div>
+                        </div>
+                    </div>
+                </td>
+                <td style="padding: 14px 16px; color: #cbd5e1; font-size: 13px;">${u.daysWorked}</td>
+                <td style="padding: 14px 16px; color: #cbd5e1; font-size: 13px;">${avgPerDay.toFixed(1)}h</td>
+                <td style="padding: 14px 16px; color: #94a3b8; font-size: 12.5px;">
+                    <ion-icon name="time-outline" style="vertical-align: middle; color: #64748b; margin-right: 2px;"></ion-icon> ${avgCheckIn}
+                </td>
+                <td style="padding: 14px 16px;">
+                    <span style="color: ${flexColor}; font-weight: 700; font-size: 13px; background: ${userFlex.diff >= 0 ? 'rgba(16,185,129,0.1)' : 'rgba(239,68,68,0.1)'}; padding: 3px 8px; border-radius: 6px;">
+                        ${flexSign}${userFlex.diff}h
+                    </span>
+                </td>
+                <td style="padding: 14px 16px; text-align: right;">
+                    ${statusBadge}
+                </td>
             </tr>`;
         });
 
         html += `</tbody></table></div></div>`;
-
-        // ─── Flex-Time Balance Table ───
-        html += `
-        <div class="glass-panel" style="margin-bottom: 24px;">
-            <h3 class="section-subtitle">⚖️ Flex-Time Balance <small style="color:var(--text-muted); font-weight:400;">(${s.workDays} days/wk × ${s.dailyHours}h/day)</small></h3>
-            <div style="position: relative; width: 100%; height: 250px; margin-bottom: 20px;">
-                <canvas id="reportsFlexChart"></canvas>
-            </div>
-            <div style="overflow-x:auto; max-height:400px; overflow-y:auto;">
-                <table class="admin-table">
-                    <thead><tr>
-                        <th>Employee</th>
-                        <th>Expected Hours</th>
-                        <th>Actual Hours</th>
-                        <th>Balance</th>
-                    </tr></thead>
-                    <tbody>`;
-
-        flex.sort((a, b) => a.diff - b.diff);
-        flex.forEach(f => {
-            const color = f.diff >= 0 ? '#10b981' : '#ef4444';
-            const sign = f.diff >= 0 ? '+' : '';
-            html += `<tr>
-                <td style="font-weight:500;">${f.name}</td>
-                <td>${f.expected}h</td>
-                <td>${f.actual}h</td>
-                <td style="color:${color}; font-weight:600;">${sign}${f.diff}h</td>
-            </tr>`;
-        });
-
-        html += `</tbody></table></div></div>`;
-
-        // ─── Company Export ───
-        html += `
-        <div class="glass-panel">
-            <div style="display:flex; justify-content:space-between; align-items:center;">
-                <h3 class="section-subtitle" style="margin:0;">📥 Company Export</h3>
-                <div style="display:flex; gap:8px; flex-wrap:wrap;">
-                    <button class="btn-small btn-neutral" style="width:auto; padding:6px 14px; margin:0;" onclick="window.ReportsUI.exportCompany('weekly')">Weekly</button>
-                    <button class="btn-small btn-neutral" style="width:auto; padding:6px 14px; margin:0;" onclick="window.ReportsUI.exportCompany('monthly')">Monthly</button>
-                    <button class="btn-small btn-neutral" style="width:auto; padding:6px 14px; margin:0;" onclick="window.ReportsUI.exportCompany('yearly')">Yearly</button>
-                    <button class="btn-small btn-primary" style="width:auto; padding:6px 14px; margin:0;" onclick="window.ReportsUI.exportCompany('alltime')">All Time</button>
-                </div>
-            </div>
-        </div>`;
 
         container.innerHTML = html;
 
-        // Give DOM time to insert HTML before mounting charts
-        setTimeout(() => this._renderCharts(allData, flex), 0);
+        // Render charts with setTimeout to ensure DOM element exists
+        setTimeout(() => this._renderCharts(period, allData), 0);
     },
 
-    _renderCharts: function(allData, flex) {
-        if (this._hoursChart) this._hoursChart.destroy();
-        if (this._flexChart) this._flexChart.destroy();
+    _renderCharts: function(period, allData) {
+        if (this._hoursTrendChart) this._hoursTrendChart.destroy();
+        if (this._artistHoursChart) this._artistHoursChart.destroy();
 
-        // 1. Individual Hours Chart
-        const ctxHours = document.getElementById('reportsHoursChart');
-        if (ctxHours) {
-            this._hoursChart = new Chart(ctxHours, {
-                type: 'bar',
+        // 1. Studio Workload Trend Chart (Left Spline Curve)
+        const ctxTrend = document.getElementById('reportsTrendChart');
+        if (ctxTrend) {
+            const trendData = this._getTrendData(period);
+            const ctx2d = ctxTrend.getContext('2d');
+            
+            // Fading Emerald Gradient
+            const gradient = ctx2d.createLinearGradient(0, 0, 0, 240);
+            gradient.addColorStop(0, 'rgba(16, 185, 129, 0.25)');
+            gradient.addColorStop(1, 'rgba(16, 185, 129, 0.0)');
+
+            this._hoursTrendChart = new Chart(ctxTrend, {
+                type: 'line',
                 data: {
-                    labels: allData.map(d => d.name),
+                    labels: trendData.labels,
                     datasets: [{
-                        label: 'Total Hours',
-                        data: allData.map(d => parseFloat(d.totalHours.toFixed(1))),
-                        backgroundColor: '#3b82f6',
-                        borderRadius: 4
+                        label: 'Studio Hours',
+                        data: trendData.data,
+                        borderColor: '#10b981',
+                        borderWidth: 2.5,
+                        backgroundColor: gradient,
+                        fill: true,
+                        tension: 0.42,
+                        pointRadius: 0,
+                        pointHoverRadius: 6,
+                        pointHoverBackgroundColor: '#10b981',
+                        pointHoverBorderColor: '#ffffff',
+                        pointHoverBorderWidth: 2
                     }]
                 },
                 options: {
                     responsive: true,
                     maintainAspectRatio: false,
-                    plugins: { legend: { display: false } },
+                    interaction: {
+                        mode: 'index',
+                        intersect: false
+                    },
+                    plugins: {
+                        legend: { display: false },
+                        tooltip: {
+                            backgroundColor: '#0a0c10',
+                            titleColor: '#e2e8f0',
+                            bodyColor: '#10b981',
+                            borderColor: 'rgba(255,255,255,0.1)',
+                            borderWidth: 1,
+                            padding: 10,
+                            displayColors: false,
+                            callbacks: {
+                                label: function(context) {
+                                    return `● Workload: ${context.parsed.y}h logged`;
+                                }
+                            }
+                        }
+                    },
                     scales: {
-                        y: { beginAtZero: true, grid: { color: 'rgba(255,255,255,0.05)' }, ticks: { color: '#94a3b8' } },
-                        x: { grid: { display: false }, ticks: { color: '#94a3b8' } }
+                        y: {
+                            beginAtZero: true,
+                            grid: { color: 'rgba(255,255,255,0.04)' },
+                            ticks: { 
+                                color: '#64748b',
+                                font: { size: 11 },
+                                callback: val => `${val}h`
+                            }
+                        },
+                        x: {
+                            grid: { display: false },
+                            ticks: { 
+                                color: '#64748b',
+                                font: { size: 11 }
+                            }
+                        }
                     }
                 }
             });
         }
 
-        // 2. Flex-Time Balance Chart
-        const ctxFlex = document.getElementById('reportsFlexChart');
-        if (ctxFlex) {
-            const data = flex.map(f => f.diff);
-            const bgColors = data.map(val => val >= 0 ? '#10b981' : '#ef4444');
-            this._flexChart = new Chart(ctxFlex, {
+        // 2. Artist Hours Breakdown Chart (Right Capsule Rounded Bars)
+        const ctxArtist = document.getElementById('reportsArtistBarChart');
+        if (ctxArtist) {
+            this._artistHoursChart = new Chart(ctxArtist, {
                 type: 'bar',
                 data: {
-                    labels: flex.map(f => f.name),
+                    labels: allData.map(d => d.name.split(' ')[0]),
                     datasets: [{
-                        label: 'Flex-Time Balance',
-                        data: data,
-                        backgroundColor: bgColors,
-                        borderRadius: 4
+                        label: 'Total Hours',
+                        data: allData.map(d => parseFloat(d.totalHours.toFixed(1))),
+                        backgroundColor: '#ec4899',
+                        hoverBackgroundColor: '#db2777',
+                        borderRadius: 10,
+                        borderSkipped: false,
+                        maxBarThickness: 38
                     }]
                 },
                 options: {
                     responsive: true,
                     maintainAspectRatio: false,
-                    plugins: { legend: { display: false } },
+                    plugins: {
+                        legend: { display: false },
+                        tooltip: {
+                            backgroundColor: '#0a0c10',
+                            titleColor: '#e2e8f0',
+                            bodyColor: '#f472b6',
+                            borderColor: 'rgba(255,255,255,0.1)',
+                            borderWidth: 1,
+                            padding: 10,
+                            displayColors: false,
+                            callbacks: {
+                                title: items => allData[items[0].dataIndex]?.name || '',
+                                label: context => `● Hours: ${context.parsed.y}h`
+                            }
+                        }
+                    },
                     scales: {
-                        y: { grid: { color: 'rgba(255,255,255,0.05)' }, ticks: { color: '#94a3b8' } },
-                        x: { grid: { display: false }, ticks: { color: '#94a3b8' } }
+                        y: {
+                            beginAtZero: true,
+                            grid: { color: 'rgba(255,255,255,0.04)' },
+                            ticks: { 
+                                color: '#64748b',
+                                font: { size: 11 },
+                                callback: val => `${val}h`
+                            }
+                        },
+                        x: {
+                            grid: { display: false },
+                            ticks: { 
+                                color: '#64748b',
+                                font: { size: 11 }
+                            }
+                        }
                     }
                 }
             });

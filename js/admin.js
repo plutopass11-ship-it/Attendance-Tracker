@@ -27,21 +27,84 @@ window.AdminUI = Object.assign(window.AdminUI || {}, {
         return leaveType === policyName || leaveType.startsWith(policyName);
     },
     
+    _mapUsersToPersons: function(users) {
+        return (users || []).map(u => {
+            const nameParts = (u.name || '').split(' ');
+            return {
+                id: u.id,
+                name: u.name || u.id,
+                first_name: nameParts[0] || '',
+                last_name: nameParts.slice(1).join(' ') || '',
+                email: u.email || u.id,
+                department: u.department || 'Production',
+                role: u.role || 'user',
+                active: u.active !== false && u.is_active !== false
+            };
+        });
+    },
+
     init: async function(user) {
         try {
             this.currentUser = user;
             
-            document.getElementById('admin-greeting').textContent = 'Hello, ' + user.name;
+            const greetingEl = document.getElementById('admin-greeting');
+            if (greetingEl) greetingEl.textContent = 'Hello, ' + (user.name || 'Admin');
+
+            const sidebarNameEl = document.getElementById('sidebar-user-name');
+            const sidebarAvatarEl = document.getElementById('sidebar-user-avatar');
+            if (sidebarNameEl) sidebarNameEl.textContent = user.name || 'Studio Admin';
+            if (sidebarAvatarEl) {
+                const initials = (user.name || 'Admin').split(' ').map(n=>n[0]).join('').substring(0, 2).toUpperCase();
+                sidebarAvatarEl.textContent = initials;
+            }
+
+            // Immediately populate kitsuPersons from localStorage so initial render has data instantly
+            const storedUsers = Store.getUsers() || [];
+            if (storedUsers.length > 0) {
+                this.kitsuPersons = this._mapUsersToPersons(storedUsers);
+            }
+
             this.setupEventListeners();
 
-            // Sync with backend DB first, then render
-            await Store.syncWithBackend();
-            this.renderDashboard(); // initial render with cached data
-            this.fetchPendingRemovals(); // fetch removal alerts
-            this.syncKitsuUsers();  // async: updates kitsuPersons and re-renders when ready
+            // Initial render with cached data
+            this.renderDashboard();
+            this.updatePendingLeaveBadge();
+
+            // Sync with backend DB in background, then update
+            Store.syncWithBackend().then(() => {
+                const updatedUsers = Store.getUsers() || [];
+                if (updatedUsers.length > 0) {
+                    this.kitsuPersons = this._mapUsersToPersons(updatedUsers);
+                }
+                this.renderDashboard();
+                this.updatePendingLeaveBadge();
+                this.fetchPendingRemovals();
+            }).catch(err => {
+                console.error("Backend sync notice:", err);
+            });
         } catch(e) {
-            document.getElementById('admin-greeting').textContent = "CRASH: " + e.message;
+            const greetingEl = document.getElementById('admin-greeting');
+            if (greetingEl) greetingEl.textContent = "CRASH: " + e.message;
             console.error(e);
+        }
+    },
+
+    updatePendingLeaveBadge: function() {
+        const allLeaves = (typeof Store !== 'undefined' && Store.getAllLeaves) ? Store.getAllLeaves() : [];
+        const pendingCount = allLeaves.filter(l => (l.status || '').toLowerCase() === 'pending').length;
+        const badgeEl = document.getElementById('sidebar-leaves-badge');
+        if (badgeEl) {
+            if (pendingCount > 0) {
+                badgeEl.textContent = pendingCount;
+                badgeEl.setAttribute('data-count', String(pendingCount));
+                badgeEl.classList.remove('hidden');
+                badgeEl.style.display = 'inline-flex';
+            } else {
+                badgeEl.textContent = '';
+                badgeEl.setAttribute('data-count', '0');
+                badgeEl.classList.add('hidden');
+                badgeEl.style.display = 'none';
+            }
         }
     },
     
@@ -91,6 +154,7 @@ window.AdminUI = Object.assign(window.AdminUI || {}, {
                 if(target === 'admin-tab-holidays') this.renderHolidays();
                 if(target === 'admin-tab-migration') this.renderMigrationTab();
                 if(target === 'admin-tab-reports' && window.ReportsUI) window.ReportsUI.init();
+                if(target === 'admin-tab-history') this.renderHistoryTab();
                 if(target === 'admin-tab-biometric') this.renderBiometricTab();
                 if(target === 'admin-tab-slack' && window.loadSlackSettings) window.loadSlackSettings();
                 if(target === 'admin-tab-overtime' && window.OvertimeUI) window.OvertimeUI.init();
@@ -104,6 +168,11 @@ window.AdminUI = Object.assign(window.AdminUI || {}, {
         });
         document.getElementById('cal-next-btn')?.addEventListener('click', () => {
             this.currentCalDate.setMonth(this.currentCalDate.getMonth() + 1);
+            this.renderCalendar();
+        });
+        document.getElementById('cal-today-btn')?.addEventListener('click', () => {
+            this.currentCalDate = new Date();
+            this.selectedCalDate = this.getTodayStr();
             this.renderCalendar();
         });
 
@@ -556,281 +625,455 @@ window.AdminUI = Object.assign(window.AdminUI || {}, {
         const today = this.getTodayStr();
         const attendance = Store.getAllAttendanceToday(today);
         const leaves = Store.getAllLeaves();
-        
-        // Exclude super-admins (founders) from all headcount calculations
-        const activePersons = this.kitsuPersons.filter(p => p.active && (p.role || '').toLowerCase() !== 'admin');
-        const presentCount = attendance.filter(r => activePersons.some(p => p.id === r.userId) && !this._isWfhAttendanceStatus(r.status)).length;
-        const totalUsers = activePersons.length > 0 ? activePersons.length : 0;
-        document.getElementById('stat-present').textContent = `${presentCount} / ${totalUsers}`;
-        
-        const pendingCount = leaves.filter(l => l.status === 'Pending').length;
-        document.getElementById('stat-pending').textContent = pendingCount;
-        
-        // Render Table
-        const tbody = document.getElementById('live-attendance-tbody');
-        tbody.innerHTML = '';
-        
         let onLeaveCount = 0;
         let wfhCount = 0;
         
-        activePersons.forEach(user => {
-            const record = attendance.find(r => r.userId === user.id);
-            const tr = document.createElement('tr');
-            const activeLeave = leaves.find(l => l.userId === user.id && l.status === 'Approved' && l.startDate <= today && l.endDate >= today);
-            const isWfhLeave = activeLeave && this._isWfh(activeLeave.type);
-            const isHalfDayLeave = activeLeave && (activeLeave.type || '').toLowerCase().includes('half day');
-            // Check for approved non-WFH leave (takes absolute priority over attendance)
-            // But if it's a half-day leave AND they have an attendance record, they are technically working the other half.
-            const isOnLeaveToday = activeLeave && !isWfhLeave && (!isHalfDayLeave || !record);
+        // Exclude super-admins (founders) from all headcount calculations
+        const activePersons = (this.kitsuPersons && this.kitsuPersons.length > 0) 
+            ? this.kitsuPersons.filter(p => p.active && (p.role || '').toLowerCase() !== 'admin')
+            : this._mapUsersToPersons(Store.getUsers()).filter(p => p.active && (p.role || '').toLowerCase() !== 'admin');
+        
+        const presentCount = attendance.filter(r => activePersons.some(p => p.id === r.userId) && !this._isWfhAttendanceStatus(r.status)).length;
+        const totalUsers = activePersons.length > 0 ? activePersons.length : 0;
+        
+        const statPresentEl = document.getElementById('stat-present');
+        if (statPresentEl) statPresentEl.textContent = `${presentCount} / ${totalUsers}`;
+        
+        const pendingCount = leaves.filter(l => l.status === 'Pending').length;
+        const statPendingEl = document.getElementById('stat-pending');
+        if (statPendingEl) statPendingEl.textContent = pendingCount;
+        
+        // Render Live Attendance Table (OnlyGenius Clients List Style)
+        const tbody = document.getElementById('live-attendance-tbody');
+        if (tbody) {
+            tbody.innerHTML = '';
             
-            let statusBadge = '<span class="badge rejected">Absent</span>';
-            let checkIn = '--:--';
-            let checkOut = '--:--';
-            
-            // BUG FIX: Non-WFH approved leave always takes priority over attendance records
-            // This handles the case where a user accidentally checked in, then admin adds a leave later
-            if (isOnLeaveToday) {
-                statusBadge = isHalfDayLeave ? '<span class="badge" style="background:#a855f7;color:white;">Half Day Leave</span>' : '<span class="badge" style="background:#8b5cf6;color:white;">On Leave</span>';
-                onLeaveCount++;
-            } else if(record) {
-                const isWfhAttendance = this._isWfhAttendanceStatus(record.status) || isWfhLeave;
-                if (isWfhAttendance) wfhCount++;
-                checkIn = record.checkInTime;
+            activePersons.forEach(user => {
+                const record = attendance.find(r => r.userId === user.id);
+                const activeLeave = leaves.find(l => l.userId === user.id && l.status === 'Approved' && l.startDate <= today && l.endDate >= today);
+                const isWfhLeave = activeLeave && this._isWfh(activeLeave.type);
+                const isHalfDayLeave = activeLeave && (activeLeave.type || '').toLowerCase().includes('half day');
+                const isOnLeaveToday = activeLeave && !isWfhLeave && (!isHalfDayLeave || !record);
                 
-                let extraBadge = isHalfDayLeave ? ' <span class="badge" style="background:#a855f7;color:white;margin-left:4px;">Half Day Leave</span>' : '';
-                if (isHalfDayLeave) onLeaveCount++;
-                if(this._isPendingAttendanceStatus(record.status)) {
-                    statusBadge = '<span class="badge warning" style="background:#f59e0b;color:white;">Pending Approval</span>' + extraBadge;
-                    checkOut = record.checkOutTime + ` <br><div style="margin-top:6px;"><button class="btn-primary" style="font-size:11px;padding:4px 8px;border-radius:4px;" onclick="window.AdminUI.approveEarlyClockOut('${user.id}', '${today}', 'approve')">Approve</button> <button class="btn-danger" style="background:#ef4444;color:white;border:none;font-size:11px;padding:4px 8px;border-radius:4px;cursor:pointer;" onclick="window.AdminUI.approveEarlyClockOut('${user.id}', '${today}', 'reject')">Reject</button></div>`;
-                } else if(record.checkOutTime && (record.status === 'completed' || record.status === 'wfh_completed')) {
-                    statusBadge = (isWfhAttendance
-                        ? '<span class="badge" style="background:#3b82f6;color:white;">WFH Completed</span>'
-                        : '<span class="badge approved">Completed</span>') + extraBadge;
-                    checkOut = record.checkOutTime;
+                let statusBadge = '<span class="status-pill pill-rejected">Absent</span>';
+                let checkIn = '--:--';
+                let checkOut = '--:--';
+                let feedType = 'absent';
+                let actionButtons = `
+                    <div style="display:inline-flex; align-items:center; gap:8px; justify-content:flex-end;">
+                        <button type="button" class="btn-neutral btn-small" style="padding:4px 8px; font-size:12px;" title="View Member History" onclick="window.AdminUI.openUserDetail('${user.id}')">
+                            <ion-icon name="ellipsis-horizontal"></ion-icon>
+                        </button>
+                    </div>`;
+                
+                if (isOnLeaveToday) {
+                    statusBadge = isHalfDayLeave 
+                        ? '<span class="status-pill pill-completed">Half Day Leave</span>' 
+                        : '<span class="status-pill pill-completed">On Leave</span>';
+                    onLeaveCount++;
+                    feedType = 'leave';
+                } else if(record) {
+                    const isWfhAttendance = this._isWfhAttendanceStatus(record.status) || isWfhLeave;
+                    if (isWfhAttendance) {
+                        wfhCount++;
+                        feedType = 'wfh';
+                    } else {
+                        feedType = 'office';
+                    }
+                    checkIn = record.checkInTime || '--:--';
                     
-                    // Display total hours calculated based on the UI times
-                    try {
-                        const inTimeParts = record.checkInTime.match(/(\d+):(\d+)\s*([a-zA-Z]*)/);
-                        const outTimeParts = record.checkOutTime.match(/(\d+):(\d+)\s*([a-zA-Z]*)/);
-                        if (inTimeParts && outTimeParts) {
-                            let inHrs = parseInt(inTimeParts[1], 10), inMins = parseInt(inTimeParts[2], 10);
-                            let outHrs = parseInt(outTimeParts[1], 10), outMins = parseInt(outTimeParts[2], 10);
-                            if (inTimeParts[3]?.toLowerCase() === 'pm' && inHrs < 12) inHrs += 12;
-                            if (outTimeParts[3]?.toLowerCase() === 'pm' && outHrs < 12) outHrs += 12;
-                            if (inTimeParts[3]?.toLowerCase() === 'am' && inHrs === 12) inHrs = 0;
-                            if (outTimeParts[3]?.toLowerCase() === 'am' && outHrs === 12) outHrs = 0;
-                            
-                            const inMinTotal = inHrs * 60 + inMins;
-                            const outMinTotal = outHrs * 60 + outMins;
-                            const diffMins = outMinTotal - inMinTotal;
-                            if (diffMins > 0) {
-                                const dh = Math.floor(diffMins / 60);
-                                const dm = diffMins % 60;
-                                checkOut += ` <br><small style="color:var(--text-muted)">Total: ${dh}h ${dm}m</small>`;
-                            }
-                        }
-                    } catch(e) {}
+                    let extraBadge = isHalfDayLeave ? ' <span class="status-pill pill-completed" style="margin-left:4px;">Half Day</span>' : '';
+                    if (isHalfDayLeave) onLeaveCount++;
+
+                    if(this._isPendingAttendanceStatus(record.status)) {
+                        statusBadge = '<span class="status-pill pill-late">Early Clockout Pending</span>' + extraBadge;
+                        checkOut = record.checkOutTime || '--:--';
+                        actionButtons = `
+                            <div style="display:inline-flex; align-items:center; gap:6px; justify-content:flex-end;">
+                                <button type="button" class="btn-primary btn-small" style="padding:4px 10px; font-size:11.5px; font-weight:700;" onclick="window.AdminUI.approveEarlyClockOut('${user.id}', '${today}', 'approve')">Approve</button>
+                                <button type="button" class="btn-danger btn-small" style="padding:4px 10px; font-size:11.5px; font-weight:700;" onclick="window.AdminUI.approveEarlyClockOut('${user.id}', '${today}', 'reject')">Reject</button>
+                                <button type="button" class="btn-neutral btn-small" style="padding:4px 8px; font-size:12px;" title="View Member History" onclick="window.AdminUI.openUserDetail('${user.id}')">
+                                    <ion-icon name="ellipsis-horizontal"></ion-icon>
+                                </button>
+                            </div>`;
+                    } else if(record.checkOutTime && (record.status === 'completed' || record.status === 'wfh_completed')) {
+                        statusBadge = (isWfhAttendance
+                            ? '<span class="status-pill pill-wfh">WFH Completed</span>'
+                            : '<span class="status-pill pill-active">Completed</span>') + extraBadge;
+                        checkOut = record.checkOutTime;
+                    } else {
+                        statusBadge = (isWfhAttendance
+                            ? '<span class="status-pill pill-wfh">WFH Active</span>'
+                            : '<span class="status-pill pill-active">Active</span>') + extraBadge;
+                        checkOut = record.checkOutTime || '--:--';
+                    }
+                } else if(activeLeave && !record) {
+                    if(isWfhLeave) {
+                        statusBadge = '<span class="status-pill pill-wfh">WFH Active</span>';
+                        wfhCount++;
+                        feedType = 'wfh';
+                    }
+                }
+
+                const fullName = `${user.first_name || ''} ${user.last_name || ''}`.trim() || user.id;
+                const initials = `${(user.first_name || 'U')[0]}${(user.last_name || '')[0] || ''}`.toUpperCase();
+
+                const tr = document.createElement('tr');
+                tr.setAttribute('data-feed-type', feedType);
+                tr.setAttribute('data-search', `${fullName} ${user.id} ${user.department || ''}`.toLowerCase());
+                tr.innerHTML = `
+                    <td>
+                        <div class="user-cell">
+                            <div class="user-cell-avatar">${initials}</div>
+                            <div class="user-cell-info">
+                                <span class="name">${fullName}</span>
+                                <span class="dept">${user.email || user.id}</span>
+                            </div>
+                        </div>
+                    </td>
+                    <td><span style="color:#ffffff; font-size:13px; font-weight:500;">${user.department || 'Production'}</span></td>
+                    <td><strong style="color:var(--text-primary); font-size:13px;">${checkIn}</strong></td>
+                    <td><strong style="color:var(--text-primary); font-size:13px;">${checkOut}</strong></td>
+                    <td>${statusBadge}</td>
+                    <td style="text-align:right;">${actionButtons}</td>
+                `;
+                tbody.appendChild(tr);
+            });
+
+            // Update Header Stat Cards
+            const onLeaveEl = document.getElementById('stat-on-leave');
+            const wfhEl = document.getElementById('stat-wfh');
+            if (onLeaveEl) onLeaveEl.textContent = onLeaveCount;
+            if (wfhEl) wfhEl.textContent = wfhCount;
+        }
+
+        // =========================================================================
+        // Chart 1: Studio Attendance Trends (Real DB Records over Selected Period)
+        // =========================================================================
+        const trendCtx = document.getElementById('trendChart');
+        if(trendCtx) {
+            try {
+                if(window.AdminUI.trendChartInstance) window.AdminUI.trendChartInstance.destroy();
+                
+                const periodEl = document.getElementById('dash-trend-period');
+                const is6Months = periodEl && periodEl.value === '6m';
+                const allAttendance = Store.getAttendance();
+                const allLeaves = Store.getAllLeaves();
+                
+                let labels = [];
+                let officeData = [];
+                let wfhData = [];
+                
+                if (is6Months) {
+                    const now = new Date();
+                    for (let i = 5; i >= 0; i--) {
+                        const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+                        const y = d.getFullYear();
+                        const m = String(d.getMonth() + 1).padStart(2, '0');
+                        const monthPrefix = `${y}-${m}`;
+                        labels.push(d.toLocaleString('en-US', { month: 'short' }));
+                        
+                        const mRecords = allAttendance.filter(r => (r.date || '').startsWith(monthPrefix));
+                        const mOffice = mRecords.filter(r => !this._isWfhAttendanceStatus(r.status)).length;
+                        const mWfh = mRecords.filter(r => this._isWfhAttendanceStatus(r.status)).length;
+                        
+                        officeData.push(mOffice);
+                        wfhData.push(mWfh);
+                    }
                 } else {
-                    statusBadge = (isWfhAttendance
-                        ? '<span class="badge" style="background:#3b82f6;color:white;">WFH</span>'
-                        : '<span class="badge pending">Working</span>') + extraBadge;
+                    for (let i = 6; i >= 0; i--) {
+                        const d = new Date();
+                        d.setDate(d.getDate() - i);
+                        const dStr = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+                        const dayLabel = (i === 0) ? 'Today' : d.toLocaleDateString('en-US', { weekday: 'short' });
+                        labels.push(dayLabel);
+                        
+                        const dayRecords = allAttendance.filter(r => r.date === dStr);
+                        const dayOffice = dayRecords.filter(r => !this._isWfhAttendanceStatus(r.status)).length;
+                        
+                        let dayWfh = dayRecords.filter(r => this._isWfhAttendanceStatus(r.status)).length;
+                        allLeaves.filter(l => l.status === 'Approved' && l.startDate <= dStr && l.endDate >= dStr && this._isWfh(l.type))
+                            .forEach(l => {
+                                if (!dayRecords.some(r => r.userId === l.userId && this._isWfhAttendanceStatus(r.status))) {
+                                    dayWfh++;
+                                }
+                            });
+                        
+                        officeData.push(dayOffice);
+                        wfhData.push(dayWfh);
+                    }
                 }
-            } else if(activeLeave && !record) {
-                if(isWfhLeave) {
-                    statusBadge = '<span class="badge" style="background:#3b82f6;color:white;">WFH</span>';
-                    wfhCount++;
-                }
-            }
+                
+                const ctx2d = trendCtx.getContext('2d');
+                const gradBlue = ctx2d.createLinearGradient(0, 0, 0, 240);
+                gradBlue.addColorStop(0, 'rgba(37, 99, 235, 0.45)');
+                gradBlue.addColorStop(1, 'rgba(37, 99, 235, 0.0)');
 
-            tr.innerHTML = `
-                <td><strong>${user.first_name} ${user.last_name}</strong><br><small style="color:var(--text-muted)">${user.id}</small></td>
-                <td>${statusBadge}</td>
-                <td>${checkIn}</td>
-                <td>${checkOut}</td>
-            `;
-            tbody.appendChild(tr);
-        });
+                const gradAmber = ctx2d.createLinearGradient(0, 0, 0, 240);
+                gradAmber.addColorStop(0, 'rgba(245, 158, 11, 0.35)');
+                gradAmber.addColorStop(1, 'rgba(245, 158, 11, 0.0)');
+                
+                window.AdminUI.trendChartInstance = new Chart(trendCtx, {
+                    type: 'line',
+                    data: {
+                        labels: labels,
+                        datasets: [
+                            { 
+                                label: 'In Studio', 
+                                data: officeData, 
+                                borderColor: '#2563eb', 
+                                backgroundColor: gradBlue, 
+                                fill: true,
+                                tension: 0.45,
+                                borderWidth: 3,
+                                pointRadius: 0,
+                                pointHoverRadius: 6,
+                                pointBackgroundColor: '#2563eb'
+                            },
+                            { 
+                                label: 'Remote (WFH)', 
+                                data: wfhData, 
+                                borderColor: '#f59e0b', 
+                                backgroundColor: gradAmber, 
+                                fill: true,
+                                tension: 0.45,
+                                borderWidth: 3,
+                                pointRadius: 0,
+                                pointHoverRadius: 6,
+                                pointBackgroundColor: '#f59e0b'
+                            }
+                        ]
+                    },
+                    options: { 
+                        responsive: true, 
+                        maintainAspectRatio: false,
+                        interaction: { intersect: false, mode: 'index' },
+                        plugins: { 
+                            legend: { 
+                                position: 'bottom',
+                                labels: { color: '#94a3b8', font: { family: 'Plus Jakarta Sans', size: 12 }, usePointStyle: true, boxWidth: 8, padding: 14 } 
+                            } 
+                        }, 
+                        scales: { 
+                            y: { 
+                                beginAtZero: true, 
+                                ticks: { color: '#64748b', stepSize: Math.max(1, Math.ceil(Math.max(...officeData, ...wfhData, 1) / 5)), font: { family: 'Plus Jakarta Sans', size: 11 } }, 
+                                grid: { color: 'rgba(255,255,255,0.04)' } 
+                            }, 
+                            x: { 
+                                ticks: { color: '#64748b', font: { family: 'Plus Jakarta Sans', size: 11 } }, 
+                                grid: { display: false } 
+                            } 
+                        } 
+                    }
+                });
+            } catch(e) { console.error("Trend chart error:", e); }
+        }
 
-        // Update WFH & On Leave stats
-        const onLeaveEl = document.getElementById('stat-on-leave');
-        const wfhEl = document.getElementById('stat-wfh');
-        if (onLeaveEl) onLeaveEl.textContent = onLeaveCount;
-        if (wfhEl) wfhEl.textContent = wfhCount;
-
-        // 1. Render Main Chart
-        const absentCount = totalUsers > 0 ? Math.max(0, totalUsers - presentCount - onLeaveCount - wfhCount) : 0;
-        const ctx = document.getElementById('attendanceChart');
-        if(ctx) {
+        // =========================================================================
+        // Chart 2: Today's Headcount Distribution (Real Live Counts)
+        // =========================================================================
+        const deptCtx = document.getElementById('attendanceChart');
+        if(deptCtx) {
             try {
                 if(window.AdminUI.attendanceChartInstance) {
                     window.AdminUI.attendanceChartInstance.destroy();
                 }
-                window.AdminUI.attendanceChartInstance = new Chart(ctx, {
-                    type: 'doughnut',
+                
+                const notCheckedIn = Math.max(0, totalUsers - presentCount - (wfhCount || 0) - (onLeaveCount || 0));
+                const splitLabels = ['In Office', 'Remote (WFH)', 'On Leave', 'Not Checked In'];
+                const splitData = [presentCount || 0, wfhCount || 0, onLeaveCount || 0, notCheckedIn];
+                const splitColors = ['#2563eb', '#06b6d4', '#8b5cf6', '#ef4444'];
+                
+                window.AdminUI.attendanceChartInstance = new Chart(deptCtx, {
+                    type: 'bar',
                     data: {
-                        labels: totalUsers > 0 ? ['Office', 'WFH', 'On Leave', 'Absent'] : ['No Data'],
+                        labels: splitLabels,
                         datasets: [{
-                            data: totalUsers > 0 ? [presentCount, wfhCount, onLeaveCount, absentCount] : [1],
-                            backgroundColor: totalUsers > 0 ? ['#10b981', '#3b82f6', '#8b5cf6', '#ef4444'] : ['#334155'],
-                            borderWidth: 0
+                            data: splitData,
+                            backgroundColor: splitColors,
+                            borderRadius: 8,
+                            barThickness: 32
                         }]
                     },
                     options: {
-                        responsive: false,
+                        responsive: true,
+                        maintainAspectRatio: false,
                         plugins: {
-                            legend: { position: 'right', labels: { color: '#e2e8f0', usePointStyle: true } }
+                            legend: { display: false }
+                        },
+                        scales: {
+                            y: {
+                                beginAtZero: true,
+                                ticks: { color: '#64748b', stepSize: 1, font: { family: 'Plus Jakarta Sans', size: 11 } },
+                                grid: { color: 'rgba(255,255,255,0.04)' }
+                            },
+                            x: {
+                                ticks: { color: '#94a3b8', font: { family: 'Plus Jakarta Sans', size: 11 } },
+                                grid: { display: false }
+                            }
                         }
                     }
                 });
-            } catch(e) { console.error("Chart error:", e); }
+            } catch(e) { console.error("Headcount distribution chart error:", e); }
         }
 
-        // 2. Trend Chart (7 days)
-        const trendCtx = document.getElementById('trendChart');
-        if(trendCtx) {
-            if(window.AdminUI.trendChartInstance) window.AdminUI.trendChartInstance.destroy();
-            
-            const labels = [];
-            const officeData = [];
-            const wfhData = [];
-            const leaveData = [];
-            
-            for(let i=6; i>=0; i--) {
-                const d = new Date();
-                d.setDate(d.getDate() - i);
-                const dStr = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
-                labels.push(`${d.getMonth()+1}/${d.getDate()}`);
-                
-                const dayAttendance = Store.getAllAttendanceToday(dStr).filter(r => !this._isWfhAttendanceStatus(r.status)).length;
-                let dayLeaveCount = 0;
-                let dayWfhCount = 0;
-                
-                // Only count non-admin employees in trend
-                activePersons.forEach(user => {
-                    const actL = leaves.find(l => l.userId === user.id && l.status === 'Approved' && l.startDate <= dStr && l.endDate >= dStr);
-                    if(actL) {
-                        const isW = actL.type?.toLowerCase().includes('wfh') || actL.type?.toLowerCase().includes('work from home');
-                        if(isW) dayWfhCount++; else dayLeaveCount++;
+        // =========================================================================
+        // Chart 3: Monthly Shifts Recorded (Past 6 Months Real DB Counts)
+        // =========================================================================
+        const monthlyCtx = document.getElementById('monthlyAttendanceChart');
+        if(monthlyCtx) {
+            try {
+                if(window.AdminUI.monthlyChartInstance) window.AdminUI.monthlyChartInstance.destroy();
+                const allAttendance = Store.getAttendance();
+                const now = new Date();
+                const mMonths = [];
+                const mCounts = [];
+                const mColors = ['#2563eb', '#10b981', '#f97316', '#eab308', '#ec4899', '#a855f7'];
+
+                for (let i = 5; i >= 0; i--) {
+                    const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+                    const y = d.getFullYear();
+                    const m = String(d.getMonth() + 1).padStart(2, '0');
+                    const monthPrefix = `${y}-${m}`;
+                    mMonths.push(d.toLocaleString('en-US', { month: 'short' }));
+                    
+                    const count = allAttendance.filter(r => (r.date || '').startsWith(monthPrefix)).length;
+                    mCounts.push(count);
+                }
+
+                window.AdminUI.monthlyChartInstance = new Chart(monthlyCtx, {
+                    type: 'bar',
+                    data: {
+                        labels: mMonths,
+                        datasets: [{
+                            label: 'Total Shifts',
+                            data: mCounts,
+                            backgroundColor: mColors,
+                            borderRadius: 8,
+                            barThickness: 28
+                        }]
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        plugins: {
+                            legend: { display: false }
+                        },
+                        scales: {
+                            y: {
+                                beginAtZero: true,
+                                ticks: { 
+                                    color: '#64748b', 
+                                    stepSize: Math.max(1, Math.ceil(Math.max(...mCounts, 1) / 4)), 
+                                    font: { family: 'Plus Jakarta Sans', size: 11 }
+                                },
+                                grid: { color: 'rgba(255,255,255,0.04)' }
+                            },
+                            x: {
+                                ticks: { color: '#94a3b8', font: { family: 'Plus Jakarta Sans', size: 11 } },
+                                grid: { display: false }
+                            }
+                        }
                     }
                 });
-                
-                officeData.push(dayAttendance);
-                wfhData.push(dayWfhCount);
-                leaveData.push(dayLeaveCount);
-            }
-            
-            window.AdminUI.trendChartInstance = new Chart(trendCtx, {
-                type: 'line',
-                data: {
-                    labels: labels,
-                    datasets: [
-                        { label: 'Office', data: officeData, borderColor: '#10b981', backgroundColor: '#10b981', tension: 0.3 },
-                        { label: 'WFH', data: wfhData, borderColor: '#3b82f6', backgroundColor: '#3b82f6', tension: 0.3 },
-                        { label: 'On Leave', data: leaveData, borderColor: '#8b5cf6', backgroundColor: '#8b5cf6', tension: 0.3 }
-                    ]
-                },
-                options: { responsive: false, plugins: { legend: { labels: { color: '#e2e8f0'} } }, scales: { y: { beginAtZero: true, ticks: {color: '#94a3b8', stepSize:1}, grid:{color:'rgba(255,255,255,0.05)'} }, x: { ticks: {color: '#94a3b8'}, grid:{color:'rgba(255,255,255,0.05)'} } } }
-            });
+            } catch(e) { console.error("Monthly shifts chart error:", e); }
         }
 
-        // 3. Leave Distribution
-        const distCtx = document.getElementById('leaveDistChart');
-        if(distCtx) {
-            if(window.AdminUI.distChartInstance) window.AdminUI.distChartInstance.destroy();
-            const typeCounts = {};
-            leaves.filter(l => l.status === 'Approved').forEach(l => {
-                const isW = l.type?.toLowerCase().includes('wfh') || l.type?.toLowerCase().includes('work from home');
-                if(!isW) typeCounts[l.type] = (typeCounts[l.type] || 0) + 1;
-            });
-            const bgColors = ['#f43f5e', '#d946ef', '#f59e0b', '#3b82f6', '#10b981', '#14b8a6', '#64748b'];
-            window.AdminUI.distChartInstance = new Chart(distCtx, {
-                type: 'pie',
-                data: {
-                    labels: Object.keys(typeCounts).length ? Object.keys(typeCounts) : ['No Leaves'],
-                    datasets: [{ data: Object.keys(typeCounts).length ? Object.values(typeCounts) : [1], backgroundColor: Object.keys(typeCounts).length ? bgColors.slice(0, Object.keys(typeCounts).length) : ['#334155'], borderWidth:0 }]
-                },
-                options: { responsive:false, plugins: { legend: { position: 'right', labels: {color: '#e2e8f0', usePointStyle: true} } } }
-            });
-        }
-
-        // 4. Top Takers
+        // =========================================================================
+        // Chart 4: Approved Leaves by Team Member (Real Aggregate from Store Leaves)
+        // =========================================================================
         const takersCtx = document.getElementById('topTakersChart');
         if(takersCtx) {
-            if(window.AdminUI.takersChartInstance) window.AdminUI.takersChartInstance.destroy();
-            const userTotals = {};
-            leaves.filter(l => l.status === 'Approved').forEach(l => {
-                userTotals[l.userId] = (userTotals[l.userId] || 0) + 1;
-            });
-            const sorted = Object.entries(userTotals).sort((a,b) => b[1] - a[1]).slice(0, 5);
-            const tkLabels = sorted.map(s => {
-                const u = activePersons.find(p => p.id === s[0]);
-                return u ? `${u.first_name} ${u.last_name}` : s[0];
-            });
-            const tkData = sorted.map(s => s[1]);
-            
-            window.AdminUI.takersChartInstance = new Chart(takersCtx, {
-                type: 'bar',
-                data: {
-                    labels: tkLabels.length ? tkLabels : ['None'],
-                    datasets: [{ label: 'Approved Requests', data: tkData.length ? tkData : [0], backgroundColor: '#f43f5e', borderRadius:4 }]
-                },
-                options: { indexAxis: 'y', responsive:false, plugins: { legend: { display:false } }, scales: { y: { ticks: {color: '#94a3b8'}, grid:{display:false} }, x: { ticks: {color: '#94a3b8', stepSize:1}, grid:{color:'rgba(255,255,255,0.05)'} } } }
-            });
-        }
-
-        // 5. WFH Monthly Usage Chart
-        const wfhMonthlyCtx = document.getElementById('wfhMonthlyChart');
-        if (wfhMonthlyCtx) {
-            if (this.wfhMonthlyChartInstance) this.wfhMonthlyChartInstance.destroy();
-            const wfhMonthLabels = [];
-            const wfhMonthData = [];
-            const now = new Date();
-            for (let m = 5; m >= 0; m--) {
-                const d = new Date(now.getFullYear(), now.getMonth() - m, 1);
-                const mStr = d.toLocaleString('default', { month: 'short', year: '2-digit' });
-                wfhMonthLabels.push(mStr);
-                const mStart = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-01`;
-                const mEnd = new Date(d.getFullYear(), d.getMonth()+1, 0);
-                const mEndStr = `${mEnd.getFullYear()}-${String(mEnd.getMonth()+1).padStart(2,'0')}-${String(mEnd.getDate()).padStart(2,'0')}`;
-                let wfhDays = 0;
-                leaves.filter(l => l.status === 'Approved' && this._isWfh(l.type)).forEach(l => {
-                    if (l.endDate >= mStart && l.startDate <= mEndStr) wfhDays += this._calcDays(l);
+            try {
+                if(window.AdminUI.takersChartInstance) window.AdminUI.takersChartInstance.destroy();
+                const userTotals = {};
+                leaves.filter(l => l.status === 'Approved').forEach(l => {
+                    const days = this._calcDays ? this._calcDays(l) : 1;
+                    userTotals[l.userId] = (userTotals[l.userId] || 0) + days;
                 });
-                wfhMonthData.push(wfhDays);
-            }
-            this.wfhMonthlyChartInstance = new Chart(wfhMonthlyCtx, {
-                type: 'bar',
-                data: { labels: wfhMonthLabels, datasets: [{ label: 'WFH Days', data: wfhMonthData, backgroundColor: '#3b82f6', borderRadius: 6 }] },
-                options: { responsive: false, plugins: { legend: { labels: { color: '#e2e8f0' } } }, scales: { y: { beginAtZero: true, ticks: { color: '#94a3b8', stepSize: 1 }, grid: { color: 'rgba(255,255,255,0.05)' } }, x: { ticks: { color: '#94a3b8' }, grid: { color: 'rgba(255,255,255,0.05)' } } } }
-            });
+                const sorted = Object.entries(userTotals).sort((a,b) => b[1] - a[1]).slice(0, 5);
+                const tkLabels = sorted.map(s => {
+                    const u = activePersons.find(p => p.id === s[0]);
+                    return u ? `${u.first_name || ''} ${u.last_name || ''}`.trim() || u.id : s[0];
+                });
+                const tkData = sorted.map(s => s[1]);
+                const barColors = ['#2563eb', '#10b981', '#f59e0b', '#ec4899', '#06b6d4'];
+                
+                window.AdminUI.takersChartInstance = new Chart(takersCtx, {
+                    type: 'bar',
+                    data: {
+                        labels: tkLabels.length ? tkLabels : ['No Approved Leaves'],
+                        datasets: [{ 
+                            label: 'Approved Days', 
+                            data: tkData.length ? tkData : [0], 
+                            backgroundColor: barColors.slice(0, Math.max(1, tkLabels.length)), 
+                            borderRadius: 6,
+                            barThickness: 18
+                        }]
+                    },
+                    options: { 
+                        indexAxis: 'y', 
+                        responsive: true, 
+                        maintainAspectRatio: false,
+                        plugins: { legend: { display: false } }, 
+                        scales: { 
+                            y: { ticks: { color: '#94a3b8', font: { family: 'Plus Jakarta Sans', size: 12 } }, grid: { display: false } }, 
+                            x: { ticks: { color: '#64748b', stepSize: 1 }, grid: { color: 'rgba(255,255,255,0.04)' } } 
+                        } 
+                    }
+                });
+            } catch(e) { console.error("Takers chart error:", e); }
         }
+    },
 
-        // 6. Leave vs WFH Split Chart
-        const lvwCtx = document.getElementById('leaveVsWfhChart');
-        if (lvwCtx) {
-            if (this.leaveVsWfhChartInstance) this.leaveVsWfhChartInstance.destroy();
-            const approvedLeaves = leaves.filter(l => l.status === 'Approved');
-            const totalWfhDays = approvedLeaves.filter(l => this._isWfh(l.type)).reduce((a, l) => a + this._calcDays(l), 0);
-            const totalLeaveDays = approvedLeaves.filter(l => !this._isWfh(l.type)).reduce((a, l) => a + this._calcDays(l), 0);
-            this.leaveVsWfhChartInstance = new Chart(lvwCtx, {
-                type: 'doughnut',
-                data: {
-                    labels: (totalWfhDays + totalLeaveDays) > 0 ? ['Leaves', 'WFH'] : ['No Data'],
-                    datasets: [{ data: (totalWfhDays + totalLeaveDays) > 0 ? [totalLeaveDays, totalWfhDays] : [1], backgroundColor: (totalWfhDays + totalLeaveDays) > 0 ? ['#8b5cf6', '#3b82f6'] : ['#334155'], borderWidth: 0 }]
-                },
-                options: { responsive: false, plugins: { legend: { position: 'right', labels: { color: '#e2e8f0', usePointStyle: true } } } }
-            });
+    // Segmented tab filtering for Live Attendance Feed
+    filterFeedByTab: function(tab, btnEl) {
+        if (btnEl) {
+            document.querySelectorAll('#feed-filter-tabs .filter-tab-pill').forEach(b => b.classList.remove('active'));
+            btnEl.classList.add('active');
         }
+        this._currentFeedTab = tab;
+        this._applyFeedFilters();
+    },
+
+    filterLiveFeed: function(query) {
+        this._currentFeedSearch = (query || '').toLowerCase().trim();
+        this._applyFeedFilters();
+    },
+
+    _applyFeedFilters: function() {
+        const tab = this._currentFeedTab || 'all';
+        const q = this._currentFeedSearch || '';
+        const rows = document.querySelectorAll('#live-attendance-tbody tr');
+        rows.forEach(tr => {
+            const searchMatches = !q || (tr.getAttribute('data-search') || '').includes(q);
+            const type = tr.getAttribute('data-feed-type') || 'absent';
+            const tabMatches = (tab === 'all') || (type === tab);
+            tr.style.display = (searchMatches && tabMatches) ? '' : 'none';
+        });
     },
 
     renderLeaves: function() {
         this._leavesActiveTab = this._leavesActiveTab || 'Pending';
         const allLeaves = Store.getAllLeaves();
 
-        // Update pending count badge
-        const pendingCount = allLeaves.filter(l => l.status === 'Pending').length;
-        const countEl = document.getElementById('leaves-pending-count');
-        if (countEl) { countEl.textContent = pendingCount; countEl.style.display = pendingCount > 0 ? 'inline' : 'none'; }
+        // Update counts for all 3 sub-tabs
+        const pendingCount = allLeaves.filter(l => (l.status || '').toLowerCase() === 'pending').length;
+        const approvedCount = allLeaves.filter(l => (l.status || '').toLowerCase() === 'approved').length;
+        const rejectedCount = allLeaves.filter(l => (l.status || '').toLowerCase() === 'rejected').length;
+
+        const pCountEl = document.getElementById('leaves-pending-count');
+        if (pCountEl) {
+            pCountEl.textContent = pendingCount;
+            pCountEl.style.display = pendingCount > 0 ? 'inline-block' : 'none';
+        }
+        const aCountEl = document.getElementById('leaves-approved-count');
+        if (aCountEl) aCountEl.textContent = approvedCount;
+        const rCountEl = document.getElementById('leaves-rejected-count');
+        if (rCountEl) rCountEl.textContent = rejectedCount;
+
+        this.updatePendingLeaveBadge();
 
         // Populate type filter dropdown
         const typeSelect = document.getElementById('leaves-filter-type');
@@ -889,7 +1132,9 @@ window.AdminUI = Object.assign(window.AdminUI || {}, {
         const type = document.getElementById('leaves-filter-type')?.value || 'all';
         const month = document.getElementById('leaves-filter-month')?.value || 'all';
 
-        let leaves = Store.getAllLeaves().filter(l => l.status === status);
+        const allLeaves = Store.getAllLeaves();
+        const approvedCount = allLeaves.filter(l => (l.status || '').toLowerCase() === 'approved').length;
+        let leaves = allLeaves.filter(l => (l.status || '').toLowerCase() === status.toLowerCase());
 
         // Category filter
         if (category === 'wfh') leaves = leaves.filter(l => this._isWfh(l.type));
@@ -921,8 +1166,20 @@ window.AdminUI = Object.assign(window.AdminUI || {}, {
         tbody.innerHTML = '';
 
         if (leaves.length === 0) {
-            const emptyMsg = status === 'Pending' ? 'No pending requests 🎉' : `No ${status.toLowerCase()} requests found.`;
-            tbody.innerHTML = `<tr><td colspan="6" style="text-align:center;color:var(--text-muted);padding:30px;">${emptyMsg}</td></tr>`;
+            if (status.toLowerCase() === 'pending') {
+                tbody.innerHTML = `
+                    <tr>
+                        <td colspan="6" style="text-align:center; padding:48px 20px;">
+                            <div style="font-size:36px; margin-bottom:12px;">🎉</div>
+                            <div style="font-size:16px; font-weight:700; color:#ffffff; margin-bottom:6px;">No Pending Leave Requests</div>
+                            <div style="font-size:13px; color:#64748b; margin-bottom:18px;">All leave applications are currently processed. There are ${approvedCount} approved leaves in the system.</div>
+                            ${approvedCount > 0 ? `<button type="button" class="btn-small btn-primary" onclick="window.AdminUI.switchLeavesTab('Approved')" style="margin:0 auto; display:inline-flex; align-items:center; gap:6px; padding:7px 16px;"><ion-icon name="checkmark-done-outline"></ion-icon> View ${approvedCount} Approved Leaves</button>` : ''}
+                        </td>
+                    </tr>
+                `;
+            } else {
+                tbody.innerHTML = `<tr><td colspan="6" style="text-align:center; color:#64748b; padding:40px 20px;">No ${status.toLowerCase()} requests found matching your filter criteria.</td></tr>`;
+            }
             return;
         }
 
@@ -930,45 +1187,85 @@ window.AdminUI = Object.assign(window.AdminUI || {}, {
             const days = this._calcDays(l);
             const isW = this._isWfh(l.type);
             const catBadge = isW
-                ? '<span class="badge" style="background:#3b82f6;color:white;">WFH</span>'
-                : '<span class="badge" style="background:#8b5cf6;color:white;">Leave</span>';
+                ? '<span class="badge-cat-wfh"><ion-icon name="home-outline"></ion-icon> WFH</span>'
+                : '<span class="badge-cat-leave"><ion-icon name="airplane-outline"></ion-icon> Leave</span>';
 
             const userObj = this.kitsuPersons.find(u => u.id === l.userId);
             const displayName = userObj ? `${userObj.first_name} ${userObj.last_name}` : (l.userName || l.userId || 'Unknown');
+            const initials = displayName.split(' ').map(n => n[0]).join('').substring(0, 2).toUpperCase();
+            const department = userObj?.department || 'Studio Artist';
+
+            const startDateFormatted = l.startDate ? new Date(l.startDate).toLocaleDateString('en-US', { day:'numeric', month:'short' }) : '-';
+            const endDateFormatted = l.endDate ? new Date(l.endDate).toLocaleDateString('en-US', { day:'numeric', month:'short' }) : '-';
+            const dateStr = (l.startDate === l.endDate) ? startDateFormatted : `${startDateFormatted} → ${endDateFormatted}`;
 
             const tr = document.createElement('tr');
             tr.innerHTML = `
-                <td><strong>${displayName}</strong></td>
-                <td>${catBadge}</td>
-                <td>${l.type} ${l.isHalfDay ? '<span class="badge" style="background:var(--warning);color:white;font-size:10px;margin-left:6px;">Half Day</span>' : ''}</td>
-                <td>${l.startDate}${l.startDate !== l.endDate ? ' → ' + l.endDate : ''} <small style="color:var(--text-muted);">(${days} day${days!==1?'s':''})</small></td>
-                <td style="max-width:200px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;" title="${(l.reason||'').replace(/"/g, '&quot;')}">${l.reason || '-'}</td>
+                <td style="padding:14px 18px;">
+                    <div style="display:flex; align-items:center; gap:10px;">
+                        <div style="width:30px; height:30px; border-radius:50%; background:linear-gradient(135deg, #38bdf8, #6366f1); color:#fff; font-size:11px; font-weight:700; display:flex; align-items:center; justify-content:center; flex-shrink:0;">
+                            ${initials}
+                        </div>
+                        <div>
+                            <div style="font-weight:700; color:#ffffff; font-size:13.5px;">${displayName}</div>
+                            <div style="font-size:11px; color:#64748b;">${department}</div>
+                        </div>
+                    </div>
+                </td>
+                <td style="padding:14px 18px;">${catBadge}</td>
+                <td style="padding:14px 18px;">
+                    <span style="font-weight:600; color:#f1f5f9; font-size:13px;">${l.type || '-'}</span>
+                    ${l.isHalfDay ? '<span class="badge-half-day">Half Day</span>' : ''}
+                </td>
+                <td style="padding:14px 18px; color:#cbd5e1; font-size:12.5px; white-space:nowrap;">
+                    <ion-icon name="calendar-outline" style="vertical-align:middle; color:#64748b; margin-right:4px;"></ion-icon>
+                    <span>${dateStr}</span>
+                    <span class="badge-duration-pill">${days} ${days === 1 ? 'day' : 'days'}</span>
+                </td>
+                <td style="padding:14px 18px; max-width:240px; color:#94a3b8; font-size:12.5px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;" title="${(l.reason || '').replace(/"/g, '&quot;')}">
+                    ${l.reason ? `"${l.reason}"` : '<span style="color:#475569;">No notes provided</span>'}
+                </td>
             `;
 
             let actionHtml = '';
-            if (status === 'Pending') {
+            if (status.toLowerCase() === 'pending') {
                 actionHtml = `
-                    <button class="btn-small btn-approve" onclick="window.AdminUI.updateLeave('${l.id}','Approved')">Approve</button>
-                    <button class="btn-small btn-reject" onclick="window.AdminUI.updateLeave('${l.id}','Rejected')">Reject</button>
+                    <div style="display:flex; gap:6px; justify-content:flex-end;">
+                        <button class="btn-small btn-approve" style="padding:6px 12px; font-size:11.5px; display:inline-flex; align-items:center; gap:4px;" onclick="window.AdminUI.updateLeave('${l.id}','Approved')">
+                            <ion-icon name="checkmark-outline"></ion-icon> Approve
+                        </button>
+                        <button class="btn-small btn-reject" style="padding:6px 12px; font-size:11.5px; display:inline-flex; align-items:center; gap:4px;" onclick="window.AdminUI.updateLeave('${l.id}','Rejected')">
+                            <ion-icon name="close-outline"></ion-icon> Reject
+                        </button>
+                    </div>
                 `;
-            } else if (status === 'Approved') {
+            } else if (status.toLowerCase() === 'approved') {
                 actionHtml = `
-                    <button class="btn-small btn-reject" onclick="window.AdminUI.updateLeave('${l.id}','Rejected')">Revoke</button>
+                    <div style="display:flex; gap:6px; justify-content:flex-end;">
+                        <button class="btn-small btn-neutral" style="padding:6px 10px; font-size:11.5px; color:#f87171; border-color:rgba(239,68,68,0.25); background:rgba(239,68,68,0.06);" title="Revoke approval" onclick="window.AdminUI.updateLeave('${l.id}','Rejected')">
+                            <ion-icon name="arrow-undo-outline" style="vertical-align:middle;"></ion-icon> Revoke
+                        </button>
+                    </div>
                 `;
             } else {
                 actionHtml = `
-                    <button class="btn-small btn-approve" onclick="window.AdminUI.updateLeave('${l.id}','Approved')">Re-Approve</button>
+                    <div style="display:flex; gap:6px; justify-content:flex-end;">
+                        <button class="btn-small btn-approve" style="padding:6px 10px; font-size:11.5px;" onclick="window.AdminUI.updateLeave('${l.id}','Approved')">
+                            <ion-icon name="checkmark-outline"></ion-icon> Re-Approve
+                        </button>
+                    </div>
                 `;
             }
-            tr.innerHTML += `<td style="min-width:140px;">${actionHtml}</td>`;
+            tr.innerHTML += `<td style="padding:14px 18px; text-align:right;">${actionHtml}</td>`;
             tbody.appendChild(tr);
         });
     },
 
-    updateLeave: function(leaveId, status) {
-        Store.updateLeaveStatus(leaveId, status);
+    updateLeave: async function(leaveId, status) {
+        await Store.updateLeaveStatus(leaveId, status);
         this.renderLeaves();
         this.renderDashboard();
+        this.updatePendingLeaveBadge();
     },
 
     renderUsers: async function() {
@@ -1010,21 +1307,34 @@ window.AdminUI = Object.assign(window.AdminUI || {}, {
                 const tr = document.createElement('tr');
                 const fullName = p.name;
                 const email = p.id;
-                // Treat users with role 'admin' as having Super Admin app access
-                const appAccess = p.role === 'admin' ? 'Super Admin' : 'Normal User';
+                const isSuperAdmin = p.role === 'admin';
+                const appAccess = isSuperAdmin ? 'Super Admin' : 'Artist / Team';
+                const accessBadge = isSuperAdmin 
+                    ? '<span class="status-pill pill-active">Super Admin</span>' 
+                    : '<span class="status-pill pill-wfh">Team Member</span>';
                 
+                const initials = (fullName.split(' ').map(n=>n[0]).join('') || 'U').substring(0, 2).toUpperCase();
                 const extra = Store.getExtraOff(p.id) || { leaves: 0, wfh: 0 };
-                const extraText = `+${extra.leaves} L / +${extra.wfh} WFH`;
                 
                 tr.innerHTML = `
-                    <td><strong>${fullName}</strong></td>
-                    <td>${email}</td>
-                    <td><span class="badge" style="background:#475569; color:white">Standard</span></td>
-                    <td><span class="badge" style="background: ${p.role==='admin'?'var(--primary)':'var(--glass-border)'}; color:${p.role==='admin'?'white':'var(--text-main)'}">${appAccess}</span></td>
-                    <td style="white-space: nowrap; display: flex; gap: 8px; align-items: center; border-bottom: none;">
-                        <button class="btn-small" style="background:#3b82f6; color:white; width:auto; padding:4px 12px; margin:0;" onclick="window.AdminUI.openUserDetail('${p.id}')">View</button>
-                        <button class="btn-small btn-primary" style="width:auto; padding:4px 12px; margin:0;" onclick="window.AdminUI.openExtraOffModal('${p.id}', ${extra.leaves}, ${extra.wfh})">Edit Off</button>
-                        ${p.id !== this.currentUser.id ? `<button class="btn-small btn-reject" style="width:auto; padding:4px 12px; margin:0;" onclick="window.AdminUI.deleteUser('${p.id}')">Remove</button>` : ''}
+                    <td>
+                        <div class="user-cell">
+                            <div class="user-cell-avatar">${initials}</div>
+                            <div class="user-cell-info">
+                                <span class="name">${fullName}</span>
+                                <span class="dept">${email}</span>
+                            </div>
+                        </div>
+                    </td>
+                    <td><span style="color:var(--text-secondary); font-family:var(--font-mono); font-size:12px;">${email}</span></td>
+                    <td><span class="status-pill pill-present">Active</span></td>
+                    <td>${accessBadge}</td>
+                    <td>
+                        <div style="display:flex; gap:6px; align-items:center;">
+                            <button class="btn-neutral btn-small" onclick="window.AdminUI.openUserDetail('${p.id}')">View Details</button>
+                            <button class="btn-primary btn-small" onclick="window.AdminUI.openExtraOffModal('${p.id}', ${extra.leaves}, ${extra.wfh})">Extra Off</button>
+                            ${p.id !== this.currentUser.id ? `<button class="btn-danger btn-small" onclick="window.AdminUI.deleteUser('${p.id}')">Remove</button>` : ''}
+                        </div>
                     </td>
                 `;
                 tbody.appendChild(tr);
@@ -1036,8 +1346,25 @@ window.AdminUI = Object.assign(window.AdminUI || {}, {
     },
 
     openUserDetail: function(userId) {
-        const users = this._cachedUsers || [];
-        const user = users.find(u => u.id === userId);
+        const users = (this._cachedUsers && this._cachedUsers.length > 0) 
+            ? this._cachedUsers 
+            : (this.kitsuPersons && this.kitsuPersons.length > 0)
+                ? this.kitsuPersons
+                : this._mapUsersToPersons(Store.getUsers());
+        
+        let user = users.find(u => u.id === userId);
+        if (!user) {
+            const rawUser = Store.getUsers().find(u => u.id === userId);
+            if (rawUser) {
+                user = {
+                    id: rawUser.id,
+                    name: rawUser.name || rawUser.id,
+                    email: rawUser.email || rawUser.id,
+                    department: rawUser.department || 'Production',
+                    role: rawUser.role || 'user'
+                };
+            }
+        }
         if (!user) return;
 
         const allLeaves = Store.getAllLeaves().filter(l => l.userId === userId);
@@ -1410,65 +1737,207 @@ window.AdminUI = Object.assign(window.AdminUI || {}, {
         }
     },
 
+    selectedCalDate: null,
+
     renderCalendar: function() {
+        if (!this.currentCalDate) this.currentCalDate = new Date();
         const year = this.currentCalDate.getFullYear();
         const month = this.currentCalDate.getMonth();
-        const monthName = this.currentCalDate.toLocaleString('default', { month: 'long', year: 'numeric' });
+        const todayStr = this.getTodayStr();
         
-        const titleEl = document.getElementById('cal-month-title');
-        if(titleEl) titleEl.textContent = monthName;
-        
-        const calContainer = document.getElementById('admin-calendar-grid');
-        if(!calContainer) return;
-        calContainer.innerHTML = '';
-        
-        const firstDay = new Date(year, month, 1).getDay();
-        const daysInMonth = new Date(year, month + 1, 0).getDate();
-        
-        const allLeaves = Store.getAllLeaves().filter(l => l.status === 'Approved');
-        const users = this.kitsuPersons;
-        const holidays = Store.getHolidays();
-        
-        for(let i=0; i<firstDay; i++) {
-            calContainer.innerHTML += `<div class="calendar-day empty"></div>`;
+        if (!this.selectedCalDate) {
+            this.selectedCalDate = todayStr;
         }
-        
-        for(let day=1; day <= daysInMonth; day++) {
+
+        // Title e.g. AUGUST 2026
+        const monthName = this.currentCalDate.toLocaleString('default', { month: 'long', year: 'numeric' }).toUpperCase();
+        const titleEl = document.getElementById('cal-month-title');
+        if (titleEl) titleEl.textContent = monthName;
+
+        // Today icon badge
+        const todayDayNum = new Date().getDate();
+        const todayIcon = document.getElementById('cal-today-day-icon');
+        if (todayIcon) todayIcon.textContent = todayDayNum;
+
+        const calContainer = document.getElementById('admin-calendar-grid');
+        if (!calContainer) return;
+        calContainer.innerHTML = '';
+
+        // Monday-first offset: 0=Mon, 1=Tue, ..., 6=Sun
+        const firstDaySundayBased = new Date(year, month, 1).getDay();
+        const firstDayIndex = (firstDaySundayBased + 6) % 7;
+        const daysInMonth = new Date(year, month + 1, 0).getDate();
+        const prevMonthDays = new Date(year, month, 0).getDate();
+
+        const allLeaves = Store.getAllLeaves().filter(l => l.status === 'Approved');
+        const users = this.kitsuPersons && this.kitsuPersons.length > 0 ? this.kitsuPersons : Store.getUsers();
+        const holidays = Store.getHolidays();
+
+        // 1. Previous Month Dimmed Days
+        for (let i = firstDayIndex - 1; i >= 0; i--) {
+            const prevDayNum = prevMonthDays - i;
+            const cell = document.createElement('div');
+            cell.className = 'cal-day-cell dimmed';
+            cell.innerHTML = `<span class="cal-day-num">${prevDayNum}</span>`;
+            calContainer.appendChild(cell);
+        }
+
+        // 2. Current Month Days
+        for (let day = 1; day <= daysInMonth; day++) {
             const dateStr = `${year}-${String(month+1).padStart(2,'0')}-${String(day).padStart(2,'0')}`;
+            const isToday = (dateStr === todayStr);
+            const isSelected = (dateStr === this.selectedCalDate);
+            const dayOfWeek = (new Date(year, month, day).getDay() + 6) % 7; // 6 is Sunday
+            const isSunday = (dayOfWeek === 6);
+
             const folksOnLeave = allLeaves.filter(l => l.startDate <= dateStr && l.endDate >= dateStr);
             const holiday = holidays.find(h => h.date === dateStr);
-            
-            let badgesHTML = '';
-            folksOnLeave.forEach(leave => {
-                const user = users.find(u => u.id === leave.userId);
-                const name = user ? user.first_name : (leave.userName || leave.userId);
-                const isOpt = leave.type === 'Optional Holiday';
-                const isWfh = leave.type?.toLowerCase().includes('wfh') || leave.type?.toLowerCase().includes('work from home');
-                let badgeClass = '';
-                if(isOpt) badgeClass = 'opt';
-                else if(isWfh) badgeClass = 'wfh';
-                
-                badgesHTML += `<div class="cal-leave-badge ${badgeClass}">${name} ${isWfh ? '(WFH)' : (leave.isHalfDay ? '(Half)' : '')}</div>`;
-            });
+            const hasWfh = folksOnLeave.some(l => this._isWfh(l.type));
+            const hasLeave = folksOnLeave.some(l => !this._isWfh(l.type));
 
+            let barsHTML = '';
             if (holiday) {
-                const hClass = holiday.type === 'Optional' ? 'opt' : 'holiday';
-                badgesHTML += `<div class="cal-leave-badge ${hClass}">${holiday.name}</div>`;
+                barsHTML += `<div class="cal-bar holiday" title="Holiday: ${holiday.name}"></div>`;
+            }
+            if (hasWfh) {
+                barsHTML += `<div class="cal-bar wfh" title="Team WFH"></div>`;
+            }
+            if (hasLeave) {
+                barsHTML += `<div class="cal-bar leave" title="Team Leave"></div>`;
             }
 
-            const dayOfWeek = new Date(year, month, day).getDay();
-            if (dayOfWeek === 0) {
-                badgesHTML += `<div class="cal-leave-badge holiday">Sunday</div>`;
-            }
-            
-            const isTodayStr = (dateStr === this.getTodayStr()) ? ' today' : '';
+            const cell = document.createElement('div');
+            let classes = ['cal-day-cell'];
+            if (isToday) classes.push('today');
+            if (isSelected) classes.push('selected');
+            if (isSunday) classes.push('sunday');
+            cell.className = classes.join(' ');
+            cell.setAttribute('data-date', dateStr);
 
-            calContainer.innerHTML += `
-                <div class="calendar-day${isTodayStr}">
-                    <div class="cal-date">${day}</div>
-                    <div class="cal-badges">${badgesHTML}</div>
+            cell.innerHTML = `
+                <span class="cal-day-num">${day}</span>
+                ${barsHTML ? '<div class="cal-bars-container">' + barsHTML + '</div>' : ''}
+            `;
+
+            cell.onclick = () => {
+                this.selectCalendarDay(dateStr);
+            };
+
+            calContainer.appendChild(cell);
+        }
+
+        // 3. Next Month Dimmed Days to fill grid
+        const totalCellsSoFar = firstDayIndex + daysInMonth;
+        const totalRows = Math.ceil(totalCellsSoFar / 7);
+        const totalTargetCells = totalRows * 7;
+        const nextDaysCount = totalTargetCells - totalCellsSoFar;
+
+        for (let nextDay = 1; nextDay <= nextDaysCount; nextDay++) {
+            const cell = document.createElement('div');
+            cell.className = 'cal-day-cell dimmed';
+            cell.innerHTML = `<span class="cal-day-num">${nextDay}</span>`;
+            calContainer.appendChild(cell);
+        }
+
+        // Render Sidebar Agenda
+        this.renderCalendarAgenda(this.selectedCalDate || todayStr);
+    },
+
+    selectCalendarDay: function(dateStr) {
+        this.selectedCalDate = dateStr;
+        // Update selection highlight in grid
+        document.querySelectorAll('.cal-day-cell').forEach(c => {
+            c.classList.remove('selected');
+            if (c.getAttribute('data-date') === dateStr) {
+                c.classList.add('selected');
+            }
+        });
+        this.renderCalendarAgenda(dateStr);
+    },
+
+    renderCalendarAgenda: function(dateStr) {
+        const [y, m, d] = dateStr.split('-').map(Number);
+        const dateObj = new Date(y, m - 1, d);
+        const dayNum = d;
+        const dayName = dateObj.toLocaleString('default', { weekday: 'short' }).toUpperCase();
+        const monthShort = dateObj.toLocaleString('default', { month: 'short' });
+
+        const numEl = document.getElementById('cal-sel-day-num');
+        const nameEl = document.getElementById('cal-sel-day-name');
+        const quickAddLabel = document.getElementById('cal-quick-add-label');
+
+        if (numEl) numEl.textContent = dayNum;
+        if (nameEl) nameEl.textContent = dayName;
+        if (quickAddLabel) quickAddLabel.textContent = `Add on ${dayNum} ${monthShort}`;
+
+        const container = document.getElementById('cal-agenda-container');
+        if (!container) return;
+        container.innerHTML = '';
+
+        const allLeaves = Store.getAllLeaves().filter(l => l.status === 'Approved' && l.startDate <= dateStr && l.endDate >= dateStr);
+        const holidays = Store.getHolidays().filter(h => h.date === dateStr);
+        const users = this.kitsuPersons && this.kitsuPersons.length > 0 ? this.kitsuPersons : Store.getUsers();
+
+        let totalEvents = 0;
+
+        // 1. Holidays
+        holidays.forEach(h => {
+            totalEvents++;
+            const card = document.createElement('div');
+            card.className = 'cal-event-card holiday';
+            card.innerHTML = `
+                <div class="cal-event-icon"><ion-icon name="calendar"></ion-icon></div>
+                <div class="cal-event-info">
+                    <h4>${h.name}</h4>
+                    <p>${h.type || 'Public Holiday'} • Studio Holiday</p>
+                </div>
+                <span class="cal-event-badge" style="background:rgba(16,185,129,0.2); color:#10b981;">Holiday</span>
+            `;
+            container.appendChild(card);
+        });
+
+        // 2. Approved WFH & Leaves
+        allLeaves.forEach(l => {
+            totalEvents++;
+            const user = users.find(u => u.id === l.userId);
+            const fullName = user ? `${user.first_name || ''} ${user.last_name || ''}`.trim() || user.name || user.id : (l.userName || l.userId);
+            const isWfh = this._isWfh(l.type);
+            const isHalf = l.isHalfDay || (l.type || '').toLowerCase().includes('half day');
+
+            const card = document.createElement('div');
+            card.className = `cal-event-card ${isWfh ? 'wfh' : 'leave'}`;
+            card.innerHTML = `
+                <div class="cal-event-icon"><ion-icon name="${isWfh ? 'home' : 'airplane'}"></ion-icon></div>
+                <div class="cal-event-info">
+                    <h4>${fullName}</h4>
+                    <p>${isWfh ? 'Work From Home' : (l.type || 'Planned Leave')}${isHalf ? ' (Half Day)' : ''}</p>
+                </div>
+                <span class="cal-event-badge" style="background:${isWfh ? 'rgba(6,182,212,0.2)' : 'rgba(139,92,246,0.2)'}; color:${isWfh ? '#06b6d4' : '#8b5cf6'};">${isWfh ? 'WFH' : 'Leave'}</span>
+            `;
+            container.appendChild(card);
+        });
+
+        if (totalEvents === 0) {
+            container.innerHTML = `
+                <div class="cal-empty-day">
+                    <ion-icon name="calendar-outline" style="font-size:36px; color:#334155; margin-bottom:8px;"></ion-icon>
+                    <h4 style="color:#e2e8f0; margin:0 0 4px 0; font-size:14px;">No Events Scheduled</h4>
+                    <p>No studio holidays or planned artist leaves on this date.</p>
                 </div>
             `;
+        }
+    },
+
+    openAddHolidayModalForSelectedDay: function() {
+        const dateStr = this.selectedCalDate || this.getTodayStr();
+        const holModal = document.getElementById('holiday-modal');
+        if (holModal) {
+            document.getElementById('holiday-form')?.reset();
+            const dateInput = document.getElementById('holiday-date-input');
+            if (dateInput) dateInput.value = dateStr;
+            holModal.classList.remove('hidden');
+        } else if (typeof this.openEditHolidayModal === 'function') {
+            this.openEditHolidayModal(dateStr, '', 'Public');
         }
     },
 
@@ -1646,54 +2115,162 @@ window.AdminUI = Object.assign(window.AdminUI || {}, {
 
     _historyAttChart: null,
     _historyTrendChart: null,
+    _historyTimingChart: null,
+    _historyWorkHoursChart: null,
     _historyData: null,
     _historyUserId: null,
 
     renderHistoryTab: async function() {
-        // Populate user dropdown
+        // Populate user dropdown with database users or fallback Store users
         try {
-            const res = await fetch('/api/sync/store');
-            const data = await res.json();
-            const dbUsers = (data.users || []).filter(u => u.role !== 'admin');
+            let dbUsers = [];
+            try {
+                const res = await fetch('/api/sync/store');
+                if (res.ok) {
+                    const data = await res.json();
+                    dbUsers = (data.users || []).filter(u => u.role !== 'admin');
+                }
+            } catch (e) {}
+
+            if (!dbUsers.length && typeof Store !== 'undefined' && Store.getUsers) {
+                dbUsers = (Store.getUsers() || []).filter(u => u.role !== 'admin');
+            }
+
             const select = document.getElementById('history-user-select');
             if (select) {
                 const currentVal = select.value;
                 select.innerHTML = '<option value="">— Select Employee —</option>' +
-                    dbUsers.map(u => `<option value="${u.id}"${u.id === currentVal ? ' selected' : ''}>${u.name} (${u.id})</option>`).join('');
+                    dbUsers.map(u => `<option value="${u.id}"${u.id === currentVal ? ' selected' : ''}>${u.name} (${u.department || 'Artist'})</option>`).join('');
             }
         } catch (e) {
             console.error('Error populating history user dropdown:', e);
         }
     },
 
+    setHistoryPeriod: function(periodKey) {
+        this._historyPeriod = periodKey;
+        
+        // Update preset button active classes
+        document.querySelectorAll('#history-preset-pills .hist-preset-btn').forEach(btn => {
+            if (btn.dataset.period === periodKey) {
+                btn.classList.add('active');
+            } else {
+                btn.classList.remove('active');
+            }
+        });
+
+        // Toggle custom date range container
+        const customEl = document.getElementById('history-custom-range');
+        if (customEl) {
+            if (periodKey === 'custom') {
+                customEl.style.display = 'inline-flex';
+                customEl.classList.remove('hidden');
+            } else {
+                customEl.style.display = 'none';
+                customEl.classList.add('hidden');
+            }
+        }
+
+        const userSelect = document.getElementById('history-user-select');
+        if (userSelect && userSelect.value) {
+            this.loadEmployeeHistory(userSelect.value);
+        }
+    },
+
+    applyCustomHistoryDates: function() {
+        const from = document.getElementById('history-custom-from')?.value;
+        const to = document.getElementById('history-custom-to')?.value;
+        if (from && to) {
+            this._historyCustomFrom = from;
+            this._historyCustomTo = to;
+            const userSelect = document.getElementById('history-user-select');
+            if (userSelect && userSelect.value) {
+                this.loadEmployeeHistory(userSelect.value);
+            }
+        }
+    },
+
+    _getHistoryDateRange: function() {
+        const period = this._historyPeriod || 'this_month';
+        const now = new Date();
+        const istNow = new Date(now.toLocaleString('en-US', { timeZone: 'Asia/Kolkata' }));
+        let fromDate, toDate, label;
+
+        if (period === 'this_month' || period === 'monthly') {
+            fromDate = `${istNow.getFullYear()}-${String(istNow.getMonth()+1).padStart(2,'0')}-01`;
+            toDate = `${istNow.getFullYear()}-${String(istNow.getMonth()+1).padStart(2,'0')}-${String(istNow.getDate()).padStart(2,'0')}`;
+            label = istNow.toLocaleDateString('en-US', { month: 'short', year: 'numeric' });
+        } else if (period === 'last_month') {
+            const prevMonth = new Date(istNow.getFullYear(), istNow.getMonth() - 1, 1);
+            const prevMonthEnd = new Date(istNow.getFullYear(), istNow.getMonth(), 0);
+            fromDate = `${prevMonth.getFullYear()}-${String(prevMonth.getMonth()+1).padStart(2,'0')}-01`;
+            toDate = `${prevMonthEnd.getFullYear()}-${String(prevMonthEnd.getMonth()+1).padStart(2,'0')}-${String(prevMonthEnd.getDate()).padStart(2,'0')}`;
+            label = prevMonth.toLocaleDateString('en-US', { month: 'short', year: 'numeric' });
+        } else if (period === 'last_30_days') {
+            const d30 = new Date(istNow.getTime() - 30 * 24 * 60 * 60 * 1000);
+            fromDate = `${d30.getFullYear()}-${String(d30.getMonth()+1).padStart(2,'0')}-${String(d30.getDate()).padStart(2,'0')}`;
+            toDate = `${istNow.getFullYear()}-${String(istNow.getMonth()+1).padStart(2,'0')}-${String(istNow.getDate()).padStart(2,'0')}`;
+            label = 'Last 30 Days';
+        } else if (period === 'last_90_days') {
+            const d90 = new Date(istNow.getTime() - 90 * 24 * 60 * 60 * 1000);
+            fromDate = `${d90.getFullYear()}-${String(d90.getMonth()+1).padStart(2,'0')}-${String(d90.getDate()).padStart(2,'0')}`;
+            toDate = `${istNow.getFullYear()}-${String(istNow.getMonth()+1).padStart(2,'0')}-${String(istNow.getDate()).padStart(2,'0')}`;
+            label = 'Last 90 Days';
+        } else if (period === 'custom') {
+            fromDate = this._historyCustomFrom || document.getElementById('history-custom-from')?.value || `${istNow.getFullYear()}-${String(istNow.getMonth()+1).padStart(2,'0')}-01`;
+            toDate = this._historyCustomTo || document.getElementById('history-custom-to')?.value || `${istNow.getFullYear()}-${String(istNow.getMonth()+1).padStart(2,'0')}-${String(istNow.getDate()).padStart(2,'0')}`;
+            label = `${fromDate} → ${toDate}`;
+        } else if (period === 'yearly') {
+            fromDate = `${istNow.getFullYear()}-01-01`;
+            toDate = `${istNow.getFullYear()}-${String(istNow.getMonth()+1).padStart(2,'0')}-${String(istNow.getDate()).padStart(2,'0')}`;
+            label = `${istNow.getFullYear()} Year to Date`;
+        } else {
+            fromDate = '2020-01-01';
+            toDate = '2099-12-31';
+            label = 'All Time';
+        }
+
+        return { fromDate, toDate, label };
+    },
+
     loadEmployeeHistory: async function(userId) {
         if (!userId) {
-            document.getElementById('history-placeholder').classList.remove('hidden');
-            document.getElementById('history-content').classList.add('hidden');
+            document.getElementById('history-placeholder')?.classList.remove('hidden');
+            document.getElementById('history-content')?.classList.add('hidden');
             return;
         }
 
-        document.getElementById('history-placeholder').classList.add('hidden');
-        document.getElementById('history-content').classList.remove('hidden');
+        document.getElementById('history-placeholder')?.classList.add('hidden');
+        document.getElementById('history-content')?.classList.remove('hidden');
 
         this._historyUserId = userId;
 
         try {
-            const res = await fetch(`/api/users/${encodeURIComponent(userId)}/history`);
-            if (!res.ok) throw new Error('Failed to fetch history');
-            const data = await res.json();
+            let data = null;
+            try {
+                const res = await fetch(`/api/users/${encodeURIComponent(userId)}/history`);
+                if (res.ok) {
+                    data = await res.json();
+                }
+            } catch (e) {}
+
+            if (!data) {
+                // Fallback to local Store
+                const att = (typeof Store !== 'undefined' && Store.getAttendance) ? Store.getAttendance().filter(a => a.userId === userId) : [];
+                const lvs = (typeof Store !== 'undefined' && Store.getUserLeaves) ? Store.getUserLeaves(userId) : [];
+                data = { attendance: att, leaves: lvs };
+            }
+
             this._historyData = data;
 
-            // Compute date range filter
-            const period = document.getElementById('history-period-select')?.value || 'yearly';
-            const now = new Date();
-            let fromDate = '2020-01-01';
-            if (period === 'monthly') {
-                fromDate = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}-01`;
-            } else if (period === 'yearly') {
-                fromDate = `${now.getFullYear()}-01-01`;
-            }
-            const toDate = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}-${String(now.getDate()).padStart(2,'0')}`;
+            // Compute date range filter based on selected period
+            const { fromDate, toDate, label } = this._getHistoryDateRange();
+
+            // Sync date inputs if present
+            const customFromInput = document.getElementById('history-custom-from');
+            const customToInput = document.getElementById('history-custom-to');
+            if (customFromInput && !customFromInput.value) customFromInput.value = fromDate;
+            if (customToInput && !customToInput.value) customToInput.value = toDate;
 
             // Filter data by period
             const attendance = data.attendance.filter(a => a.date >= fromDate && a.date <= toDate);
@@ -1718,11 +2295,11 @@ window.AdminUI = Object.assign(window.AdminUI || {}, {
             // Calculate working days in period for attendance %
             const settings = JSON.parse(localStorage.getItem('studioSettings') || '{}');
             const workDaysPerWeek = settings.workDays || 6;
-            const holidays = Store.getHolidays().filter(h => h.date >= fromDate && h.date <= toDate && h.type !== 'Optional');
+            const holidays = (typeof Store !== 'undefined' && Store.getHolidays) ? Store.getHolidays().filter(h => h.date >= fromDate && h.date <= toDate && h.type !== 'Optional') : [];
 
             let workingDays = 0;
-            const d = new Date(fromDate);
-            const endD = new Date(toDate);
+            const d = new Date(fromDate + 'T00:00:00');
+            const endD = new Date(toDate + 'T00:00:00');
             while (d <= endD) {
                 const dow = d.getDay();
                 const dStr = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
@@ -1738,12 +2315,19 @@ window.AdminUI = Object.assign(window.AdminUI || {}, {
             const attendancePct = workingDays > 0 ? Math.round((daysPresent / workingDays) * 100) : 0;
 
             // Update stat cards
-            document.getElementById('hist-stat-attendance').textContent = attendancePct + '%';
-            document.getElementById('hist-stat-present').textContent = daysPresent;
-            document.getElementById('hist-stat-leaves').textContent = totalLeaveDays;
-            document.getElementById('hist-stat-wfh').textContent = wfhDays;
-            document.getElementById('hist-stat-late').textContent = lateLogins;
-            document.getElementById('hist-stat-early').textContent = earlyLogouts;
+            const attEl = document.getElementById('hist-stat-attendance');
+            const attBadge = document.getElementById('hist-stat-present-badge');
+            const presEl = document.getElementById('hist-stat-present');
+            const lvsWfhEl = document.getElementById('hist-stat-leaves-wfh');
+            const punctEl = document.getElementById('hist-stat-punctuality');
+            const earlyBadge = document.getElementById('hist-stat-early-badge');
+
+            if (attEl) attEl.textContent = attendancePct + '%';
+            if (attBadge) attBadge.textContent = `▲ ${daysPresent} Days Present (${label})`;
+            if (presEl) presEl.textContent = daysPresent;
+            if (lvsWfhEl) lvsWfhEl.textContent = `${totalLeaveDays}L / ${wfhDays} WFH`;
+            if (punctEl) punctEl.textContent = `${lateLogins} Late`;
+            if (earlyBadge) earlyBadge.textContent = `${earlyLogouts} Early Logouts`;
 
             // Render Charts
             this._renderHistoryCharts(daysPresent, totalLeaveDays, wfhDays, lateLogins, workingDays, attendance);
@@ -1754,73 +2338,374 @@ window.AdminUI = Object.assign(window.AdminUI || {}, {
 
         } catch (err) {
             console.error('Error loading employee history:', err);
-            document.getElementById('history-content').innerHTML = '<p style="color:var(--danger); text-align:center; padding:40px;">Failed to load employee history.</p>';
+            const content = document.getElementById('history-content');
+            if (content) content.innerHTML = '<p style="color:var(--danger); text-align:center; padding:40px;">Failed to load employee history.</p>';
         }
     },
 
     _renderHistoryCharts: function(present, leaves, wfh, late, total, attendance) {
-        // 1. Attendance Doughnut
-        const attCtx = document.getElementById('historyAttendanceChart');
-        if (attCtx) {
-            if (this._historyAttChart) this._historyAttChart.destroy();
-            const absent = Math.max(0, total - present - leaves - wfh);
-            this._historyAttChart = new Chart(attCtx, {
-                type: 'doughnut',
-                data: {
-                    labels: total > 0 ? ['Present', 'WFH', 'On Leave', 'Absent'] : ['No Data'],
-                    datasets: [{
-                        data: total > 0 ? [present, wfh, leaves, absent] : [1],
-                        backgroundColor: total > 0 ? ['#10b981', '#3b82f6', '#8b5cf6', '#ef4444'] : ['#334155'],
-                        borderWidth: 0
-                    }]
-                },
-                options: {
-                    responsive: false,
-                    plugins: {
-                        legend: { position: 'right', labels: { color: '#e2e8f0', usePointStyle: true } }
-                    }
-                }
-            });
-        }
-
-        // 2. Monthly Trend
+        // 1. Monthly Attendance Trend (Top-Left Smooth Curved Spline Area Chart)
         const trendCtx = document.getElementById('historyTrendChart');
         if (trendCtx) {
             if (this._historyTrendChart) this._historyTrendChart.destroy();
 
             const monthLabels = [];
             const presentData = [];
-            const lateData = [];
+            const onTimeData = [];
             const now = new Date();
 
             for (let m = 5; m >= 0; m--) {
                 const d = new Date(now.getFullYear(), now.getMonth() - m, 1);
-                const mStr = d.toLocaleString('default', { month: 'short', year: '2-digit' });
+                const mStr = d.toLocaleString('default', { month: 'short' });
                 monthLabels.push(mStr);
                 const mStart = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-01`;
                 const mEnd = new Date(d.getFullYear(), d.getMonth()+1, 0);
                 const mEndStr = `${mEnd.getFullYear()}-${String(mEnd.getMonth()+1).padStart(2,'0')}-${String(mEnd.getDate()).padStart(2,'0')}`;
 
-                const mRecords = attendance.filter(a => a.date >= mStart && a.date <= mEndStr);
-                presentData.push(mRecords.filter(a => a.checkInTime).length);
-                lateData.push(mRecords.filter(a => a.isLateLogin).length);
+                const allAtt = (this._historyData?.attendance || attendance);
+                const mRecords = allAtt.filter(a => a.date >= mStart && a.date <= mEndStr);
+                const mPresent = mRecords.filter(a => a.checkInTime).length;
+                const mLate = mRecords.filter(a => a.isLateLogin).length;
+                presentData.push(mPresent);
+                onTimeData.push(Math.max(0, mPresent - mLate));
             }
 
+            const ctx2d = trendCtx.getContext('2d');
+            const gradient = ctx2d.createLinearGradient(0, 0, 0, 240);
+            gradient.addColorStop(0, 'rgba(59, 130, 246, 0.28)');
+            gradient.addColorStop(1, 'rgba(59, 130, 246, 0.0)');
+
             this._historyTrendChart = new Chart(trendCtx, {
-                type: 'bar',
+                type: 'line',
                 data: {
                     labels: monthLabels,
                     datasets: [
-                        { label: 'Days Present', data: presentData, backgroundColor: '#10b981', borderRadius: 4 },
-                        { label: 'Late Logins', data: lateData, backgroundColor: '#f59e0b', borderRadius: 4 }
+                        {
+                            label: 'Days Worked',
+                            data: presentData,
+                            borderColor: '#3b82f6',
+                            borderWidth: 2.5,
+                            backgroundColor: gradient,
+                            fill: true,
+                            tension: 0.42,
+                            pointRadius: 3,
+                            pointHoverRadius: 6,
+                            pointHoverBackgroundColor: '#3b82f6',
+                            pointHoverBorderColor: '#ffffff',
+                            pointHoverBorderWidth: 2
+                        },
+                        {
+                            label: 'On-Time Shifts',
+                            data: onTimeData,
+                            borderColor: '#f59e0b',
+                            borderWidth: 2,
+                            borderDash: [4, 4],
+                            backgroundColor: 'transparent',
+                            fill: false,
+                            tension: 0.42,
+                            pointRadius: 3,
+                            pointHoverRadius: 5,
+                            pointHoverBackgroundColor: '#f59e0b'
+                        }
                     ]
                 },
                 options: {
-                    responsive: false,
-                    plugins: { legend: { labels: { color: '#e2e8f0' } } },
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    interaction: { mode: 'index', intersect: false },
+                    plugins: {
+                        legend: {
+                            display: true,
+                            position: 'bottom',
+                            labels: { color: '#94a3b8', usePointStyle: true, boxWidth: 6, font: { size: 11 } }
+                        },
+                        tooltip: {
+                            backgroundColor: '#0a0c10',
+                            titleColor: '#e2e8f0',
+                            bodyColor: '#38bdf8',
+                            borderColor: 'rgba(255,255,255,0.1)',
+                            borderWidth: 1,
+                            padding: 10
+                        }
+                    },
                     scales: {
-                        y: { beginAtZero: true, ticks: { color: '#94a3b8', stepSize: 1 }, grid: { color: 'rgba(255,255,255,0.05)' } },
-                        x: { ticks: { color: '#94a3b8' }, grid: { color: 'rgba(255,255,255,0.05)' } }
+                        y: {
+                            beginAtZero: true,
+                            grid: { color: 'rgba(255,255,255,0.04)' },
+                            ticks: { color: '#64748b', font: { size: 11 }, stepSize: 5 }
+                        },
+                        x: {
+                            grid: { display: false },
+                            ticks: { color: '#64748b', font: { size: 11 } }
+                        }
+                    }
+                }
+            });
+        }
+
+        // Robust time parser for ISO strings, SQL timestamps, and 12h/24h strings
+        const _parseTimeToDecimal = (timeStr) => {
+            if (!timeStr || timeStr === '--:--' || timeStr === '-') return null;
+            const strVal = String(timeStr).trim();
+
+            // Match full date/timestamp: "2026-08-06 05:34:33" or "2026-08-06T05:34:33Z"
+            const match = strVal.match(/(\d{4}-\d{2}-\d{2})[T\s](\d{1,2}):(\d{2})(?::(\d{2}))?/);
+            if (match) {
+                let h = parseInt(match[2], 10);
+                let m = parseInt(match[3], 10);
+                // If stored in UTC (<= 16), add 5h 30m for IST
+                if (h <= 16) {
+                    const totalMins = h * 60 + m + 330;
+                    h = Math.floor(totalMins / 60) % 24;
+                    m = totalMins % 60;
+                }
+                return Math.round((h + m / 60) * 100) / 100;
+            }
+
+            // Match standard 12-hour or 24-hour time string like "09:30 AM", "14:15", "9:15"
+            const timeMatch = strVal.replace(/\s*\(.*?\)\s*/g, '').trim().match(/^(\d{1,2}):(\d{2})(?::\d{2})?\s*(am|pm)?$/i);
+            if (timeMatch) {
+                let h = parseInt(timeMatch[1], 10);
+                const m = parseInt(timeMatch[2], 10);
+                const ampm = timeMatch[3]?.toLowerCase();
+                if (ampm === 'pm' && h < 12) h += 12;
+                if (ampm === 'am' && h === 12) h = 0;
+                return Math.round((h + m / 60) * 100) / 100;
+            }
+
+            return null;
+        };
+
+        const _formatDecimalToTime = (val) => {
+            if (val === null || val === undefined || isNaN(val)) return '--:--';
+            const totalMin = Math.round(val * 60);
+            let h = Math.floor(totalMin / 60);
+            const m = totalMin % 60;
+            const ampm = h >= 12 ? 'PM' : 'AM';
+            const h12 = h > 12 ? h - 12 : (h === 0 ? 12 : h);
+            return `${h12}:${String(m).padStart(2, '0')} ${ampm}`;
+        };
+
+        // Filter and sort attendance chronologically by date
+        const sortedLogs = [...attendance]
+            .filter(a => a.date)
+            .sort((a, b) => a.date.localeCompare(b.date));
+
+        const dateLabels = [];
+        const loginData = [];
+        const logoutData = [];
+        const workHoursData = [];
+        const targetHoursData = [];
+
+        sortedLogs.forEach(r => {
+            const dObj = new Date(r.date + 'T00:00:00');
+            const dateLabel = isNaN(dObj.getTime()) ? r.date : dObj.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+            dateLabels.push(dateLabel);
+
+            const inDec = _parseTimeToDecimal(r.checkInTime);
+            const outDec = _parseTimeToDecimal(r.checkOutTime);
+            loginData.push(inDec);
+            logoutData.push(outDec);
+
+            // Compute work hours
+            let hrs = 0;
+            if (r.hoursWorked) {
+                hrs = parseFloat(r.hoursWorked);
+            } else if (inDec !== null && outDec !== null && outDec > inDec) {
+                hrs = Math.round((outDec - inDec) * 10) / 10;
+            }
+            workHoursData.push(hrs);
+            targetHoursData.push(8.0);
+        });
+
+        // 2. Daily Work Hours Chart (Bar Chart with Benchmark Line)
+        const workHoursCtx = document.getElementById('historyWorkHoursChart');
+        if (workHoursCtx) {
+            if (this._historyWorkHoursChart) this._historyWorkHoursChart.destroy();
+
+            this._historyWorkHoursChart = new Chart(workHoursCtx, {
+                type: 'bar',
+                data: {
+                    labels: dateLabels.length > 0 ? dateLabels : ['No Data'],
+                    datasets: [
+                        {
+                            type: 'line',
+                            label: 'Target Benchmark (8.0h)',
+                            data: targetHoursData.length > 0 ? targetHoursData : [8.0],
+                            borderColor: '#f59e0b',
+                            borderWidth: 2,
+                            borderDash: [5, 5],
+                            pointRadius: 0,
+                            fill: false
+                        },
+                        {
+                            type: 'bar',
+                            label: 'Hours Worked',
+                            data: workHoursData.length > 0 ? workHoursData : [0],
+                            backgroundColor: workHoursData.map(h => h >= 8.0 ? '#10b981' : (h > 0 ? '#38bdf8' : '#334155')),
+                            borderRadius: 4,
+                            barPercentage: 0.65
+                        }
+                    ]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    interaction: { mode: 'index', intersect: false },
+                    plugins: {
+                        legend: {
+                            display: true,
+                            position: 'bottom',
+                            labels: { color: '#94a3b8', usePointStyle: true, boxWidth: 6, font: { size: 11 } }
+                        },
+                        tooltip: {
+                            backgroundColor: '#0a0c10',
+                            titleColor: '#e2e8f0',
+                            bodyColor: '#38bdf8',
+                            borderColor: 'rgba(255,255,255,0.1)',
+                            borderWidth: 1,
+                            padding: 10,
+                            callbacks: {
+                                label: (context) => ` ${context.dataset.label}: ${context.raw}h`
+                            }
+                        }
+                    },
+                    scales: {
+                        y: {
+                            beginAtZero: true,
+                            max: 16,
+                            grid: { color: 'rgba(255,255,255,0.04)' },
+                            ticks: {
+                                color: '#64748b',
+                                font: { size: 11 },
+                                callback: val => `${val}h`
+                            }
+                        },
+                        x: {
+                            grid: { display: false },
+                            ticks: {
+                                color: '#64748b',
+                                font: { size: 11 },
+                                autoSkip: true,
+                                maxTicksLimit: 15,
+                                maxRotation: 0,
+                                minRotation: 0
+                            }
+                        }
+                    }
+                }
+            });
+        }
+
+        // 3. Login & Logout Timing Timeline (Date on X-axis, Time on Y-axis)
+        const timingCtx = document.getElementById('historyTimingChart');
+        if (timingCtx) {
+            if (this._historyTimingChart) this._historyTimingChart.destroy();
+
+            this._historyTimingChart = new Chart(timingCtx, {
+                type: 'line',
+                data: {
+                    labels: dateLabels.length > 0 ? dateLabels : ['No Data'],
+                    datasets: [
+                        {
+                            label: '🟢 Login (Check-In)',
+                            data: loginData.length > 0 ? loginData : [null],
+                            borderColor: '#10b981',
+                            backgroundColor: 'rgba(16, 185, 129, 0.14)',
+                            borderWidth: 2.5,
+                            tension: 0.3,
+                            pointRadius: dateLabels.length > 45 ? 2.5 : 4.5,
+                            pointHoverRadius: 7,
+                            pointBackgroundColor: '#10b981',
+                            pointBorderColor: '#ffffff',
+                            pointBorderWidth: 2,
+                            spanGaps: true
+                        },
+                        {
+                            label: '🔵 Logout (Check-Out)',
+                            data: logoutData.length > 0 ? logoutData : [null],
+                            borderColor: '#38bdf8',
+                            backgroundColor: 'rgba(56, 189, 248, 0.14)',
+                            borderWidth: 2.5,
+                            tension: 0.3,
+                            pointRadius: dateLabels.length > 45 ? 2.5 : 4.5,
+                            pointHoverRadius: 7,
+                            pointBackgroundColor: '#38bdf8',
+                            pointBorderColor: '#ffffff',
+                            pointBorderWidth: 2,
+                            spanGaps: true
+                        }
+                    ]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    interaction: { mode: 'index', intersect: false },
+                    plugins: {
+                        legend: {
+                            display: true,
+                            position: 'bottom',
+                            labels: { color: '#94a3b8', usePointStyle: true, boxWidth: 6, font: { size: 11.5 } }
+                        },
+                        tooltip: {
+                            backgroundColor: '#0a0c10',
+                            titleColor: '#ffffff',
+                            bodyColor: '#38bdf8',
+                            borderColor: 'rgba(255,255,255,0.12)',
+                            borderWidth: 1,
+                            padding: 12,
+                            callbacks: {
+                                title: context => {
+                                    const idx = context[0].dataIndex;
+                                    const r = sortedLogs[idx];
+                                    if (!r) return '';
+                                    const dayName = new Date(r.date + 'T00:00:00').toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' });
+                                    return `📅 ${dayName}`;
+                                },
+                                label: context => {
+                                    const val = context.raw;
+                                    if (val === null || val === undefined) return ` ${context.dataset.label}: No Punch`;
+                                    const formatted = _formatDecimalToTime(val);
+                                    return ` ${context.dataset.label}: ${formatted}`;
+                                },
+                                afterBody: context => {
+                                    const idx = context[0].dataIndex;
+                                    const inD = loginData[idx];
+                                    const outD = logoutData[idx];
+                                    if (inD !== null && outD !== null && outD > inD) {
+                                        const dur = Math.round((outD - inD) * 10) / 10;
+                                        return [`⏱️ Shift Duration: ${dur} hrs`];
+                                    }
+                                    return [];
+                                }
+                            }
+                        }
+                    },
+                    scales: {
+                        y: {
+                            min: 5,
+                            max: 25,
+                            grid: { color: 'rgba(255,255,255,0.04)' },
+                            ticks: {
+                                color: '#64748b',
+                                font: { size: 11 },
+                                stepSize: 2,
+                                callback: function(val) {
+                                    return _formatDecimalToTime(val);
+                                }
+                            }
+                        },
+                        x: {
+                            grid: { color: 'rgba(255,255,255,0.02)' },
+                            ticks: {
+                                color: '#64748b',
+                                font: { size: 11 },
+                                autoSkip: true,
+                                maxTicksLimit: 16,
+                                maxRotation: 0,
+                                minRotation: 0
+                            }
+                        }
                     }
                 }
             });
@@ -1847,16 +2732,9 @@ window.AdminUI = Object.assign(window.AdminUI || {}, {
         if (!this._historyData) return;
 
         const data = this._historyData;
-        const period = document.getElementById('history-period-select')?.value || 'yearly';
-        const now = new Date();
-        let fromDate = '2020-01-01';
-        if (period === 'monthly') {
-            fromDate = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}-01`;
-        } else if (period === 'yearly') {
-            fromDate = `${now.getFullYear()}-01-01`;
-        }
+        const { fromDate, toDate } = this._getHistoryDateRange();
 
-        const attendance = data.attendance.filter(a => a.date >= fromDate);
+        const attendance = data.attendance.filter(a => a.date >= fromDate && a.date <= toDate);
         const leaves = data.leaves.filter(l => l.startDate >= fromDate || l.endDate >= fromDate);
 
         const _getDayName = (dateStr) => new Date(dateStr).toLocaleDateString('en-US', { weekday: 'short' });
@@ -1875,130 +2753,153 @@ window.AdminUI = Object.assign(window.AdminUI || {}, {
 
         if (view === 'attendance') {
             const tbody = document.getElementById('history-attendance-tbody');
-            tbody.innerHTML = '';
-            document.getElementById('history-records-count').textContent = `${attendance.length} records`;
+            if (tbody) tbody.innerHTML = '';
+            const countEl = document.getElementById('history-records-count');
+            if (countEl) countEl.textContent = `${attendance.length} records logged`;
             if (attendance.length === 0) {
-                tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;color:var(--text-muted);padding:30px;">No attendance records found.</td></tr>';
+                if (tbody) tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;color:var(--text-muted);padding:30px;">No attendance records found.</td></tr>';
                 return;
             }
             attendance.forEach(r => {
                 const isWfh = this._isWfhAttendanceStatus(r.status);
-                let statusBadge = '';
-                let statusColor = '#475569';
-                if (r.status === 'completed' || r.status === 'wfh_completed') { statusBadge = isWfh ? 'WFH Done' : 'Completed'; statusColor = '#10b981'; }
-                else if (r.status === 'working' || r.status === 'wfh_working') { statusBadge = isWfh ? 'WFH' : 'Working'; statusColor = '#f59e0b'; }
-                else { statusBadge = r.status; }
+                let statusBadge = '<span class="status-pill pill-approved">Completed</span>';
+                if (r.status === 'working' || r.status === 'wfh_working') statusBadge = '<span class="status-pill pill-late">Working</span>';
+                else if (r.status === 'half_day') statusBadge = '<span class="status-pill pill-purple">Half Day</span>';
 
-                let flags = '';
-                if (r.isLateLogin) flags += '<span class="badge" style="background:#f59e0b;color:white;font-size:10px;margin-right:4px;">Late</span>';
-                if (r.isEarlyLogout && r.checkOutTime) flags += '<span class="badge" style="background:#ef4444;color:white;font-size:10px;">Early Out</span>';
+                let hoursStr = '--';
+                let pct = 0;
+                if (r.hoursWorked) {
+                    hoursStr = r.hoursWorked + 'h';
+                    pct = Math.min(100, (parseFloat(r.hoursWorked) / 8) * 100);
+                } else if (r.checkInTime && r.checkOutTime) {
+                    const inM = _parseTimeMinutes(r.checkInTime);
+                    const outM = _parseTimeMinutes(r.checkOutTime);
+                    if (inM !== null && outM !== null && outM > inM) {
+                        const hrs = (outM - inM) / 60;
+                        hoursStr = hrs.toFixed(1) + 'h';
+                        pct = Math.min(100, (hrs / 8) * 100);
+                    }
+                }
 
                 const tr = document.createElement('tr');
                 tr.innerHTML = `
-                    <td>${r.date}</td>
-                    <td>${_getDayName(r.date)}</td>
-                    <td>${r.checkInTime || '--:--'}</td>
-                    <td>${r.checkOutTime || '--:--'}</td>
-                    <td>${r.hoursWorked ? r.hoursWorked + 'h' : '--'}</td>
-                    <td><span class="badge" style="background:${statusColor};color:white;">${statusBadge}</span></td>
-                    <td>${flags || '<span style="color:var(--text-muted);">—</span>'}</td>
+                    <td style="padding:14px 16px; color:#ffffff; font-weight:600;">${r.date}</td>
+                    <td style="padding:14px 16px; color:#94a3b8;">${_getDayName(r.date)}</td>
+                    <td style="padding:14px 16px; color:#cbd5e1;"><ion-icon name="time-outline" style="vertical-align:middle; color:#64748b; margin-right:4px;"></ion-icon>${r.checkInTime || '--:--'}</td>
+                    <td style="padding:14px 16px; color:#cbd5e1;">${r.checkOutTime || '--:--'}</td>
+                    <td style="padding:14px 16px;">
+                        <div style="display:flex; align-items:center; gap:8px;">
+                            <strong style="color:#ffffff; font-size:13.5px;">${hoursStr}</strong>
+                            ${hoursStr !== '--' ? `<div style="width:45px; height:4px; background:rgba(255,255,255,0.08); border-radius:2px; overflow:hidden;"><div style="width:${pct}%; height:100%; background:#38bdf8; border-radius:2px;"></div></div>` : ''}
+                        </div>
+                    </td>
+                    <td style="padding:14px 16px;">
+                        <span style="background:${isWfh ? 'rgba(6,182,212,0.12)' : 'rgba(59,130,246,0.12)'}; color:${isWfh ? '#06b6d4' : '#38bdf8'}; border:1px solid ${isWfh ? 'rgba(6,182,212,0.25)' : 'rgba(59,130,246,0.25)'}; padding:3px 8px; border-radius:6px; font-size:11.5px; font-weight:600;">
+                            ${isWfh ? '🏠 WFH' : '🏢 In-Studio'}
+                        </span>
+                    </td>
+                    <td style="padding:14px 16px; text-align:right;">${statusBadge}</td>
                 `;
-                tbody.appendChild(tr);
+                if (tbody) tbody.appendChild(tr);
             });
         }
         else if (view === 'leaves') {
             const tbody = document.getElementById('history-leaves-tbody');
-            tbody.innerHTML = '';
+            if (tbody) tbody.innerHTML = '';
             const leaveOnly = leaves.filter(l => !this._isWfh(l.type));
-            document.getElementById('history-records-count').textContent = `${leaveOnly.length} records`;
+            const countEl = document.getElementById('history-records-count');
+            if (countEl) countEl.textContent = `${leaveOnly.length} leave requests logged`;
             if (leaveOnly.length === 0) {
-                tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;color:var(--text-muted);padding:30px;">No leave records found.</td></tr>';
+                if (tbody) tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;color:var(--text-muted);padding:30px;">No leave records found.</td></tr>';
                 return;
             }
             leaveOnly.forEach(l => {
                 const days = this._calcDays(l);
-                let statusBadge = '';
-                if (l.status === 'Approved') statusBadge = '<span class="badge approved">Approved</span>';
-                else if (l.status === 'Pending') statusBadge = '<span class="badge pending">Pending</span>';
-                else statusBadge = `<span class="badge rejected">${l.status}</span>`;
-                let source = '<span style="color:var(--text-muted);">Manual</span>';
-                if (l.isAutoApplied) source = '<span class="badge" style="background:#f97316;color:white;font-size:10px;">🤖 Auto</span>';
-                else if (l.isHistorical) source = '<span class="badge" style="background:#64748b;color:white;font-size:10px;">Migrated</span>';
+                let statusBadge = '<span class="status-pill pill-approved">Approved</span>';
+                if (l.status === 'Pending') statusBadge = '<span class="status-pill pill-late">Pending</span>';
+                else if (l.status === 'Rejected') statusBadge = '<span class="status-pill pill-rejected">Rejected</span>';
+
+                let source = '<span style="color:#64748b; font-size:12px;">Manual</span>';
+                if (l.isAutoApplied) source = '<span class="status-pill pill-late" style="font-size:11px;">🤖 Auto</span>';
+                else if (l.isHistorical) source = '<span class="status-pill" style="background:rgba(255,255,255,0.05); color:#94a3b8; font-size:11px;">Migrated</span>';
 
                 const tr = document.createElement('tr');
                 tr.innerHTML = `
-                    <td>${l.type}${l.isHalfDay ? ' <small style="color:var(--warning);">(Half)</small>' : ''}</td>
-                    <td><span class="badge" style="background:#8b5cf6;color:white;">Leave</span></td>
-                    <td>${l.startDate}${l.startDate !== l.endDate ? ' → ' + l.endDate : ''}</td>
-                    <td>${days}</td>
-                    <td style="max-width:200px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;" title="${(l.reason||'').replace(/"/g, '&quot;')}">${l.reason || '-'}</td>
-                    <td>${statusBadge}</td>
-                    <td>${source}</td>
+                    <td style="padding:14px 16px; color:#ffffff; font-weight:600;">${l.type}${l.isHalfDay ? ' <small style="color:#f59e0b;">(Half)</small>' : ''}</td>
+                    <td style="padding:14px 16px;"><span class="status-pill pill-purple">Leave</span></td>
+                    <td style="padding:14px 16px; color:#cbd5e1;">${l.startDate}${l.startDate !== l.endDate ? ' → ' + l.endDate : ''}</td>
+                    <td style="padding:14px 16px; color:#ffffff; font-weight:600;">${days}</td>
+                    <td style="padding:14px 16px; color:#94a3b8; max-width:200px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;" title="${(l.reason||'').replace(/"/g, '&quot;')}">${l.reason || '-'}</td>
+                    <td style="padding:14px 16px;">${source}</td>
+                    <td style="padding:14px 16px; text-align:right;">${statusBadge}</td>
                 `;
-                tbody.appendChild(tr);
+                if (tbody) tbody.appendChild(tr);
             });
         }
         else if (view === 'wfh') {
             const tbody = document.getElementById('history-wfh-tbody');
-            tbody.innerHTML = '';
+            if (tbody) tbody.innerHTML = '';
             const wfhOnly = leaves.filter(l => this._isWfh(l.type));
-            document.getElementById('history-records-count').textContent = `${wfhOnly.length} records`;
+            const countEl = document.getElementById('history-records-count');
+            if (countEl) countEl.textContent = `${wfhOnly.length} WFH days logged`;
             if (wfhOnly.length === 0) {
-                tbody.innerHTML = '<tr><td colspan="4" style="text-align:center;color:var(--text-muted);padding:30px;">No WFH records found.</td></tr>';
+                if (tbody) tbody.innerHTML = '<tr><td colspan="4" style="text-align:center;color:var(--text-muted);padding:30px;">No WFH records found.</td></tr>';
                 return;
             }
             wfhOnly.forEach(l => {
                 const days = this._calcDays(l);
-                let statusBadge = '';
-                if (l.status === 'Approved') statusBadge = '<span class="badge approved">Approved</span>';
-                else if (l.status === 'Pending') statusBadge = '<span class="badge pending">Pending</span>';
-                else statusBadge = `<span class="badge rejected">${l.status}</span>`;
+                let statusBadge = '<span class="status-pill pill-approved">Approved</span>';
+                if (l.status === 'Pending') statusBadge = '<span class="status-pill pill-late">Pending</span>';
+                else if (l.status === 'Rejected') statusBadge = '<span class="status-pill pill-rejected">Rejected</span>';
+
                 const tr = document.createElement('tr');
                 tr.innerHTML = `
-                    <td>${l.startDate}${l.startDate !== l.endDate ? ' → ' + l.endDate : ''}</td>
-                    <td>${days}</td>
-                    <td style="max-width:250px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${l.reason || '-'}</td>
-                    <td>${statusBadge}</td>
+                    <td style="padding:14px 16px; color:#ffffff; font-weight:600;">${l.startDate}${l.startDate !== l.endDate ? ' → ' + l.endDate : ''}</td>
+                    <td style="padding:14px 16px; color:#ffffff; font-weight:600;">${days}</td>
+                    <td style="padding:14px 16px; color:#94a3b8; max-width:250px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${l.reason || '-'}</td>
+                    <td style="padding:14px 16px; text-align:right;">${statusBadge}</td>
                 `;
-                tbody.appendChild(tr);
+                if (tbody) tbody.appendChild(tr);
             });
         }
         else if (view === 'late') {
             const tbody = document.getElementById('history-late-tbody');
-            tbody.innerHTML = '';
+            if (tbody) tbody.innerHTML = '';
             const lateRecords = attendance.filter(a => a.isLateLogin);
-            document.getElementById('history-records-count').textContent = `${lateRecords.length} records`;
+            const countEl = document.getElementById('history-records-count');
+            if (countEl) countEl.textContent = `${lateRecords.length} late logins logged`;
             if (lateRecords.length === 0) {
-                tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;color:var(--text-muted);padding:30px;">No late logins found. 🎉</td></tr>';
+                if (tbody) tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;color:var(--text-muted);padding:30px;">No late logins found. 🎉</td></tr>';
                 return;
             }
             lateRecords.forEach(r => {
                 const checkInMin = _parseTimeMinutes(r.checkInTime);
-                const expectedMin = 11 * 60; // 11:00 AM
+                const expectedMin = 11 * 60;
                 const delayMin = checkInMin !== null ? Math.max(0, checkInMin - expectedMin) : 0;
                 const delayStr = delayMin > 0 ? `${Math.floor(delayMin / 60)}h ${delayMin % 60}m` : '—';
 
                 const isWfh = this._isWfhAttendanceStatus(r.status);
-                const statusLabel = isWfh ? 'WFH' : 'Office';
+                const statusLabel = isWfh ? '🏠 WFH' : '🏢 In-Studio';
 
                 const tr = document.createElement('tr');
                 tr.innerHTML = `
-                    <td>${r.date}</td>
-                    <td>${_getDayName(r.date)}</td>
-                    <td><strong style="color:#f59e0b;">${r.checkInTime}</strong></td>
-                    <td><span class="badge" style="background:#f59e0b;color:white;">${delayStr}</span></td>
-                    <td>${statusLabel}</td>
+                    <td style="padding:14px 16px; color:#ffffff; font-weight:600;">${r.date}</td>
+                    <td style="padding:14px 16px; color:#94a3b8;">${_getDayName(r.date)}</td>
+                    <td style="padding:14px 16px;"><strong style="color:#f59e0b;">${r.checkInTime}</strong></td>
+                    <td style="padding:14px 16px;"><span class="status-pill pill-late">${delayStr}</span></td>
+                    <td style="padding:14px 16px; text-align:right;"><span style="color:#94a3b8; font-size:12px;">${statusLabel}</span></td>
                 `;
-                tbody.appendChild(tr);
+                if (tbody) tbody.appendChild(tr);
             });
         }
         else if (view === 'early') {
             const tbody = document.getElementById('history-early-tbody');
-            tbody.innerHTML = '';
+            if (tbody) tbody.innerHTML = '';
             const earlyRecords = attendance.filter(a => a.isEarlyLogout && a.checkOutTime);
-            document.getElementById('history-records-count').textContent = `${earlyRecords.length} records`;
+            const countEl = document.getElementById('history-records-count');
+            if (countEl) countEl.textContent = `${earlyRecords.length} early logouts logged`;
             if (earlyRecords.length === 0) {
-                tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;color:var(--text-muted);padding:30px;">No early logouts found. 🎉</td></tr>';
+                if (tbody) tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;color:var(--text-muted);padding:30px;">No early logouts found. 🎉</td></tr>';
                 return;
             }
             earlyRecords.forEach(r => {
@@ -2006,37 +2907,38 @@ window.AdminUI = Object.assign(window.AdminUI || {}, {
                 const deficit = Math.max(0, 8 - hrs).toFixed(1);
                 const tr = document.createElement('tr');
                 tr.innerHTML = `
-                    <td>${r.date}</td>
-                    <td>${_getDayName(r.date)}</td>
-                    <td><strong style="color:#ef4444;">${r.checkOutTime}</strong></td>
-                    <td>${hrs}h</td>
-                    <td><span class="badge" style="background:#ef4444;color:white;">-${deficit}h</span></td>
+                    <td style="padding:14px 16px; color:#ffffff; font-weight:600;">${r.date}</td>
+                    <td style="padding:14px 16px; color:#94a3b8;">${_getDayName(r.date)}</td>
+                    <td style="padding:14px 16px;"><strong style="color:#ef4444;">${r.checkOutTime}</strong></td>
+                    <td style="padding:14px 16px; color:#ffffff; font-weight:600;">${hrs}h</td>
+                    <td style="padding:14px 16px; text-align:right;"><span class="status-pill pill-rejected">-${deficit}h deficit</span></td>
                 `;
-                tbody.appendChild(tr);
+                if (tbody) tbody.appendChild(tr);
             });
         }
         else if (view === 'auto') {
             const tbody = document.getElementById('history-auto-tbody');
-            tbody.innerHTML = '';
+            if (tbody) tbody.innerHTML = '';
             const autoRecords = leaves.filter(l => l.isAutoApplied);
-            document.getElementById('history-records-count').textContent = `${autoRecords.length} records`;
+            const countEl = document.getElementById('history-records-count');
+            if (countEl) countEl.textContent = `${autoRecords.length} auto-applied records logged`;
             if (autoRecords.length === 0) {
-                tbody.innerHTML = '<tr><td colspan="4" style="text-align:center;color:var(--text-muted);padding:30px;">No auto-applied leaves found.</td></tr>';
+                if (tbody) tbody.innerHTML = '<tr><td colspan="4" style="text-align:center;color:var(--text-muted);padding:30px;">No auto-applied leaves found.</td></tr>';
                 return;
             }
             autoRecords.forEach(l => {
-                let statusBadge = '';
-                if (l.status === 'Approved') statusBadge = '<span class="badge approved">Approved</span>';
-                else if (l.status === 'Pending') statusBadge = '<span class="badge pending">Pending</span>';
-                else statusBadge = `<span class="badge rejected">${l.status}</span>`;
+                let statusBadge = '<span class="status-pill pill-approved">Approved</span>';
+                if (l.status === 'Pending') statusBadge = '<span class="status-pill pill-late">Pending</span>';
+                else if (l.status === 'Rejected') statusBadge = '<span class="status-pill pill-rejected">${l.status}</span>';
+
                 const tr = document.createElement('tr');
                 tr.innerHTML = `
-                    <td>${l.startDate}</td>
-                    <td><span class="badge" style="background:#f97316;color:white;">${l.type}</span></td>
-                    <td>${l.reason || '-'}</td>
-                    <td>${statusBadge}</td>
+                    <td style="padding:14px 16px; color:#ffffff; font-weight:600;">${l.startDate}</td>
+                    <td style="padding:14px 16px;"><span class="status-pill pill-late">${l.type}</span></td>
+                    <td style="padding:14px 16px; color:#94a3b8;">${l.reason || '-'}</td>
+                    <td style="padding:14px 16px; text-align:right;">${statusBadge}</td>
                 `;
-                tbody.appendChild(tr);
+                if (tbody) tbody.appendChild(tr);
             });
         }
     },
@@ -2070,9 +2972,13 @@ window.AdminUI = Object.assign(window.AdminUI || {}, {
         const user = (this._cachedUsers || []).find(u => u.id === userId);
         const name = user ? user.name : userId;
 
+        const { fromDate, toDate, label } = this._getHistoryDateRange();
+        const filteredAtt = data.attendance.filter(r => r.date >= fromDate && r.date <= toDate);
+        const filteredLeaves = data.leaves.filter(l => l.startDate >= fromDate || l.endDate >= fromDate);
+
         // Build CSV
         const headers = ['Date', 'Type', 'Check In', 'Check Out', 'Hours', 'Status', 'Late Login', 'Early Logout'];
-        const rows = data.attendance.map(r => [
+        const rows = filteredAtt.map(r => [
             r.date,
             'Attendance',
             r.checkInTime || '',
@@ -2084,7 +2990,7 @@ window.AdminUI = Object.assign(window.AdminUI || {}, {
         ]);
 
         // Add leaves
-        data.leaves.forEach(l => {
+        filteredLeaves.forEach(l => {
             rows.push([
                 l.startDate + (l.startDate !== l.endDate ? ' to ' + l.endDate : ''),
                 l.type,
@@ -2112,76 +3018,154 @@ window.AdminUI = Object.assign(window.AdminUI || {}, {
 // ============================================
 
 window.AdminUI.renderBiometricTab = async function() {
-    // Fetch mapped users
+    // 1. Fetch hardware device status
+    try {
+        const res = await fetch('/api/biometric/device/status');
+        const data = await res.json();
+        if (data.success) {
+            const statusPill = document.getElementById('bio-device-status-pill');
+            if (statusPill) {
+                if (data.connected) {
+                    statusPill.className = 'device-live-badge';
+                    statusPill.innerHTML = `<span class="pulse-dot-green"></span><span>AS608 Scanner Online (${data.ip || '192.168.1.145'})</span>`;
+                } else {
+                    statusPill.className = 'device-offline-badge';
+                    statusPill.innerHTML = `<ion-icon name="alert-circle-outline"></ion-icon><span>Scanner Offline</span>`;
+                }
+            }
+            const enrolledKpi = document.getElementById('bio-kpi-enrolled');
+            if (enrolledKpi) enrolledKpi.innerHTML = `${data.usedSlots} <span style="font-size:14px; color:#64748b;">/ ${data.totalSlots} Slots</span>`;
+
+            const storageKpi = document.getElementById('bio-kpi-storage');
+            if (storageKpi) {
+                const pct = Math.round((data.usedSlots / data.totalSlots) * 100);
+                storageKpi.textContent = `● ${pct}% Sensor Memory Used`;
+            }
+        }
+    } catch (err) {
+        console.warn('Could not fetch biometric device status:', err);
+    }
+
+    // 2. Fetch mapped biometric users
     try {
         const res = await fetch('/api/biometric/users');
         const data = await res.json();
         const tbody = document.getElementById('biometric-users-tbody');
-        if (!tbody) return;
-        tbody.innerHTML = '';
+        const countEl = document.getElementById('bio-users-count');
+        if (tbody) {
+            tbody.innerHTML = '';
 
-        if (!data.success || !data.users || data.users.length === 0) {
-            tbody.innerHTML = '<tr><td colspan="5" style="text-align:center; color:var(--text-muted); padding:30px;"><ion-icon name="finger-print-outline" style="font-size:32px; opacity:0.3; display:block; margin:0 auto 8px;"></ion-icon>No fingerprints mapped yet.<br><small>Enroll a finger on the device, then map it here.</small></td></tr>';
-        } else {
-            data.users.forEach(u => {
-                const tr = document.createElement('tr');
-                const enrollDate = u.enrolled_at ? new Date(u.enrolled_at).toLocaleDateString('en-IN', { day:'2-digit', month:'short', year:'numeric' }) : '-';
-                tr.innerHTML = `
-                    <td><strong style="font-size:16px;">#${u.fingerprint_id}</strong></td>
-                    <td>${u.name || '-'}</td>
-                    <td><code style="font-size:12px; background:var(--bg-input); padding:2px 6px; border-radius:4px;">${u.user_id}</code></td>
-                    <td>${enrollDate}</td>
-                    <td>
-                        <button class="btn-small btn-reject" onclick="window.AdminUI.deleteBiometricMapping(${u.fingerprint_id}, '${(u.name || '').replace(/'/g, "\\'")}')">
-                            <ion-icon name="trash-outline" style="vertical-align:middle;"></ion-icon> Remove
-                        </button>
-                    </td>
-                `;
-                tbody.appendChild(tr);
-            });
+            if (!data.success || !data.users || data.users.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="5" style="text-align:center; color:#64748b; padding:32px;"><ion-icon name="finger-print-outline" style="font-size:36px; opacity:0.3; display:block; margin:0 auto 8px;"></ion-icon>No fingerprints mapped yet.<br><small style="color:#475569;">Click "Enroll Fingerprint" to map an employee.</small></td></tr>';
+                if (countEl) countEl.textContent = '0 slots allocated';
+            } else {
+                if (countEl) countEl.textContent = `${data.users.length} active scanner slot allocations`;
+                data.users.forEach(u => {
+                    const tr = document.createElement('tr');
+                    const enrollDate = u.enrolled_at ? new Date(u.enrolled_at).toLocaleDateString('en-US', { day:'numeric', month:'short', year:'numeric' }) : '-';
+                    const initials = (u.name || u.user_id || '??').split(' ').map(n => n[0]).join('').substring(0, 2).toUpperCase();
+                    
+                    tr.innerHTML = `
+                        <td style="padding:12px 14px;">
+                            <span class="badge-slot">#${String(u.fingerprint_id).padStart(2, '0')}</span>
+                        </td>
+                        <td style="padding:12px 14px;">
+                            <div style="display:flex; align-items:center; gap:10px;">
+                                <div style="width:28px; height:28px; border-radius:50%; background:linear-gradient(135deg, #38bdf8, #6366f1); color:#fff; font-size:11px; font-weight:700; display:flex; align-items:center; justify-content:center;">
+                                    ${initials}
+                                </div>
+                                <div>
+                                    <div style="font-weight:700; color:#ffffff; font-size:13px;">${u.name || '-'}</div>
+                                    <div style="font-size:11px; color:#64748b;">${u.department || 'Studio Artist'}</div>
+                                </div>
+                            </div>
+                        </td>
+                        <td style="padding:12px 14px;">
+                            <code style="font-size:11.5px; color:#94a3b8; background:#0f1218; padding:3px 7px; border-radius:5px; border:1px solid rgba(255,255,255,0.06);">${u.user_id}</code>
+                        </td>
+                        <td style="padding:12px 14px; color:#94a3b8; font-size:12.5px;">${enrollDate}</td>
+                        <td style="padding:12px 14px; text-align:right;">
+                            <div style="display:flex; align-items:center; justify-content:flex-end; gap:6px;">
+                                <button class="btn-small" style="padding:5px 10px; font-size:11.5px; font-weight:600; color:#38bdf8; border:1px solid rgba(56,189,248,0.25); background:rgba(56,189,248,0.08); display:inline-flex; align-items:center; gap:4px; border-radius:6px; cursor:pointer;" title="Add another finger for ${u.name || u.user_id}" onclick="window.AdminUI.openBiometricEnrollModal('${u.user_id}')">
+                                    <ion-icon name="finger-print-outline" style="font-size:13px;"></ion-icon>
+                                    <ion-icon name="add-outline" style="font-size:13px; margin-left:-3px;"></ion-icon>
+                                    <span>Add Finger</span>
+                                </button>
+                                <button class="btn-small btn-neutral" style="padding:5px 8px; color:#f87171; border-color:rgba(239,68,68,0.25); background:rgba(239,68,68,0.08); border-radius:6px; cursor:pointer;" title="Delete slot #${u.fingerprint_id}" onclick="window.AdminUI.deleteBiometricMapping(${u.fingerprint_id}, '${(u.name || '').replace(/'/g, "\\'")}')">
+                                    <ion-icon name="trash-outline" style="font-size:14px; vertical-align:middle;"></ion-icon>
+                                </button>
+                            </div>
+                        </td>
+                    `;
+                    tbody.appendChild(tr);
+                });
+            }
         }
     } catch (err) {
         console.error('Failed to load biometric users:', err);
     }
 
-    // Fetch recent logs
+    // 3. Fetch recent biometric punch logs
     try {
         const res = await fetch('/api/biometric/logs');
         const data = await res.json();
         const tbody = document.getElementById('biometric-logs-tbody');
-        if (!tbody) return;
-        tbody.innerHTML = '';
+        const countEl = document.getElementById('bio-logs-count');
+        const punchesKpi = document.getElementById('bio-kpi-punches');
 
-        if (!data.success || !data.logs || data.logs.length === 0) {
-            tbody.innerHTML = '<tr><td colspan="6" style="text-align:center; color:var(--text-muted); padding:30px;">No biometric punches recorded yet.</td></tr>';
-        } else {
-            data.logs.forEach(log => {
-                const tr = document.createElement('tr');
-                const time = log.created_at ? new Date(log.created_at).toLocaleString('en-IN', { day:'2-digit', month:'short', hour:'2-digit', minute:'2-digit', hour12:true }) : '-';
-                const actionBadge = {
-                    'check_in': '<span style="color:#10b981; font-weight:600;">✓ Check-In</span>',
-                    'check_out': '<span style="color:#3b82f6; font-weight:600;">✓ Check-Out</span>',
-                    'already_completed': '<span style="color:#f59e0b; font-weight:600;">⊘ Already Done</span>',
-                    'unknown': '<span style="color:#ef4444; font-weight:600;">✗ Unknown</span>',
-                    'error': '<span style="color:#ef4444; font-weight:600;">⚠ Error</span>',
-                };
-                tr.innerHTML = `
-                    <td>${time}</td>
-                    <td><strong>#${log.fingerprint_id || '-'}</strong></td>
-                    <td>${log.name || log.user_id || '-'}</td>
-                    <td>${actionBadge[log.action] || log.action || '-'}</td>
-                    <td>${log.status || '-'}</td>
-                    <td>${log.hours_worked ? log.hours_worked + 'h' : '-'}</td>
-                `;
-                tbody.appendChild(tr);
-            });
+        if (tbody) {
+            tbody.innerHTML = '';
+
+            if (!data.success || !data.logs || data.logs.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="5" style="text-align:center; color:#64748b; padding:32px;">No biometric punches recorded today.</td></tr>';
+                if (countEl) countEl.textContent = '0 hardware logs today';
+                if (punchesKpi) punchesKpi.innerHTML = `0 <span style="font-size:14px; color:#64748b;">Punches</span>`;
+            } else {
+                if (countEl) countEl.textContent = `${data.logs.length} live hardware scanner transactions`;
+                if (punchesKpi) punchesKpi.innerHTML = `${data.logs.length} <span style="font-size:14px; color:#64748b;">Punches</span>`;
+
+                data.logs.forEach(log => {
+                    const tr = document.createElement('tr');
+                    const timeStr = log.created_at ? new Date(log.created_at).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true }) : '-';
+                    const initials = (log.name || log.user_id || '??').split(' ').map(n => n[0]).join('').substring(0, 2).toUpperCase();
+
+                    let actionHtml = `<span style="color:#10b981; font-weight:700; font-size:12px; display:inline-flex; align-items:center; gap:4px;"><ion-icon name="enter-outline"></ion-icon> Check-In</span>`;
+                    if (log.action === 'check_out') {
+                        actionHtml = `<span style="color:#38bdf8; font-weight:700; font-size:12px; display:inline-flex; align-items:center; gap:4px;"><ion-icon name="exit-outline"></ion-icon> Check-Out</span>`;
+                    } else if (log.action === 'already_completed') {
+                        actionHtml = `<span style="color:#fbbf24; font-weight:600; font-size:12px;">⊘ Repeated</span>`;
+                    }
+
+                    tr.innerHTML = `
+                        <td style="padding:12px 14px; color:#cbd5e1; font-size:12.5px; white-space:nowrap;">
+                            <ion-icon name="time-outline" style="vertical-align:middle; color:#64748b; margin-right:4px;"></ion-icon>${timeStr}
+                        </td>
+                        <td style="padding:12px 14px;">
+                            <span class="badge-slot">#${String(log.fingerprint_id || 1).padStart(2, '0')}</span>
+                        </td>
+                        <td style="padding:12px 14px;">
+                            <div style="display:flex; align-items:center; gap:8px;">
+                                <div style="width:24px; height:24px; border-radius:50%; background:#1e293b; color:#94a3b8; font-size:10px; font-weight:700; display:flex; align-items:center; justify-content:center;">
+                                    ${initials}
+                                </div>
+                                <span style="color:#ffffff; font-weight:600; font-size:13px;">${log.name || log.user_id || '-'}</span>
+                            </div>
+                        </td>
+                        <td style="padding:12px 14px;">${actionHtml}</td>
+                        <td style="padding:12px 14px; text-align:right;">
+                            <span class="status-pill pill-approved">${log.status || 'Verified'}</span>
+                        </td>
+                    `;
+                    tbody.appendChild(tr);
+                });
+            }
         }
     } catch (err) {
         console.error('Failed to load biometric logs:', err);
     }
 };
 
-window.AdminUI.openBiometricEnrollModal = function() {
+window.AdminUI.openBiometricEnrollModal = function(preselectedUserId) {
     const modal = document.getElementById('biometric-enroll-modal');
     if (!modal) {
         console.error('biometric-enroll-modal element not found!');
@@ -2204,15 +3188,22 @@ window.AdminUI.openBiometricEnrollModal = function() {
         select.innerHTML = '<option value="">Select employee...</option>';
         const users = (window.AdminUI._cachedUsers && window.AdminUI._cachedUsers.length)
             ? window.AdminUI._cachedUsers
-            : (Store.getUsers ? Store.getUsers() : []);
+            : (typeof Store !== 'undefined' && Store.getUsers ? Store.getUsers() : []);
         
         users.forEach(u => {
             const opt = document.createElement('option');
             const uid = u.user_id || u.id;
             opt.value = uid;
             opt.textContent = `${u.name || uid} (${uid})`;
+            if (preselectedUserId && uid === preselectedUserId) {
+                opt.selected = true;
+            }
             select.appendChild(opt);
         });
+
+        if (preselectedUserId) {
+            select.value = preselectedUserId;
+        }
     }
 
     // 4. Auto-fetch next available slot in background

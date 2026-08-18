@@ -64,6 +64,22 @@
             }
         });
 
+        // ─── Leaves Update ───
+        socket.on('leaves:update', (data) => {
+            console.log('[Socket] leaves:update', data);
+            if (typeof Store !== 'undefined' && Store.syncWithBackend) {
+                Store.syncWithBackend().then(() => {
+                    if (window.AdminUI && typeof window.AdminUI.updatePendingLeaveBadge === 'function') {
+                        window.AdminUI.updatePendingLeaveBadge();
+                    }
+                    const leavesTab = document.getElementById('admin-tab-leaves');
+                    if (leavesTab && !leavesTab.classList.contains('hidden') && window.AdminUI && typeof window.AdminUI.renderLeaves === 'function') {
+                        window.AdminUI.renderLeaves();
+                    }
+                });
+            }
+        });
+
         // ─── Biometric Device Status & Live Enrollment ───
         socket.on('biometric:status', (status) => {
             console.log('[Socket] biometric:status', status);

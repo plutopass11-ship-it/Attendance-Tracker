@@ -3,13 +3,13 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Attendance Tracker</title>
+    <title>Pluto Attendance — Flying Pluto Studios</title>
     <link rel="icon" type="image/x-icon" href="favicon.ico">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="css/style.css?v=30">
-    <link rel="stylesheet" href="css/admin.css?v=30">
+    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="css/style.css?v=pluto_og_2026_v32">
+    <link rel="stylesheet" href="css/admin.css?v=pluto_og_2026_v32">
     <!-- Ionicons for modern icons -->
     <script type="module" src="https://unpkg.com/ionicons@7.1.0/dist/ionicons/ionicons.esm.js"></script>
     <script src="https://unpkg.com/ionicons@7.1.0/dist/ionicons/ionicons.js"></script>
@@ -25,196 +25,306 @@
 </head>
 <body>
     <div id="app-container">
-        <!-- Login View -->
+        <!-- 1. Sleek Login View (OnlyGenius Dark Card) -->
         <div id="login-view" class="view active">
-            <div class="glass-panel login-panel">
-                <div class="logo">
-                    <ion-icon name="time-outline"></ion-icon>
+            <div class="login-card">
+                <div class="login-brand">
+                    <div class="login-brand-icon">
+                        <ion-icon name="planet-outline"></ion-icon>
+                    </div>
+                    <h1>Pluto Attendance</h1>
+                    <p>Flying Pluto Studios Internal Portal</p>
                 </div>
-                <h1>Welcome Back</h1>
-                <p class="subtitle">Log in to track your attendance</p>
-                <form id="login-form">
+                <form id="login-form" class="login-form">
                     <div class="input-group">
-                        <ion-icon name="person-outline"></ion-icon>
-                        <input type="text" id="username" placeholder="Kitsu Email Account" required>
+                        <label for="username">Studio Account / Email</label>
+                        <input type="text" id="username" placeholder="e.g. joel@flyingpluto.ai or admin" required autocomplete="username">
                     </div>
                     <div class="input-group">
-                        <ion-icon name="lock-closed-outline"></ion-icon>
-                        <input type="password" id="password" placeholder="Kitsu Password" required>
+                        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
+                            <label for="password" style="margin:0;">Password</label>
+                            <a href="https://review.flyingpluto.ai/reset-password" target="_blank" style="color:var(--primary); font-size:11.5px; text-decoration:none; font-weight:500;">Forgot password?</a>
+                        </div>
+                        <input type="password" id="password" placeholder="Enter your password" required autocomplete="current-password">
                     </div>
-                    <div style="text-align: right; margin-bottom: 15px; margin-top: -5px;">
-                        <a href="https://review.flyingpluto.ai/reset-password" target="_blank" style="color: #3b82f6; font-size: 13px; text-decoration: none;">Forgot password?</a>
-                    </div>
-                    <button type="submit" class="btn-primary">Sign In</button>
-                    <div id="login-error" class="error-msg"></div>
+                    <button type="submit" class="btn-primary login-btn">
+                        <span>Sign In to Studio Portal</span>
+                        <ion-icon name="arrow-forward-outline"></ion-icon>
+                    </button>
+                    <div id="login-error" class="error-msg" style="color:var(--danger); font-size:12.5px; text-align:center; margin-top:12px; font-weight:500;"></div>
                 </form>
+
+                <div class="login-shortcuts">
+                    <p>Quick Demo Logins</p>
+                    <div class="login-pill-group">
+                        <button type="button" onclick="document.getElementById('username').value='admin'; document.getElementById('password').value='password'; document.getElementById('login-form').dispatchEvent(new Event('submit'));">👑 Admin (Joel)</button>
+                        <button type="button" onclick="document.getElementById('username').value='rahul@flyingpluto.ai'; document.getElementById('password').value='password'; document.getElementById('login-form').dispatchEvent(new Event('submit'));">🎨 Artist (Rahul)</button>
+                    </div>
+                </div>
             </div>
         </div>
 
-        <!-- Admin App View -->
+        <!-- 2. Admin App View (OnlyGenius Aesthetic) -->
         <div id="admin-view" class="view hidden admin-layout">
             <!-- Sidebar -->
             <aside class="admin-sidebar">
                 <div class="sidebar-header">
-                    <ion-icon name="shield-checkmark" class="admin-logo"></ion-icon>
-                    <h2>Admin Panel</h2>
+                    <div class="brand-container">
+                        <div class="brand-logo-icon">
+                            <ion-icon name="planet-outline"></ion-icon>
+                        </div>
+                        <div class="brand-text-block">
+                            <span class="brand-title">PLUTO ATTENDANCE</span>
+                            <span class="brand-subtitle">Studio Portal</span>
+                        </div>
+                    </div>
                 </div>
+
                 <nav class="sidebar-nav">
                     <button class="admin-nav-item active" data-target="admin-tab-dashboard">
-                        <ion-icon name="grid-outline"></ion-icon> Dashboard
+                        <ion-icon name="grid-outline"></ion-icon> <span>Dashboard</span>
                     </button>
                     <button class="admin-nav-item" data-target="admin-tab-leaves">
-                        <ion-icon name="folder-open-outline"></ion-icon> Leave Requests
+                        <ion-icon name="folder-open-outline"></ion-icon> <span>Leave Requests</span>
+                        <span class="sidebar-badge-circle hidden" id="sidebar-leaves-badge" data-count="0" style="display:none;"></span>
                     </button>
                     <button class="admin-nav-item" data-target="admin-tab-calendar">
-                        <ion-icon name="calendar-outline"></ion-icon> Calendar
+                        <ion-icon name="calendar-outline"></ion-icon> <span>Calendar</span>
                     </button>
                     <button class="admin-nav-item" data-target="admin-tab-users">
-                        <ion-icon name="people-outline"></ion-icon> Users
+                        <ion-icon name="people-outline"></ion-icon> <span>Team Members</span>
                     </button>
                     <button class="admin-nav-item" data-target="admin-tab-policies">
-                        <ion-icon name="options-outline"></ion-icon> Leave Policies
+                        <ion-icon name="options-outline"></ion-icon> <span>Leave Policies</span>
                     </button>
                     <button class="admin-nav-item" data-target="admin-tab-holidays">
-                        <ion-icon name="calendar-number-outline"></ion-icon> Holidays
+                        <ion-icon name="calendar-number-outline"></ion-icon> <span>Holidays</span>
                     </button>
                     <button class="admin-nav-item" data-target="admin-tab-migration">
-                        <ion-icon name="cloud-upload-outline"></ion-icon> Migrate History
+                        <ion-icon name="cloud-upload-outline"></ion-icon> <span>Migrate History</span>
                     </button>
                     <button class="admin-nav-item" data-target="admin-tab-reports">
-                        <ion-icon name="analytics-outline"></ion-icon> Reports
+                        <ion-icon name="analytics-outline"></ion-icon> <span>Reports & Analytics</span>
                     </button>
                     <button class="admin-nav-item" data-target="admin-tab-history">
-                        <ion-icon name="time-outline"></ion-icon> Employee History
+                        <ion-icon name="time-outline"></ion-icon> <span>Employee History</span>
                     </button>
                     <button class="admin-nav-item" data-target="admin-tab-overtime">
-                        <ion-icon name="moon-outline"></ion-icon> Overtime
+                        <ion-icon name="moon-outline"></ion-icon> <span>Overtime</span>
                     </button>
                     <button class="admin-nav-item" data-target="admin-tab-biometric">
-                        <ion-icon name="finger-print-outline"></ion-icon> Biometric
+                        <ion-icon name="finger-print-outline"></ion-icon> <span>Biometric Device</span>
                     </button>
                     <button class="admin-nav-item" data-target="admin-tab-slack">
-                        <ion-icon name="logo-slack"></ion-icon> Slack Settings
+                        <ion-icon name="logo-slack"></ion-icon> <span>Slack Settings</span>
                     </button>
                 </nav>
-                <button id="admin-logout-btn" class="btn-primary" style="margin:20px; width:calc(100% - 40px); background:var(--danger)">Logout</button>
+
+                <div class="sidebar-footer">
+                    <div class="sidebar-user-card">
+                        <div class="user-avatar-initials" id="sidebar-user-avatar">JR</div>
+                        <div class="sidebar-user-meta">
+                            <div class="name" id="sidebar-user-name">Joel Robert</div>
+                            <div class="role">Studio Admin</div>
+                        </div>
+                    </div>
+                    <button id="admin-logout-btn" class="btn-small btn-neutral" title="Logout" style="padding:6px; background:transparent; border:none; color:var(--text-tertiary);">
+                        <ion-icon name="log-out-outline" style="font-size:20px;"></ion-icon>
+                    </button>
+                </div>
             </aside>
             
-            <!-- Main Content -->
+            <!-- Main Content Area -->
             <main class="admin-main">
                 <header class="admin-header">
-                    <h2 id="admin-greeting">Hello, Admin</h2>
+                    <div class="header-left">
+                        <button class="mobile-menu-toggle" id="mobile-menu-btn" onclick="document.querySelector('.admin-sidebar').classList.toggle('open')">
+                            <ion-icon name="menu-outline"></ion-icon>
+                        </button>
+                        <div class="header-title-group">
+                            <h2 id="admin-greeting">Dashboard Overview</h2>
+                            <p>Flying Pluto Studios · Real-time attendance, biometric punches & leaves</p>
+                        </div>
+                    </div>
+                    <div class="header-actions">
+                        <button id="btn-export-data" class="btn-neutral btn-small">
+                            <ion-icon name="download-outline"></ion-icon> <span>Export Backup</span>
+                        </button>
+                        <label class="btn-neutral btn-small" style="cursor:pointer;" title="Import JSON Backup">
+                            <ion-icon name="cloud-upload-outline"></ion-icon> <span>Import</span>
+                            <input type="file" id="file-import-data" accept=".json" style="display:none;">
+                        </label>
+                        <button type="button" class="btn-primary btn-small" onclick="window.switchToSlackTab()">
+                            <ion-icon name="settings-outline"></ion-icon> <span>Slack Settings</span>
+                        </button>
+                    </div>
                 </header>
                 
                 <div class="admin-content-area">
                     <!-- Dashboard Tab -->
                     <section id="admin-tab-dashboard" class="admin-tab active">
-                        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:20px;">
-                            <h2 class="section-title" style="margin:0;">Dashboard Overview</h2>
-                            <div style="display:flex; gap: 10px;">
-                                <button id="btn-export-data" class="btn-small btn-primary" style="margin:0; width:auto; padding:8px 16px;">Export Backup</button>
-                                <label class="btn-small btn-neutral" style="margin:0; width:auto; padding:8px 16px; cursor:pointer;" title="Import JSON Backup">
-                                    Import Backup
-                                    <input type="file" id="file-import-data" accept=".json" style="display:none;">
-                                </label>
-                            </div>
-                        </div>
-                        <div class="stats-grid" style="grid-template-columns: repeat(4, 1fr);">
+                        <!-- 4 Stat Metric Cards (OnlyGenius Grid) -->
+                        <div class="stats-grid">
                             <div class="stat-card">
-                                <h3>Present Today</h3>
+                                <div class="stat-card-header">
+                                    <span class="stat-card-title">Present Today</span>
+                                    <div class="stat-card-icon icon-blue"><ion-icon name="people-outline"></ion-icon></div>
+                                </div>
                                 <div class="stat-value" id="stat-present">0 / 0</div>
+                                <div class="stat-delta positive">
+                                    <ion-icon name="checkmark-circle-outline"></ion-icon>
+                                    <span>In Studio Active Headcount</span>
+                                </div>
                             </div>
                             <div class="stat-card">
-                                <h3>On Leave</h3>
-                                <div class="stat-value" id="stat-on-leave" style="color:#8b5cf6">0</div>
+                                <div class="stat-card-header">
+                                    <span class="stat-card-title">On Leave</span>
+                                    <div class="stat-card-icon icon-purple"><ion-icon name="airplane-outline"></ion-icon></div>
+                                </div>
+                                <div class="stat-value" id="stat-on-leave" style="color:#a78bfa">0</div>
+                                <div class="stat-delta">
+                                    <span>Approved Casual & Sick Leaves</span>
+                                </div>
                             </div>
                             <div class="stat-card">
-                                <h3>WFH Today</h3>
-                                <div class="stat-value" id="stat-wfh" style="color:#3b82f6">0</div>
+                                <div class="stat-card-header">
+                                    <span class="stat-card-title">WFH Today</span>
+                                    <div class="stat-card-icon icon-cyan"><ion-icon name="laptop-outline"></ion-icon></div>
+                                </div>
+                                <div class="stat-value" id="stat-wfh" style="color:#22d3ee">0</div>
+                                <div class="stat-delta positive">
+                                    <span>Remote Active Artists</span>
+                                </div>
                             </div>
                             <div class="stat-card">
-                                <h3>Pending Requests</h3>
-                                <div class="stat-value" id="stat-pending">0</div>
+                                <div class="stat-card-header">
+                                    <span class="stat-card-title">Pending Approvals</span>
+                                    <div class="stat-card-icon icon-amber"><ion-icon name="time-outline"></ion-icon></div>
+                                </div>
+                                <div class="stat-value" id="stat-pending" style="color:#fbbf24">0</div>
+                                <div class="stat-delta">
+                                    <span>Early Clockout & Leave Requests</span>
+                                </div>
                             </div>
                         </div>
 
-                        <!-- Shift & Late Rule Quick Bar -->
-                        <div class="glass-panel" style="margin-top:20px; display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:12px; padding:14px 20px;">
-                            <div style="display:flex; align-items:center; gap:16px; flex-wrap:wrap;">
-                                <div style="display:flex; align-items:center; gap:8px;">
-                                    <ion-icon name="time-outline" style="font-size:20px; color:var(--primary);"></ion-icon>
-                                    <span style="font-size:13px; font-weight:600;">Late Check-In Rule:</span>
-                                    <span id="dash-late-rule-badge" style="font-size:12px; font-weight:600; padding:3px 10px; border-radius:12px; background:rgba(16,185,129,0.15); color:#10b981;">Active (After 11:00 AM)</span>
+                        <!-- Shift & Late Rules Banner Bar -->
+                        <div class="quick-rules-bar">
+                            <div class="quick-rules-items">
+                                <div class="quick-rule-badge">
+                                    <ion-icon name="timer-outline" style="color:var(--primary); font-size:18px;"></ion-icon>
+                                    <span>Late Cutoff:</span>
+                                    <span id="dash-late-rule-badge" class="status-pill pill-active">Active (After 11:00 AM)</span>
                                 </div>
-                                <div style="display:flex; align-items:center; gap:8px; color:var(--text-muted); font-size:13px;">
-                                    <ion-icon name="checkmark-done-circle-outline" style="color:#10b981; font-size:18px;"></ion-icon>
-                                    <span>Direct Checkout: After 6:00 PM</span>
+                                <div class="quick-rule-badge">
+                                    <ion-icon name="checkmark-done-circle-outline" style="color:var(--success); font-size:18px;"></ion-icon>
+                                    <span>Direct Checkout:</span>
+                                    <strong>After 6:00 PM (No Approval Needed)</strong>
                                 </div>
                             </div>
-                            <button type="button" class="btn-small btn-neutral" style="margin:0; width:auto; padding:6px 14px; font-size:12px;" onclick="window.switchToSlackTab()">
-                                <ion-icon name="settings-outline" style="vertical-align:middle; margin-right:4px;"></ion-icon> Adjust Late Rules & Slack
+                            <button type="button" class="btn-neutral btn-small" onclick="window.switchToSlackTab()">
+                                <ion-icon name="options-outline"></ion-icon> <span>Adjust Late Rules & Slack</span>
                             </button>
                         </div>
-                        <h3 class="section-title" style="margin-top:30px">Live Feed & Analytics</h3>
-                        
-                        <div style="display: flex; gap: 24px; flex-wrap: wrap;">
-                            <div class="glass-panel" style="flex: 1; min-width: 400px; overflow-x:auto;">
-                                <h3 class="section-subtitle">Live Attendance Feed</h3>
+
+                        <!-- Side-by-Side Analytics Charts (OnlyGenius Reference Exact Match) -->
+                        <div class="charts-split-grid">
+                            <!-- Left: Revenue vs Expenses style Dual Spline Area Chart -->
+                            <div class="chart-card">
+                                <div class="chart-header">
+                                    <div>
+                                        <h3>Studio Attendance Overview</h3>
+                                        <p>In-Office presence vs remote activity trends</p>
+                                    </div>
+                                    <div style="display:flex; align-items:center; gap:8px;">
+                                        <select id="dash-trend-period" class="btn-neutral btn-small" style="padding:4px 10px; font-size:12px;" onchange="window.AdminUI.renderDashboard()">
+                                            <option value="6m">Last 6 months</option>
+                                            <option value="7d" selected>Last 7 days</option>
+                                        </select>
+                                    </div>
+                                </div>
+                                <div class="chart-canvas-container">
+                                    <canvas id="trendChart"></canvas>
+                                </div>
+                            </div>
+
+                            <!-- Right: Today's Live Headcount Distribution Rounded Bar Chart -->
+                            <div class="chart-card">
+                                <div class="chart-header">
+                                    <div>
+                                        <h3>Today's Headcount Distribution</h3>
+                                        <p>Live active studio status across team members</p>
+                                    </div>
+                                    <span class="status-pill pill-active">Live Status</span>
+                                </div>
+                                <div class="chart-canvas-container">
+                                    <canvas id="attendanceChart"></canvas>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Live Attendance Feed Table Panel (OnlyGenius Clients List Style) -->
+                        <div class="table-panel">
+                            <div class="table-toolbar">
+                                <div>
+                                    <h3 style="font-size:16px; font-weight:700; color:#fff; margin:0 0 4px 0;">Live Team Attendance Feed</h3>
+                                    <p style="font-size:12px; color:var(--text-secondary); margin:0;">Real-time biometric & portal timestamps and active studio status</p>
+                                </div>
+                                <div style="display:flex; align-items:center; gap:12px; flex-wrap:wrap;">
+                                    <div class="filter-tabs-group" id="feed-filter-tabs">
+                                        <button type="button" class="filter-tab-pill active" onclick="window.AdminUI.filterFeedByTab('all', this)">All</button>
+                                        <button type="button" class="filter-tab-pill" onclick="window.AdminUI.filterFeedByTab('office', this)">In Studio</button>
+                                        <button type="button" class="filter-tab-pill" onclick="window.AdminUI.filterFeedByTab('wfh', this)">Remote WFH</button>
+                                        <button type="button" class="filter-tab-pill" onclick="window.AdminUI.filterFeedByTab('leave', this)">On Leave</button>
+                                    </div>
+                                    <div class="table-search-box">
+                                        <ion-icon name="search-outline"></ion-icon>
+                                        <input type="text" id="live-feed-search" placeholder="Search team member..." oninput="window.AdminUI.filterLiveFeed(this.value)">
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="table-responsive">
                                 <table class="admin-table">
                                     <thead>
                                         <tr>
-                                            <th>User</th>
+                                            <th>Team Member</th>
+                                            <th>Department</th>
+                                            <th>Clock In</th>
+                                            <th>Clock Out</th>
                                             <th>Status</th>
-                                            <th>Check In</th>
-                                            <th>Check Out</th>
+                                            <th style="text-align:right;">Actions</th>
                                         </tr>
                                     </thead>
                                     <tbody id="live-attendance-tbody">
-                                        <!-- Populated via JS -->
+                                        <!-- Populated dynamically via JS -->
                                     </tbody>
                                 </table>
                             </div>
-                            <div class="glass-panel" style="width: 350px; flex-shrink: 0; overflow: hidden;">
-                                <h3 class="section-subtitle">Today's Overview</h3>
-                                <div style="position: relative; width: 100%; height: 280px; overflow: hidden;">
-                                    <canvas id="attendanceChart" width="300" height="280"></canvas>
-                                </div>
-                            </div>
                         </div>
 
-                        <div style="display: flex; gap: 24px; margin-top: 24px; flex-wrap: wrap;">
-                            <div class="glass-panel" style="flex: 1; min-width: 400px; overflow: hidden;">
-                                <h3 class="section-subtitle">7-Day Attendance Trend</h3>
-                                <div style="position: relative; width: 100%; height: 280px; overflow: hidden;">
-                                    <canvas id="trendChart" width="600" height="280"></canvas>
+                        <!-- Secondary Charts Grid (Monthly Volume & Approved Leave Breakdown) -->
+                        <div class="charts-split-grid" style="margin-top:24px;">
+                            <div class="chart-card">
+                                <div class="chart-header">
+                                    <div>
+                                        <h3>Monthly Studio Shifts Recorded</h3>
+                                        <p>Total verified attendance records per month</p>
+                                    </div>
+                                    <span class="status-pill pill-info">Past 6 Months</span>
+                                </div>
+                                <div class="chart-canvas-container">
+                                    <canvas id="monthlyAttendanceChart"></canvas>
                                 </div>
                             </div>
-                        </div>
-                        <div style="display: flex; gap: 24px; margin-top: 24px; flex-wrap: wrap;">
-                            <div class="glass-panel" style="flex: 1; min-width: 400px; overflow: hidden;">
-                                <h3 class="section-subtitle">Top Leave Takers</h3>
-                                <div style="position: relative; width: 100%; height: 280px; overflow: hidden;">
-                                    <canvas id="topTakersChart" width="600" height="280"></canvas>
+                            <div class="chart-card">
+                                <div class="chart-header">
+                                    <div>
+                                        <h3>Approved Leaves by Team Member</h3>
+                                        <p>Total approved leave days per artist</p>
+                                    </div>
                                 </div>
-                            </div>
-                            <div class="glass-panel" style="width: 350px; flex-shrink: 0; overflow: hidden;">
-                                <h3 class="section-subtitle">Leave Types Distribution</h3>
-                                <div style="position: relative; width: 100%; height: 280px; overflow: hidden;">
-                                    <canvas id="leaveDistChart" width="300" height="280"></canvas>
-                                </div>
-                            </div>
-                        </div>
-                        <div style="display: flex; gap: 24px; margin-top: 24px; flex-wrap: wrap;">
-                            <div class="glass-panel" style="flex: 1; min-width: 400px; overflow: hidden;">
-                                <h3 class="section-subtitle">WFH Monthly Usage</h3>
-                                <div style="position: relative; width: 100%; height: 280px; overflow: hidden;">
-                                    <canvas id="wfhMonthlyChart" width="600" height="280"></canvas>
-                                </div>
-                            </div>
-                            <div class="glass-panel" style="width: 350px; flex-shrink: 0; overflow: hidden;">
-                                <h3 class="section-subtitle">Leave vs WFH Split</h3>
-                                <div style="position: relative; width: 100%; height: 280px; overflow: hidden;">
-                                    <canvas id="leaveVsWfhChart" width="300" height="280"></canvas>
+                                <div class="chart-canvas-container">
+                                    <canvas id="topTakersChart"></canvas>
                                 </div>
                             </div>
                         </div>
@@ -222,100 +332,176 @@
 
                     <!-- Reports & Analytics Tab -->
                     <section id="admin-tab-reports" class="admin-tab hidden">
-                        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:20px;">
-                            <h2 class="section-title" style="margin:0;">Reports & Analytics</h2>
+                        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:24px; flex-wrap:wrap; gap:12px;">
+                            <div>
+                                <h2 class="section-title" style="margin:0 0 4px 0;">Reports & Analytics</h2>
+                                <p style="margin:0; font-size:13px; color:#64748b;">Comprehensive studio attendance metrics, man-hours & workload distribution</p>
+                            </div>
                             <div style="display:flex; gap:10px; align-items:center;">
-                                <select id="reports-period-select" class="btn-small btn-neutral" style="width:auto; padding:6px 14px; margin:0; background:var(--glass-bg); color:var(--text-main); border:1px solid var(--glass-border); border-radius:8px; cursor:pointer;" onchange="window.ReportsUI.render()">
+                                <select id="reports-period-select" class="btn-small btn-neutral" style="width:auto; padding:8px 16px; margin:0; background:#13161c; color:#f8fafc; border:1px solid rgba(255,255,255,0.1); border-radius:10px; font-weight:600; cursor:pointer;" onchange="window.ReportsUI.render()">
                                     <option value="weekly">This Week</option>
                                     <option value="monthly">This Month</option>
                                     <option value="yearly">This Year</option>
-                                    <option value="alltime">All Time</option>
+                                    <option value="alltime">Last 12 Months</option>
                                 </select>
-                                <button class="btn-small btn-neutral" style="width:auto; padding:6px 14px; margin:0;" onclick="window.ReportsUI.openSettings()">
-                                    <ion-icon name="settings-outline" style="font-size:16px; vertical-align:middle; margin-right:4px;"></ion-icon> Settings
+                                <button type="button" class="btn-small btn-neutral" style="width:auto; padding:8px 16px; margin:0; background:#13161c; color:#f8fafc; border:1px solid rgba(255,255,255,0.1); border-radius:10px; font-weight:600;" onclick="window.ReportsUI.openSettings()">
+                                    <ion-icon name="settings-outline" style="font-size:15px; vertical-align:middle; margin-right:4px;"></ion-icon> Settings
                                 </button>
                             </div>
                         </div>
                         <div id="reports-content"></div>
                     </section>
 
-                    <!-- Leaves Tab -->
+                    <!-- Leaves Tab (OnlyGenius SaaS Management) -->
                     <section id="admin-tab-leaves" class="admin-tab hidden">
-                        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom: 20px;">
-                            <h2 class="section-title" style="margin:0">Leave Requests</h2>
-                            <button class="btn-primary" onclick="document.getElementById('grant-leave-modal').classList.remove('hidden')" style="width:auto; padding:8px 16px; margin:0;">+ Grant Leave</button>
-                        </div>
-
-                        <!-- Sub-tabs -->
-                        <div style="display:flex; gap:6px; margin-bottom:16px; flex-wrap:wrap;">
-                            <button class="btn-small btn-primary leaves-sub-tab active" data-status="Pending" style="margin:0; width:auto; padding:8px 18px; position:relative;" onclick="window.AdminUI.switchLeavesTab('Pending')">
-                                🕐 Pending <span id="leaves-pending-count" style="background:#ef4444; color:white; border-radius:50%; font-size:10px; padding:2px 6px; margin-left:6px; font-weight:700;">0</span>
-                            </button>
-                            <button class="btn-small btn-neutral leaves-sub-tab" data-status="Approved" style="margin:0; width:auto; padding:8px 18px;" onclick="window.AdminUI.switchLeavesTab('Approved')">
-                                ✅ Approved
-                            </button>
-                            <button class="btn-small btn-neutral leaves-sub-tab" data-status="Rejected" style="margin:0; width:auto; padding:8px 18px;" onclick="window.AdminUI.switchLeavesTab('Rejected')">
-                                ❌ Rejected
+                        <!-- Top Header Bar -->
+                        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:20px; flex-wrap:wrap; gap:12px;">
+                            <div>
+                                <h2 class="section-title" style="margin:0 0 4px 0; font-size:22px;">Leave & Shift Exceptions</h2>
+                                <div style="font-size:12.5px; color:#64748b;">Review employee time-off, WFH authorizations, and scheduled leaves</div>
+                            </div>
+                            <button class="btn-primary" onclick="document.getElementById('grant-leave-modal').classList.remove('hidden')" style="width:auto; padding:9px 18px; margin:0; display:inline-flex; align-items:center; gap:6px;">
+                                <ion-icon name="add-circle-outline" style="font-size:18px;"></ion-icon>
+                                <span>Grant Leave</span>
                             </button>
                         </div>
 
-                        <!-- Filters -->
-                        <div class="glass-panel" style="padding:12px 16px; margin-bottom:16px; display:flex; gap:12px; align-items:center; flex-wrap:wrap;">
-                            <span style="font-size:13px; color:var(--text-muted); font-weight:600;">Filters:</span>
-                            <select id="leaves-filter-category" onchange="window.AdminUI.applyLeaveFilters()" style="background:var(--glass-bg); color:var(--text-main); border:1px solid var(--glass-border); border-radius:6px; padding:6px 10px; font-size:12px;">
-                                <option value="all">All Categories</option>
-                                <option value="leave">Leaves Only</option>
-                                <option value="wfh">WFH Only</option>
-                            </select>
-                            <select id="leaves-filter-type" onchange="window.AdminUI.applyLeaveFilters()" style="background:var(--glass-bg); color:var(--text-main); border:1px solid var(--glass-border); border-radius:6px; padding:6px 10px; font-size:12px;">
-                                <option value="all">All Types</option>
-                            </select>
-                            <select id="leaves-filter-month" onchange="window.AdminUI.applyLeaveFilters()" style="background:var(--glass-bg); color:var(--text-main); border:1px solid var(--glass-border); border-radius:6px; padding:6px 10px; font-size:12px;">
-                                <option value="all">All Months</option>
-                            </select>
-                            <select id="leaves-filter-user" onchange="window.AdminUI.applyLeaveFilters()" style="background:var(--glass-bg); color:var(--text-main); border:1px solid var(--glass-border); border-radius:6px; padding:6px 10px; font-size:12px;">
-                                <option value="all">All Users</option>
-                            </select>
-                            <button class="btn-small btn-neutral" style="margin:0; width:auto; padding:5px 12px; font-size:11px;" onclick="document.getElementById('leaves-filter-category').value='all'; document.getElementById('leaves-filter-type').value='all'; document.getElementById('leaves-filter-month').value='all'; document.getElementById('leaves-filter-user').value='all'; window.AdminUI.applyLeaveFilters();">Clear</button>
-                            <span id="leaves-result-count" style="font-size:12px; color:var(--text-muted); margin-left:auto;">0 results</span>
+                        <!-- Sub-tabs Ribbon -->
+                        <div style="display:flex; gap:8px; margin-bottom:18px; flex-wrap:wrap; align-items:center;">
+                            <button class="btn-small btn-primary leaves-sub-tab active" data-status="Pending" style="margin:0; width:auto; padding:8px 16px; display:inline-flex; align-items:center; gap:8px;" onclick="window.AdminUI.switchLeavesTab('Pending')">
+                                <ion-icon name="time-outline"></ion-icon>
+                                <span>Pending Requests</span> 
+                                <span id="leaves-pending-count" style="background:#ef4444; color:white; border-radius:10px; font-size:11px; padding:1px 7px; font-weight:800; display:none;">0</span>
+                            </button>
+                            <button class="btn-small btn-neutral leaves-sub-tab" data-status="Approved" style="margin:0; width:auto; padding:8px 16px; display:inline-flex; align-items:center; gap:8px;" onclick="window.AdminUI.switchLeavesTab('Approved')">
+                                <ion-icon name="checkmark-circle-outline"></ion-icon>
+                                <span>Approved Records</span>
+                                <span id="leaves-approved-count" style="background:rgba(16,185,129,0.2); color:#10b981; border:1px solid rgba(16,185,129,0.3); border-radius:10px; font-size:11px; padding:1px 7px; font-weight:700;">0</span>
+                            </button>
+                            <button class="btn-small btn-neutral leaves-sub-tab" data-status="Rejected" style="margin:0; width:auto; padding:8px 16px; display:inline-flex; align-items:center; gap:8px;" onclick="window.AdminUI.switchLeavesTab('Rejected')">
+                                <ion-icon name="close-circle-outline"></ion-icon>
+                                <span>Rejected History</span>
+                                <span id="leaves-rejected-count" style="background:rgba(255,255,255,0.06); color:#94a3b8; border-radius:10px; font-size:11px; padding:1px 7px; font-weight:700;">0</span>
+                            </button>
                         </div>
 
-                        <!-- Table -->
-                        <div class="glass-panel" style="overflow-x:auto;">
-                            <table class="admin-table">
-                                <thead>
-                                    <tr>
-                                        <th>User Name</th>
-                                        <th>Category</th>
-                                        <th>Leave Type</th>
-                                        <th>Dates</th>
-                                        <th>Reason</th>
-                                        <th>Actions</th>
-                                    </tr>
-                                </thead>
-                                <tbody id="admin-leaves-tbody">
-                                    <!-- Populated by JS -->
-                                </tbody>
-                            </table>
+                        <!-- Obsidian Filter Toolbar -->
+                        <div class="leaves-toolbar-card">
+                            <div class="leaves-filter-group">
+                                <div style="display:flex; align-items:center; gap:6px; color:#64748b; font-size:12.5px; font-weight:600; margin-right:4px;">
+                                    <ion-icon name="filter-outline" style="font-size:16px;"></ion-icon>
+                                    <span>Filter:</span>
+                                </div>
+                                <select id="leaves-filter-category" class="obsidian-select" onchange="window.AdminUI.applyLeaveFilters()">
+                                    <option value="all">All Categories</option>
+                                    <option value="leave">Leaves Only</option>
+                                    <option value="wfh">WFH Only</option>
+                                </select>
+                                <select id="leaves-filter-type" class="obsidian-select" onchange="window.AdminUI.applyLeaveFilters()">
+                                    <option value="all">All Leave Types</option>
+                                </select>
+                                <select id="leaves-filter-month" class="obsidian-select" onchange="window.AdminUI.applyLeaveFilters()">
+                                    <option value="all">All Months</option>
+                                </select>
+                                <select id="leaves-filter-user" class="obsidian-select" onchange="window.AdminUI.applyLeaveFilters()">
+                                    <option value="all">All Artists / Users</option>
+                                </select>
+                                <button class="btn-small btn-neutral" style="margin:0; width:auto; padding:7px 12px; font-size:12px; display:inline-flex; align-items:center; gap:4px;" onclick="document.getElementById('leaves-filter-category').value='all'; document.getElementById('leaves-filter-type').value='all'; document.getElementById('leaves-filter-month').value='all'; document.getElementById('leaves-filter-user').value='all'; window.AdminUI.applyLeaveFilters();">
+                                    <ion-icon name="refresh-outline"></ion-icon>
+                                    <span>Reset</span>
+                                </button>
+                            </div>
+                            <span id="leaves-result-count" class="leaves-count-pill">0 records</span>
+                        </div>
+
+                        <!-- Table Card Container -->
+                        <div class="bio-card" style="padding:0; overflow:hidden;">
+                            <div style="overflow-x:auto;">
+                                <table class="admin-table" style="margin:0; width:100%;">
+                                    <thead>
+                                        <tr style="background:#0c0e12; border-bottom:1px solid rgba(255,255,255,0.08);">
+                                            <th style="padding:14px 18px; font-size:11.5px; font-weight:700; color:#64748b; letter-spacing:0.05em; text-transform:uppercase;">Artist</th>
+                                            <th style="padding:14px 18px; font-size:11.5px; font-weight:700; color:#64748b; letter-spacing:0.05em; text-transform:uppercase;">Category</th>
+                                            <th style="padding:14px 18px; font-size:11.5px; font-weight:700; color:#64748b; letter-spacing:0.05em; text-transform:uppercase;">Leave Type</th>
+                                            <th style="padding:14px 18px; font-size:11.5px; font-weight:700; color:#64748b; letter-spacing:0.05em; text-transform:uppercase;">Dates & Duration</th>
+                                            <th style="padding:14px 18px; font-size:11.5px; font-weight:700; color:#64748b; letter-spacing:0.05em; text-transform:uppercase;">Reason / Notes</th>
+                                            <th style="padding:14px 18px; font-size:11.5px; font-weight:700; color:#64748b; letter-spacing:0.05em; text-transform:uppercase; text-align:right;">Actions</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="admin-leaves-tbody">
+                                        <!-- Populated by JS -->
+                                    </tbody>
+                                </table>
+                            </div>
                         </div>
                     </section>
 
-                    <!-- Calendar Tab -->
+                    <!-- Calendar Tab (OnlyGenius Studio Calendar) -->
                     <section id="admin-tab-calendar" class="admin-tab hidden">
-                        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom: 20px;">
-                            <h2 class="section-title" style="margin:0"><span id="cal-month-title"></span> Calendar</h2>
-                            <div>
-                                <button class="btn-small btn-neutral" id="cal-prev-btn">&lt;</button>
-                                <button class="btn-small btn-neutral" id="cal-next-btn">&gt;</button>
-                            </div>
-                        </div>
-                        <div class="calendar-wrapper">
-                            <div class="calendar-inner">
-                                <div class="calendar-header-row">
-                                    <div>Sun</div><div>Mon</div><div>Tue</div><div>Wed</div><div>Thu</div><div>Fri</div><div>Sat</div>
+                        <div class="calendar-app-layout">
+                            
+                            <!-- Left: Calendar Month Grid -->
+                            <div class="cal-main-card">
+                                
+                                <!-- Header: Navigation & Today jump -->
+                                <div class="cal-nav-header">
+                                    <div class="cal-nav-left">
+                                        <button type="button" class="cal-today-badge-btn" id="cal-today-btn" title="Jump to Current Month">
+                                            <span id="cal-today-day-icon">18</span>
+                                        </button>
+                                        <h2 class="cal-month-heading" id="cal-month-title">AUGUST 2026</h2>
+                                    </div>
+                                    <div class="cal-nav-right">
+                                        <button type="button" class="cal-icon-btn" id="cal-prev-btn" title="Previous Month">
+                                            <ion-icon name="chevron-back"></ion-icon>
+                                        </button>
+                                        <button type="button" class="cal-icon-btn" id="cal-next-btn" title="Next Month">
+                                            <ion-icon name="chevron-forward"></ion-icon>
+                                        </button>
+                                    </div>
                                 </div>
-                                <div id="admin-calendar-grid" class="calendar-grid"></div>
+
+                                <!-- Weekday Headers: M T W T F S S -->
+                                <div class="cal-weekdays-row">
+                                    <div>M</div>
+                                    <div>T</div>
+                                    <div>W</div>
+                                    <div>T</div>
+                                    <div>F</div>
+                                    <div>S</div>
+                                    <div class="cal-weekday-sun">S</div>
+                                </div>
+
+                                <!-- 7-Column Days Grid -->
+                                <div id="admin-calendar-grid" class="cal-days-grid"></div>
                             </div>
+
+                            <!-- Right: Selected Day Details Agenda -->
+                            <div class="cal-sidebar-card">
+                                <div class="cal-selected-header">
+                                    <div class="cal-selected-title">
+                                        <span class="cal-sel-num" id="cal-sel-day-num">18</span>
+                                        <span class="cal-sel-name" id="cal-sel-day-name">TUE</span>
+                                    </div>
+                                    <button type="button" class="btn-primary btn-small" style="padding:6px 12px; font-size:12px;" onclick="window.AdminUI.openAddHolidayModalForSelectedDay()">
+                                        <ion-icon name="add" style="vertical-align:middle; margin-right:2px;"></ion-icon> Add Event
+                                    </button>
+                                </div>
+
+                                <!-- Selected Day Events List -->
+                                <div class="cal-agenda-scroll" id="cal-agenda-container">
+                                    <!-- Populated dynamically -->
+                                </div>
+
+                                <!-- Bottom Quick Add Capsule -->
+                                <div style="margin-top:auto; padding-top:12px;">
+                                    <button type="button" class="cal-quick-add-btn" id="cal-quick-add-btn" onclick="window.AdminUI.openAddHolidayModalForSelectedDay()">
+                                        <span id="cal-quick-add-label">Add on 18 Aug</span>
+                                        <ion-icon name="add"></ion-icon>
+                                    </button>
+                                </div>
+                            </div>
+
                         </div>
                     </section>
 
@@ -493,23 +679,56 @@
 
                     <!-- Employee History Tab -->
                     <section id="admin-tab-history" class="admin-tab hidden">
-                        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:20px; flex-wrap:wrap; gap:12px;">
-                            <h2 class="section-title" style="margin:0">Employee History</h2>
+                        <!-- Top Header Bar -->
+                        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:16px; flex-wrap:wrap; gap:12px;">
+                            <div>
+                                <h2 class="section-title" style="margin:0 0 4px 0; font-size:22px;">Employee Performance & History</h2>
+                                <div style="font-size:12.5px; color:#64748b;">Comprehensive shift analytics, punch timeline, work hours, and leave records</div>
+                            </div>
                             <div style="display:flex; gap:10px; align-items:center; flex-wrap:wrap;">
-                                <select id="history-user-select" class="history-user-select" onchange="window.AdminUI.loadEmployeeHistory(this.value)">
-                                    <option value="">— Select Employee —</option>
-                                </select>
-                                <select id="history-period-select" class="history-period-select" onchange="window.AdminUI.loadEmployeeHistory(document.getElementById('history-user-select').value)">
-                                    <option value="monthly">This Month</option>
-                                    <option value="yearly" selected>This Year</option>
-                                    <option value="alltime">All Time</option>
-                                </select>
-                                <button class="btn-small btn-primary" style="margin:0; width:auto; padding:8px 16px;" onclick="window.AdminUI.exportEmployeeHistory()">
-                                    <ion-icon name="download-outline" style="vertical-align:middle; margin-right:4px;"></ion-icon> Export CSV
+                                <button class="btn-small btn-primary" style="margin:0; width:auto; padding:8px 16px; display:inline-flex; align-items:center; gap:6px;" onclick="window.AdminUI.exportEmployeeHistory()">
+                                    <ion-icon name="download-outline"></ion-icon>
+                                    <span>Export CSV</span>
                                 </button>
-                                <button class="btn-small btn-neutral" style="margin:0; width:auto; padding:8px 16px;" onclick="window.AdminUI.triggerAutoHalfDay()" title="Manually trigger auto half-day check for all users">
-                                    <ion-icon name="alarm-outline" style="vertical-align:middle; margin-right:4px;"></ion-icon> Run Auto Half-Day
+                                <button class="btn-small btn-neutral" style="margin:0; width:auto; padding:8px 16px; display:inline-flex; align-items:center; gap:6px;" onclick="window.AdminUI.triggerAutoHalfDay()" title="Manually trigger auto half-day check for all users">
+                                    <ion-icon name="alarm-outline"></ion-icon>
+                                    <span>Run Auto Half-Day</span>
                                 </button>
+                            </div>
+                        </div>
+
+                        <!-- History Filter Toolbar (Employee Select + Period Presets) -->
+                        <div class="hist-toolbar-card">
+                            <div style="display:flex; align-items:center; gap:10px; flex:1; min-width:240px;">
+                                <div style="display:flex; align-items:center; gap:6px; color:#64748b; font-size:12.5px; font-weight:600;">
+                                    <ion-icon name="person-outline" style="font-size:16px;"></ion-icon>
+                                    <span>Artist:</span>
+                                </div>
+                                <select id="history-user-select" class="obsidian-select" style="min-width:220px; flex:1;" onchange="window.AdminUI.loadEmployeeHistory(this.value)">
+                                    <option value="">— Select Studio Artist —</option>
+                                </select>
+                            </div>
+
+                            <div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap;">
+                                <div style="display:flex; align-items:center; gap:6px; color:#64748b; font-size:12.5px; font-weight:600; margin-left:4px;">
+                                    <ion-icon name="calendar-outline" style="font-size:16px;"></ion-icon>
+                                    <span>Period:</span>
+                                </div>
+                                <div class="hist-period-pills" id="history-preset-pills">
+                                    <button type="button" class="hist-preset-btn active" data-period="this_month" onclick="window.AdminUI.setHistoryPeriod('this_month')">This Month</button>
+                                    <button type="button" class="hist-preset-btn" data-period="last_month" onclick="window.AdminUI.setHistoryPeriod('last_month')">Last Month</button>
+                                    <button type="button" class="hist-preset-btn" data-period="last_30_days" onclick="window.AdminUI.setHistoryPeriod('last_30_days')">Last 30 Days</button>
+                                    <button type="button" class="hist-preset-btn" data-period="last_90_days" onclick="window.AdminUI.setHistoryPeriod('last_90_days')">Last 90 Days</button>
+                                    <button type="button" class="hist-preset-btn" data-period="yearly" onclick="window.AdminUI.setHistoryPeriod('yearly')">This Year</button>
+                                    <button type="button" class="hist-preset-btn" data-period="custom" onclick="window.AdminUI.setHistoryPeriod('custom')">Custom</button>
+                                </div>
+                            </div>
+
+                            <!-- Custom Date Range Picker (hidden unless Custom is active) -->
+                            <div id="history-custom-range" class="hidden" style="display:none; align-items:center; gap:8px; margin-left:auto;">
+                                <input type="date" id="history-custom-from" class="obsidian-select" style="padding:6px 10px; font-size:12px;" onchange="window.AdminUI.applyCustomHistoryDates()">
+                                <span style="color:#64748b; font-size:12px;">to</span>
+                                <input type="date" id="history-custom-to" class="obsidian-select" style="padding:6px 10px; font-size:12px;" onchange="window.AdminUI.applyCustomHistoryDates()">
                             </div>
                         </div>
 
@@ -520,379 +739,709 @@
                         </div>
 
                         <div id="history-content" class="hidden">
-                            <!-- Stats Overview -->
-                            <div class="stats-grid" style="grid-template-columns: repeat(6, 1fr); margin-bottom:24px;" id="history-stats-grid">
-                                <div class="stat-card">
-                                    <h3>Attendance %</h3>
-                                    <div class="stat-value" id="hist-stat-attendance" style="color:#10b981;">0%</div>
-                                </div>
-                                <div class="stat-card">
-                                    <h3>Days Present</h3>
-                                    <div class="stat-value" id="hist-stat-present" style="color:#3b82f6;">0</div>
-                                </div>
-                                <div class="stat-card">
-                                    <h3>Total Leaves</h3>
-                                    <div class="stat-value" id="hist-stat-leaves" style="color:#8b5cf6;">0</div>
-                                </div>
-                                <div class="stat-card">
-                                    <h3>WFH Days</h3>
-                                    <div class="stat-value" id="hist-stat-wfh" style="color:#06b6d4;">0</div>
-                                </div>
-                                <div class="stat-card">
-                                    <h3>Late Logins</h3>
-                                    <div class="stat-value" id="hist-stat-late" style="color:#f59e0b;">0</div>
-                                </div>
-                                <div class="stat-card">
-                                    <h3>Early Logouts</h3>
-                                    <div class="stat-value" id="hist-stat-early" style="color:#ef4444;">0</div>
-                                </div>
-                            </div>
-
-                            <!-- Charts Row -->
-                            <div style="display:flex; gap:24px; margin-bottom:24px; flex-wrap:wrap;">
-                                <div class="glass-panel" style="width:320px; flex-shrink:0; overflow:hidden;">
-                                    <h3 class="section-subtitle">Attendance Overview</h3>
-                                    <div style="position:relative; width:100%; height:260px; overflow:hidden;">
-                                        <canvas id="historyAttendanceChart" width="280" height="260"></canvas>
+                            
+                            <!-- 1. Top 4-Column KPI Cards (OnlyGenius Style) -->
+                            <div class="reports-kpi-grid" id="history-stats-grid">
+                                
+                                <div class="report-kpi-card">
+                                    <div class="report-kpi-header">
+                                        <div class="report-kpi-icon income">
+                                            <ion-icon name="checkmark-circle-outline"></ion-icon>
+                                        </div>
+                                        <h4 class="report-kpi-title">Attendance Rate</h4>
+                                    </div>
+                                    <div class="report-kpi-value" id="hist-stat-attendance">0%</div>
+                                    <div class="report-kpi-badge positive">
+                                        <span id="hist-stat-present-badge">▲ 0 Days Present</span>
                                     </div>
                                 </div>
-                                <div class="glass-panel" style="flex:1; min-width:400px; overflow:hidden;">
-                                    <h3 class="section-subtitle">Monthly Attendance Trend</h3>
-                                    <div style="position:relative; width:100%; height:260px; overflow:hidden;">
-                                        <canvas id="historyTrendChart" width="600" height="260"></canvas>
+
+                                <div class="report-kpi-card">
+                                    <div class="report-kpi-header">
+                                        <div class="report-kpi-icon profit">
+                                            <ion-icon name="finger-print-outline"></ion-icon>
+                                        </div>
+                                        <h4 class="report-kpi-title">Days Present</h4>
                                     </div>
+                                    <div class="report-kpi-value">
+                                        <span id="hist-stat-present">0</span> <span style="font-size:16px; color:#64748b; font-weight:600;">Days</span>
+                                    </div>
+                                    <div class="report-kpi-badge positive">
+                                        <span>● Regular Studio Shifts</span>
+                                    </div>
+                                </div>
+
+                                <div class="report-kpi-card">
+                                    <div class="report-kpi-header">
+                                        <div class="report-kpi-icon neutral">
+                                            <ion-icon name="calendar-outline"></ion-icon>
+                                        </div>
+                                        <h4 class="report-kpi-title">Leaves & WFH Taken</h4>
+                                    </div>
+                                    <div class="report-kpi-value" id="hist-stat-leaves-wfh" style="font-size:22px;">0L / 0 WFH</div>
+                                    <div class="report-kpi-badge neutral">
+                                        <span style="color:#a855f7;">● Approved Offs</span>
+                                    </div>
+                                </div>
+
+                                <div class="report-kpi-card">
+                                    <div class="report-kpi-header">
+                                        <div class="report-kpi-icon expense">
+                                            <ion-icon name="time-outline"></ion-icon>
+                                        </div>
+                                        <h4 class="report-kpi-title">Punctuality Status</h4>
+                                    </div>
+                                    <div class="report-kpi-value" id="hist-stat-punctuality" style="font-size:22px;">0 Late</div>
+                                    <div class="report-kpi-badge neutral">
+                                        <span id="hist-stat-early-badge" style="color:#94a3b8;">0 Early Logouts</span>
+                                    </div>
+                                </div>
+
+                            </div>
+
+                            <!-- 2. Employee History Analytics Charts (3-Chart Layout) -->
+                            <div class="reports-charts-grid" style="margin-bottom:20px;">
+                                
+                                <!-- Chart 1: Monthly Attendance Trend (Smooth Curved Spline Area Chart) -->
+                                <div class="report-chart-card">
+                                    <div class="report-chart-header">
+                                        <div class="report-chart-title-group">
+                                            <h3>Monthly Attendance Trend</h3>
+                                            <p>Days worked and shift volume over time</p>
+                                        </div>
+                                        <span class="report-pill-select" style="pointer-events:none;">Last 6 Months</span>
+                                    </div>
+                                    <div class="report-chart-container">
+                                        <canvas id="historyTrendChart"></canvas>
+                                    </div>
+                                </div>
+
+                                <!-- Chart 2: Daily Work Hours Chart (Hours worked per day) -->
+                                <div class="report-chart-card">
+                                    <div class="report-chart-header">
+                                        <div class="report-chart-title-group">
+                                            <h3>Daily Work Hours Logged</h3>
+                                            <p>Actual work duration per shift (Target: 8.0h/day)</p>
+                                        </div>
+                                        <span class="report-pill-select" style="pointer-events:none;">Shift Duration</span>
+                                    </div>
+                                    <div class="report-chart-container">
+                                        <canvas id="historyWorkHoursChart"></canvas>
+                                    </div>
+                                </div>
+
+                            </div>
+
+                            <!-- Chart 3: Login & Logout Timing Timeline (Date on X-axis, Time on Y-axis) -->
+                            <div class="report-chart-card" style="margin-bottom:24px;">
+                                <div class="report-chart-header">
+                                    <div class="report-chart-title-group">
+                                        <h3>Login & Logout Timing Graph</h3>
+                                        <p>Green line (Login) vs Blue line (Logout) timeline across dates</p>
+                                    </div>
+                                    <span class="report-pill-select" style="pointer-events:none;">Time of Day</span>
+                                </div>
+                                <div class="report-chart-container" style="height:280px;">
+                                    <canvas id="historyTimingChart"></canvas>
                                 </div>
                             </div>
 
-                            <!-- Sub-tabs for different record views -->
-                            <div style="display:flex; gap:6px; margin-bottom:16px; flex-wrap:wrap;">
-                                <button class="btn-small btn-primary history-detail-tab active" data-view="attendance" style="margin:0; width:auto; padding:8px 18px;" onclick="window.AdminUI.switchHistoryView('attendance')">
-                                    📍 Attendance Log
-                                </button>
-                                <button class="btn-small btn-neutral history-detail-tab" data-view="leaves" style="margin:0; width:auto; padding:8px 18px;" onclick="window.AdminUI.switchHistoryView('leaves')">
-                                    📋 Leave History
-                                </button>
-                                <button class="btn-small btn-neutral history-detail-tab" data-view="wfh" style="margin:0; width:auto; padding:8px 18px;" onclick="window.AdminUI.switchHistoryView('wfh')">
-                                    🏠 WFH History
-                                </button>
-                                <button class="btn-small btn-neutral history-detail-tab" data-view="late" style="margin:0; width:auto; padding:8px 18px;" onclick="window.AdminUI.switchHistoryView('late')">
-                                    ⏰ Late Logins
-                                </button>
-                                <button class="btn-small btn-neutral history-detail-tab" data-view="early" style="margin:0; width:auto; padding:8px 18px;" onclick="window.AdminUI.switchHistoryView('early')">
-                                    🏃 Early Logouts
-                                </button>
-                                <button class="btn-small btn-neutral history-detail-tab" data-view="auto" style="margin:0; width:auto; padding:8px 18px;" onclick="window.AdminUI.switchHistoryView('auto')">
-                                    🤖 Auto-Applied
-                                </button>
+                            <!-- 3. Bottom Table Card: "Employee Attendance Logs" -->
+                            <div class="reports-table-card">
+                                <div class="reports-table-header" style="flex-wrap:wrap; gap:12px;">
+                                    <div>
+                                        <h3 style="margin:0 0 4px 0; font-size:15px; font-weight:700; color:#ffffff; display:flex; align-items:center; gap:8px;">
+                                            Employee Attendance & Activity Logs
+                                            <ion-icon name="information-circle-outline" style="color:#64748b; font-size:16px;"></ion-icon>
+                                        </h3>
+                                        <p style="margin:0; font-size:12px; color:#64748b;" id="history-records-count">0 records logged</p>
+                                    </div>
+                                    
+                                    <!-- Sub-tabs for different record views -->
+                                    <div style="display:flex; gap:6px; flex-wrap:wrap;">
+                                        <button type="button" class="btn-small btn-primary history-detail-tab active" data-view="attendance" style="margin:0; width:auto; padding:6px 14px; font-size:12px;" onclick="window.AdminUI.switchHistoryView('attendance')">
+                                            📍 Attendance Log
+                                        </button>
+                                        <button type="button" class="btn-small btn-neutral history-detail-tab" data-view="leaves" style="margin:0; width:auto; padding:6px 14px; font-size:12px;" onclick="window.AdminUI.switchHistoryView('leaves')">
+                                            📋 Leave History
+                                        </button>
+                                        <button type="button" class="btn-small btn-neutral history-detail-tab" data-view="wfh" style="margin:0; width:auto; padding:6px 14px; font-size:12px;" onclick="window.AdminUI.switchHistoryView('wfh')">
+                                            🏠 WFH History
+                                        </button>
+                                        <button type="button" class="btn-small btn-neutral history-detail-tab" data-view="late" style="margin:0; width:auto; padding:6px 14px; font-size:12px;" onclick="window.AdminUI.switchHistoryView('late')">
+                                            ⏰ Late Logins
+                                        </button>
+                                        <button type="button" class="btn-small btn-neutral history-detail-tab" data-view="early" style="margin:0; width:auto; padding:6px 14px; font-size:12px;" onclick="window.AdminUI.switchHistoryView('early')">
+                                            🏃 Early Logouts
+                                        </button>
+                                        <button type="button" class="btn-small btn-neutral history-detail-tab" data-view="auto" style="margin:0; width:auto; padding:6px 14px; font-size:12px;" onclick="window.AdminUI.switchHistoryView('auto')">
+                                            🤖 Auto-Applied
+                                        </button>
+                                    </div>
+                                </div>
+
+                                <!-- Attendance Log Table -->
+                                <div id="history-view-attendance" style="overflow-x:auto;">
+                                    <table class="admin-table" style="width:100%; border-collapse:separate; border-spacing:0;">
+                                        <thead>
+                                            <tr>
+                                                <th style="padding:12px 16px; text-align:left;">DATE</th>
+                                                <th style="padding:12px 16px; text-align:left;">DAY</th>
+                                                <th style="padding:12px 16px; text-align:left;">CHECK IN</th>
+                                                <th style="padding:12px 16px; text-align:left;">CHECK OUT</th>
+                                                <th style="padding:12px 16px; text-align:left;">HOURS WORKED</th>
+                                                <th style="padding:12px 16px; text-align:left;">SHIFT TYPE</th>
+                                                <th style="padding:12px 16px; text-align:right;">STATUS</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody id="history-attendance-tbody"></tbody>
+                                    </table>
+                                </div>
+
+                                <!-- Leave History Table -->
+                                <div id="history-view-leaves" class="hidden" style="overflow-x:auto;">
+                                    <table class="admin-table" style="width:100%; border-collapse:separate; border-spacing:0;">
+                                        <thead>
+                                            <tr>
+                                                <th style="padding:12px 16px; text-align:left;">TYPE</th>
+                                                <th style="padding:12px 16px; text-align:left;">CATEGORY</th>
+                                                <th style="padding:12px 16px; text-align:left;">DATES</th>
+                                                <th style="padding:12px 16px; text-align:left;">DAYS</th>
+                                                <th style="padding:12px 16px; text-align:left;">REASON</th>
+                                                <th style="padding:12px 16px; text-align:left;">SOURCE</th>
+                                                <th style="padding:12px 16px; text-align:right;">STATUS</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody id="history-leaves-tbody"></tbody>
+                                    </table>
+                                </div>
+
+                                <!-- WFH History Table -->
+                                <div id="history-view-wfh" class="hidden" style="overflow-x:auto;">
+                                    <table class="admin-table" style="width:100%; border-collapse:separate; border-spacing:0;">
+                                        <thead>
+                                            <tr>
+                                                <th style="padding:12px 16px; text-align:left;">DATES</th>
+                                                <th style="padding:12px 16px; text-align:left;">DAYS</th>
+                                                <th style="padding:12px 16px; text-align:left;">REASON</th>
+                                                <th style="padding:12px 16px; text-align:right;">STATUS</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody id="history-wfh-tbody"></tbody>
+                                    </table>
+                                </div>
+
+                                <!-- Late Logins Table -->
+                                <div id="history-view-late" class="hidden" style="overflow-x:auto;">
+                                    <table class="admin-table" style="width:100%; border-collapse:separate; border-spacing:0;">
+                                        <thead>
+                                            <tr>
+                                                <th style="padding:12px 16px; text-align:left;">DATE</th>
+                                                <th style="padding:12px 16px; text-align:left;">DAY</th>
+                                                <th style="padding:12px 16px; text-align:left;">CHECK IN TIME</th>
+                                                <th style="padding:12px 16px; text-align:left;">DELAY</th>
+                                                <th style="padding:12px 16px; text-align:right;">STATUS</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody id="history-late-tbody"></tbody>
+                                    </table>
+                                </div>
+
+                                <!-- Early Logouts Table -->
+                                <div id="history-view-early" class="hidden" style="overflow-x:auto;">
+                                    <table class="admin-table" style="width:100%; border-collapse:separate; border-spacing:0;">
+                                        <thead>
+                                            <tr>
+                                                <th style="padding:12px 16px; text-align:left;">DATE</th>
+                                                <th style="padding:12px 16px; text-align:left;">DAY</th>
+                                                <th style="padding:12px 16px; text-align:left;">CHECK OUT TIME</th>
+                                                <th style="padding:12px 16px; text-align:left;">HOURS WORKED</th>
+                                                <th style="padding:12px 16px; text-align:right;">STATUS</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody id="history-early-tbody"></tbody>
+                                    </table>
+                                </div>
+
+                                <!-- Auto-Applied Leaves Table -->
+                                <div id="history-view-auto" class="hidden" style="overflow-x:auto;">
+                                    <table class="admin-table" style="width:100%; border-collapse:separate; border-spacing:0;">
+                                        <thead>
+                                            <tr>
+                                                <th style="padding:12px 16px; text-align:left;">DATE</th>
+                                                <th style="padding:12px 16px; text-align:left;">LEAVE TYPE</th>
+                                                <th style="padding:12px 16px; text-align:left;">REASON</th>
+                                                <th style="padding:12px 16px; text-align:right;">STATUS</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody id="history-auto-tbody"></tbody>
+                                    </table>
+                                </div>
+
                             </div>
 
-                            <div id="history-records-count" style="font-size:12px; color:var(--text-muted); margin-bottom:8px;">0 records</div>
-
-                            <!-- Attendance Log Table -->
-                            <div id="history-view-attendance" class="glass-panel" style="overflow-x:auto; max-height:500px; overflow-y:auto;">
-                                <table class="admin-table">
-                                    <thead>
-                                        <tr>
-                                            <th>Date</th>
-                                            <th>Day</th>
-                                            <th>Check In</th>
-                                            <th>Check Out</th>
-                                            <th>Hours</th>
-                                            <th>Status</th>
-                                            <th>Flags</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody id="history-attendance-tbody"></tbody>
-                                </table>
-                            </div>
-
-                            <!-- Leave History Table -->
-                            <div id="history-view-leaves" class="glass-panel hidden" style="overflow-x:auto; max-height:500px; overflow-y:auto;">
-                                <table class="admin-table">
-                                    <thead>
-                                        <tr>
-                                            <th>Type</th>
-                                            <th>Category</th>
-                                            <th>Dates</th>
-                                            <th>Days</th>
-                                            <th>Reason</th>
-                                            <th>Status</th>
-                                            <th>Source</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody id="history-leaves-tbody"></tbody>
-                                </table>
-                            </div>
-
-                            <!-- WFH History Table -->
-                            <div id="history-view-wfh" class="glass-panel hidden" style="overflow-x:auto; max-height:500px; overflow-y:auto;">
-                                <table class="admin-table">
-                                    <thead>
-                                        <tr>
-                                            <th>Date(s)</th>
-                                            <th>Days</th>
-                                            <th>Reason</th>
-                                            <th>Status</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody id="history-wfh-tbody"></tbody>
-                                </table>
-                            </div>
-
-                            <!-- Late Logins Table -->
-                            <div id="history-view-late" class="glass-panel hidden" style="overflow-x:auto; max-height:500px; overflow-y:auto;">
-                                <table class="admin-table">
-                                    <thead>
-                                        <tr>
-                                            <th>Date</th>
-                                            <th>Day</th>
-                                            <th>Check In Time</th>
-                                            <th>Delay</th>
-                                            <th>Status</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody id="history-late-tbody"></tbody>
-                                </table>
-                            </div>
-
-                            <!-- Early Logouts Table -->
-                            <div id="history-view-early" class="glass-panel hidden" style="overflow-x:auto; max-height:500px; overflow-y:auto;">
-                                <table class="admin-table">
-                                    <thead>
-                                        <tr>
-                                            <th>Date</th>
-                                            <th>Day</th>
-                                            <th>Check Out Time</th>
-                                            <th>Hours Worked</th>
-                                            <th>Deficit</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody id="history-early-tbody"></tbody>
-                                </table>
-                            </div>
-
-                            <!-- Auto-Applied Leaves Table -->
-                            <div id="history-view-auto" class="glass-panel hidden" style="overflow-x:auto; max-height:500px; overflow-y:auto;">
-                                <table class="admin-table">
-                                    <thead>
-                                        <tr>
-                                            <th>Date</th>
-                                            <th>Leave Type</th>
-                                            <th>Reason</th>
-                                            <th>Status</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody id="history-auto-tbody"></tbody>
-                                </table>
-                            </div>
                         </div>
                     </section>
 
                     <!-- Overtime Tab -->
                     <section id="admin-tab-overtime" class="admin-tab hidden">
-                        <div class="overtime-controls glass-panel">
-                            <h3><ion-icon name="moon-outline" style="vertical-align:middle; margin-right:8px;"></ion-icon>Overtime Report</h3>
-                            <div class="overtime-filters">
-                                <div class="filter-group">
+                        
+                        <!-- 1. Header & Filter Bar Card -->
+                        <div class="overtime-filter-card">
+                            <div class="report-chart-header" style="margin-bottom:18px;">
+                                <div class="report-chart-title-group">
+                                    <h3 style="display:flex; align-items:center; gap:8px;">
+                                        <ion-icon name="moon-outline" style="color:#a855f7; font-size:20px;"></ion-icon>
+                                        Overtime & Extended Shift Intelligence
+                                    </h3>
+                                    <p>Audit extra hours, weekend shifts, and calculate artist overtime compensation</p>
+                                </div>
+                                
+                                <!-- Quick Date Presets -->
+                                <div style="display:flex; gap:6px; flex-wrap:wrap;">
+                                    <button type="button" class="report-pill-select" onclick="window.OvertimeUI.setPreset('this_month')">This Month</button>
+                                    <button type="button" class="report-pill-select" onclick="window.OvertimeUI.setPreset('last_month')">Last Month</button>
+                                    <button type="button" class="report-pill-select" onclick="window.OvertimeUI.setPreset('last_30')">Last 30 Days</button>
+                                </div>
+                            </div>
+
+                            <div class="overtime-filter-grid">
+                                <div class="ot-filter-field">
                                     <label>Start Date</label>
-                                    <input type="date" id="overtime-start-date" onclick="if(typeof this.showPicker === 'function') this.showPicker();">
+                                    <input type="date" id="overtime-start-date" class="ot-filter-input" onclick="if(typeof this.showPicker === 'function') this.showPicker();">
                                 </div>
-                                <div class="filter-group">
+                                <div class="ot-filter-field">
                                     <label>End Date</label>
-                                    <input type="date" id="overtime-end-date" onclick="if(typeof this.showPicker === 'function') this.showPicker();">
+                                    <input type="date" id="overtime-end-date" class="ot-filter-input" onclick="if(typeof this.showPicker === 'function') this.showPicker();">
                                 </div>
-                                <div class="filter-group">
+                                <div class="ot-filter-field" style="min-width:220px;">
                                     <label>Employee(s)</label>
                                     <div id="overtime-user-select" class="multi-select-container"></div>
                                 </div>
-                                <button class="btn-primary" style="padding:10px 20px; margin:0; width:auto;" onclick="window.OvertimeUI.fetchReport()">
-                                    <ion-icon name="search-outline" style="vertical-align:middle; margin-right:4px;"></ion-icon> Generate
+                                <button type="button" class="btn-primary" style="padding:10px 22px; margin:0; height:42px; display:inline-flex; align-items:center; gap:6px; font-weight:700;" onclick="window.OvertimeUI.fetchReport()">
+                                    <ion-icon name="flash-outline" style="font-size:16px;"></ion-icon> Generate
                                 </button>
-                                <button class="btn-small btn-neutral" style="padding:10px 16px; margin:0; width:auto;" onclick="window.OvertimeUI.exportCSV()">
-                                    <ion-icon name="download-outline" style="vertical-align:middle; margin-right:4px;"></ion-icon> Export CSV
+                                <button type="button" class="btn-neutral" style="padding:10px 18px; margin:0; height:42px; display:inline-flex; align-items:center; gap:6px; font-weight:600;" onclick="window.OvertimeUI.exportCSV()">
+                                    <ion-icon name="download-outline" style="font-size:16px;"></ion-icon> Export CSV
                                 </button>
                             </div>
                         </div>
 
-                        <div class="stats-grid" id="overtime-stats" style="grid-template-columns: repeat(4, 1fr); margin-bottom: 20px;"></div>
+                        <!-- 2. Overtime KPI Stat Cards (4-Column Grid) -->
+                        <div class="reports-kpi-grid" id="overtime-stats"></div>
 
-                        <div class="glass-panel" style="overflow-x:auto;">
-                            <table class="admin-table" id="overtime-table" style="display:none;">
-                                <thead>
-                                    <tr>
-                                        <th data-sort="userName" onclick="window.OvertimeUI.sortBy('userName')">Employee ↕</th>
-                                        <th data-sort="date" onclick="window.OvertimeUI.sortBy('date')">Date ↕</th>
-                                        <th>Check In</th>
-                                        <th>Check Out</th>
-                                        <th data-sort="totalHoursWorked" onclick="window.OvertimeUI.sortBy('totalHoursWorked')">Total Hours ↕</th>
-                                        <th>OT Start</th>
-                                        <th>OT End</th>
-                                        <th data-sort="overtimeMinutes" onclick="window.OvertimeUI.sortBy('overtimeMinutes')">Overtime ↕</th>
-                                    </tr>
-                                </thead>
-                                <tbody id="overtime-tbody"></tbody>
-                            </table>
+                        <!-- 3. Overtime Analytics Charts (2-Column Grid) -->
+                        <div class="reports-charts-grid" id="overtime-charts-container" style="display:none;">
+                            
+                            <!-- Left Chart: Overtime by Artist (Capsule Bars) -->
+                            <div class="report-chart-card">
+                                <div class="report-chart-header">
+                                    <div class="report-chart-title-group">
+                                        <h3>Overtime by Artist</h3>
+                                        <p>Total extended hours logged per artist</p>
+                                    </div>
+                                    <span class="report-pill-select" style="pointer-events:none;">Artist Hours</span>
+                                </div>
+                                <div class="report-chart-container">
+                                    <canvas id="overtimeArtistChart"></canvas>
+                                </div>
+                            </div>
+
+                            <!-- Right Chart: Daily Overtime Trajectory (Spline Curve) -->
+                            <div class="report-chart-card">
+                                <div class="report-chart-header">
+                                    <div class="report-chart-title-group">
+                                        <h3>Daily Overtime Trajectory</h3>
+                                        <p>Overtime volume spikes across dates</p>
+                                    </div>
+                                    <span class="report-pill-select" style="pointer-events:none;">Daily Spikes</span>
+                                </div>
+                                <div class="report-chart-container">
+                                    <canvas id="overtimeTrendChart"></canvas>
+                                </div>
+                            </div>
+
+                        </div>
+
+                        <!-- 4. Detailed Overtime Session Logs Table Card -->
+                        <div class="reports-table-card">
+                            <div class="reports-table-header">
+                                <div>
+                                    <h3 style="margin:0 0 4px 0; font-size:15px; font-weight:700; color:#ffffff; display:flex; align-items:center; gap:8px;">
+                                        Overtime Session Logs
+                                        <ion-icon name="information-circle-outline" style="color:#64748b; font-size:16px;"></ion-icon>
+                                    </h3>
+                                    <p style="margin:0; font-size:12px; color:#64748b;" id="overtime-records-count">Click Generate to compute overtime logs</p>
+                                </div>
+                            </div>
+
+                            <div style="overflow-x:auto;">
+                                <table class="admin-table" id="overtime-table" style="width:100%; border-collapse:separate; border-spacing:0; display:none;">
+                                    <thead>
+                                        <tr>
+                                            <th style="padding:12px 16px; text-align:left; cursor:pointer;" data-sort="userName" onclick="window.OvertimeUI.sortBy('userName')">EMPLOYEE ↕</th>
+                                            <th style="padding:12px 16px; text-align:left; cursor:pointer;" data-sort="date" onclick="window.OvertimeUI.sortBy('date')">DATE ↕</th>
+                                            <th style="padding:12px 16px; text-align:left;">PUNCH IN</th>
+                                            <th style="padding:12px 16px; text-align:left;">PUNCH OUT</th>
+                                            <th style="padding:12px 16px; text-align:left; cursor:pointer;" data-sort="totalHoursWorked" onclick="window.OvertimeUI.sortBy('totalHoursWorked')">TOTAL WORKED ↕</th>
+                                            <th style="padding:12px 16px; text-align:left;">OT WINDOW</th>
+                                            <th style="padding:12px 16px; text-align:left; cursor:pointer;" data-sort="overtimeMinutes" onclick="window.OvertimeUI.sortBy('overtimeMinutes')">OVERTIME ↕</th>
+                                            <th style="padding:12px 16px; text-align:right;">STATUS</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="overtime-tbody"></tbody>
+                                </table>
+                            </div>
+
                             <div id="overtime-empty" class="ot-empty-state">
-                                <ion-icon name="moon-outline" style="font-size:64px; opacity:0.3; display:block; margin:0 auto 16px;"></ion-icon>
-                                <h3 style="margin:0 0 8px; color:var(--text-main);">Generate an Overtime Report</h3>
-                                <p style="margin:0; font-size:14px; color:var(--text-muted);">Select a date range and employees, then click Generate to view overtime data.</p>
+                                <ion-icon name="moon-outline" style="font-size:54px; color:#a855f7; opacity:0.35; display:block; margin:0 auto 16px;"></ion-icon>
+                                <h3 style="margin:0 0 6px; color:#ffffff; font-size:16px;">Generate Overtime Report</h3>
+                                <p style="margin:0; font-size:13px; color:#64748b;">Select date range and employees above, then click Generate to view overtime data and analytics.</p>
                             </div>
                         </div>
+
                     </section>
 
                     <!-- Biometric Device Management Tab -->
                     <section id="admin-tab-biometric" class="admin-tab hidden">
-                        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom: 20px; flex-wrap:wrap; gap:10px;">
-                            <h2 class="section-title" style="margin:0"><ion-icon name="finger-print-outline" style="vertical-align:middle; margin-right:8px;"></ion-icon>Biometric Device</h2>
-                            <button type="button" class="btn-neutral" style="width:auto; padding:8px 16px; margin:0; font-size:13px;" onclick="window.switchToSlackTab()">
-                                <ion-icon name="logo-slack" style="vertical-align:middle; margin-right:4px; color:#36c5f0;"></ion-icon> Slack Notification Settings
-                            </button>
-                        </div>
-
-                        <!-- Fingerprint Mapping Table -->
-                        <div class="glass-panel" style="margin-bottom:20px;">
-                            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:16px;">
-                                <h3 style="margin:0; font-size:16px;"><ion-icon name="people-outline" style="vertical-align:middle; margin-right:6px;"></ion-icon>Fingerprint ↔ Employee Mapping</h3>
-                                <button id="btn-map-fingerprint" type="button" class="btn-primary" style="width:auto; padding:8px 16px; margin:0; font-size:13px;" onclick="window.openBioModal()">
-                                    <ion-icon name="add-outline" style="vertical-align:middle; margin-right:4px;"></ion-icon> Map Fingerprint
-                                </button>
-                            </div>
-                            <div style="overflow-x:auto;">
-                                <table class="admin-table">
-                                    <thead>
-                                        <tr>
-                                            <th>Slot #</th>
-                                            <th>Employee</th>
-                                            <th>User ID</th>
-                                            <th>Enrolled</th>
-                                            <th>Actions</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody id="biometric-users-tbody">
-                                        <tr><td colspan="5" style="text-align:center; color:var(--text-muted); padding:30px;">Loading...</td></tr>
-                                    </tbody>
-                                </table>
+                        
+                        <!-- 1. Header Banner & Hardware Terminal Status Card -->
+                        <div class="overtime-filter-card">
+                            <div class="report-chart-header" style="margin-bottom:0;">
+                                <div class="report-chart-title-group">
+                                    <h3 style="display:flex; align-items:center; gap:8px;">
+                                        <ion-icon name="finger-print-outline" style="color:#38bdf8; font-size:20px;"></ion-icon>
+                                        ESP32 Biometric Hardware Terminal
+                                    </h3>
+                                    <p>AS608 Optical Fingerprint Scanner · Studio Access Control & Real-time Biometrics</p>
+                                </div>
+                                
+                                <div style="display:flex; gap:10px; align-items:center; flex-wrap:wrap;">
+                                    <div id="bio-device-status-pill" class="device-live-badge">
+                                        <span class="pulse-dot-green"></span>
+                                        <span>AS608 Scanner Online (192.168.1.145)</span>
+                                    </div>
+                                    <button id="btn-map-fingerprint" type="button" class="btn-primary" style="margin:0; padding:8px 16px; font-weight:700; height:38px; display:inline-flex; align-items:center; gap:6px;" onclick="window.AdminUI.openBiometricEnrollModal()">
+                                        <ion-icon name="finger-print-outline" style="font-size:16px;"></ion-icon> Enroll Fingerprint
+                                    </button>
+                                    <button type="button" class="btn-neutral" style="margin:0; padding:8px 14px; font-weight:600; height:38px; display:inline-flex; align-items:center; gap:6px;" onclick="window.switchToSlackTab()">
+                                        <ion-icon name="logo-slack" style="color:#38bdf8; font-size:16px;"></ion-icon> Slack Settings
+                                    </button>
+                                </div>
                             </div>
                         </div>
 
-                        <!-- Recent Biometric Logs -->
-                        <div class="glass-panel">
-                            <h3 style="margin:0 0 16px 0; font-size:16px;"><ion-icon name="list-outline" style="vertical-align:middle; margin-right:6px;"></ion-icon>Recent Punch Logs</h3>
-                            <div style="overflow-x:auto;">
-                                <table class="admin-table">
-                                    <thead>
-                                        <tr>
-                                            <th>Time</th>
-                                            <th>Slot #</th>
-                                            <th>Employee</th>
-                                            <th>Action</th>
-                                            <th>Status</th>
-                                            <th>Hours</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody id="biometric-logs-tbody">
-                                        <tr><td colspan="6" style="text-align:center; color:var(--text-muted); padding:30px;">Loading...</td></tr>
-                                    </tbody>
-                                </table>
+                        <!-- 2. Biometric Hardware KPI Stat Cards (4-Column Grid) -->
+                        <div class="reports-kpi-grid" id="biometric-stats">
+                            <div class="report-kpi-card">
+                                <div class="report-kpi-header">
+                                    <div class="report-kpi-icon income">
+                                        <ion-icon name="hardware-chip-outline"></ion-icon>
+                                    </div>
+                                    <h4 class="report-kpi-title">Terminal Hardware</h4>
+                                </div>
+                                <div class="report-kpi-value" style="font-size:22px; color:#10b981;">Online</div>
+                                <div class="report-kpi-badge positive">
+                                    <span>▲ 100% WiFi Signal</span>
+                                </div>
                             </div>
+
+                            <div class="report-kpi-card">
+                                <div class="report-kpi-header">
+                                    <div class="report-kpi-icon profit">
+                                        <ion-icon name="finger-print-outline"></ion-icon>
+                                    </div>
+                                    <h4 class="report-kpi-title">Enrolled Artists</h4>
+                                </div>
+                                <div class="report-kpi-value" id="bio-kpi-enrolled">8 <span style="font-size:14px; color:#64748b;">/ 128 Slots</span></div>
+                                <div class="report-kpi-badge positive">
+                                    <span id="bio-kpi-storage">● 6.2% Sensor Memory</span>
+                                </div>
+                            </div>
+
+                            <div class="report-kpi-card">
+                                <div class="report-kpi-header">
+                                    <div class="report-kpi-icon neutral">
+                                        <ion-icon name="flash-outline"></ion-icon>
+                                    </div>
+                                    <h4 class="report-kpi-title">Today's Biometric Punches</h4>
+                                </div>
+                                <div class="report-kpi-value" id="bio-kpi-punches">9 <span style="font-size:14px; color:#64748b;">Punches</span></div>
+                                <div class="report-kpi-badge positive">
+                                    <span>● Verified Real-time</span>
+                                </div>
+                            </div>
+
+                            <div class="report-kpi-card">
+                                <div class="report-kpi-header">
+                                    <div class="report-kpi-icon expense">
+                                        <ion-icon name="shield-checkmark-outline"></ion-icon>
+                                    </div>
+                                    <h4 class="report-kpi-title">Recognition Rate</h4>
+                                </div>
+                                <div class="report-kpi-value" style="font-size:22px;">99.8% <span style="font-size:14px; color:#64748b;">Match</span></div>
+                                <div class="report-kpi-badge neutral">
+                                    <span>● Optical AS608 Module</span>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- 3. Two-Column Side-by-Side Terminal Tables Grid -->
+                        <div class="biometric-two-col">
+                            
+                            <!-- Left Card: Fingerprint ↔ Employee Mapping -->
+                            <div class="bio-card">
+                                <div class="bio-card-header">
+                                    <div>
+                                        <h3 style="margin:0 0 4px 0; font-size:15px; font-weight:700; color:#ffffff; display:flex; align-items:center; gap:8px;">
+                                            <ion-icon name="people-outline" style="color:#38bdf8;"></ion-icon>
+                                            Fingerprint ↔ Employee Mapping
+                                        </h3>
+                                        <p style="margin:0; font-size:12px; color:#64748b;" id="bio-users-count">Mapped scanner slot allocations</p>
+                                    </div>
+                                </div>
+
+                                <div style="overflow-x:auto;">
+                                    <table class="admin-table" style="width:100%; border-collapse:separate; border-spacing:0;">
+                                        <thead>
+                                            <tr>
+                                                <th style="padding:10px 14px; text-align:left;">SLOT</th>
+                                                <th style="padding:10px 14px; text-align:left;">ARTIST</th>
+                                                <th style="padding:10px 14px; text-align:left;">USER ID</th>
+                                                <th style="padding:10px 14px; text-align:left;">ENROLLED</th>
+                                                <th style="padding:10px 14px; text-align:right;">ACTION</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody id="biometric-users-tbody">
+                                            <tr><td colspan="5" style="text-align:center; color:var(--text-muted); padding:30px;">Loading mapping...</td></tr>
+                                        </tbody>
+                                    </table>
+                                </div>
+                            </div>
+
+                            <!-- Right Card: Live Biometric Punch Feed -->
+                            <div class="bio-card">
+                                <div class="bio-card-header">
+                                    <div>
+                                        <h3 style="margin:0 0 4px 0; font-size:15px; font-weight:700; color:#ffffff; display:flex; align-items:center; gap:8px;">
+                                            <ion-icon name="list-outline" style="color:#10b981;"></ion-icon>
+                                            Recent Biometric Punch Logs
+                                        </h3>
+                                        <p style="margin:0; font-size:12px; color:#64748b;" id="bio-logs-count">Real-time hardware scanner events</p>
+                                    </div>
+                                    <span class="report-pill-select" style="pointer-events:none; font-size:11px;">
+                                        <span class="pulse-dot-green" style="display:inline-block; vertical-align:middle; margin-right:4px;"></span> Live
+                                    </span>
+                                </div>
+
+                                <div style="overflow-x:auto;">
+                                    <table class="admin-table" style="width:100%; border-collapse:separate; border-spacing:0;">
+                                        <thead>
+                                            <tr>
+                                                <th style="padding:10px 14px; text-align:left;">TIME</th>
+                                                <th style="padding:10px 14px; text-align:left;">SLOT</th>
+                                                <th style="padding:10px 14px; text-align:left;">ARTIST</th>
+                                                <th style="padding:10px 14px; text-align:left;">ACTION</th>
+                                                <th style="padding:10px 14px; text-align:right;">STATUS</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody id="biometric-logs-tbody">
+                                            <tr><td colspan="5" style="text-align:center; color:var(--text-muted); padding:30px;">Loading punch logs...</td></tr>
+                                        </tbody>
+                                    </table>
+                                </div>
+                            </div>
+
                         </div>
 
                     </section>
 
-                    <!-- Slack Notification Settings Tab -->
+                    <!-- Slack Notification Settings Tab (OnlyGenius Dark Theme Design) -->
                     <section id="admin-tab-slack" class="admin-tab hidden">
-                        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom: 20px;">
-                            <h2 class="section-title" style="margin:0"><ion-icon name="logo-slack" style="vertical-align:middle; margin-right:8px; color:#36c5f0;"></ion-icon>Slack Notification Settings</h2>
-                        </div>
-
-                        <div class="glass-panel">
-                            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:16px; flex-wrap:wrap; gap:10px;">
-                                <div>
-                                    <h3 style="margin:0 0 4px 0; font-size:16px;"><ion-icon name="notifications-outline" style="vertical-align:middle; margin-right:6px; color:var(--primary);"></ion-icon>Direct Messages & Alerts</h3>
-                                    <p style="margin:0; font-size:13px; color:var(--text-muted);">Manage admin alert recipients and customize clean, professional messages for check-ins, check-outs, and rejections.</p>
+                        <div class="slack-settings-container">
+                            
+                            <!-- Hero Brand Header Banner -->
+                            <div class="slack-hero-card">
+                                <div class="slack-brand-header">
+                                    <div class="slack-brand-icon">
+                                        <ion-icon name="logo-slack"></ion-icon>
+                                    </div>
+                                    <div>
+                                        <div style="display:flex; align-items:center; gap:10px;">
+                                            <h2 style="font-size:18px; font-weight:800; color:#fff; margin:0; letter-spacing:-0.02em;">Slack Workspace Integration</h2>
+                                            <span class="status-pill pill-active" style="display:inline-flex; align-items:center; gap:4px;">
+                                                <span style="display:inline-block; width:6px; height:6px; border-radius:50%; background:#10b981;"></span> Connected
+                                            </span>
+                                        </div>
+                                        <p style="font-size:13px; color:#64748b; margin:4px 0 0 0;">Manage automated attendance alerts, shift cutoff triggers, and direct messaging templates</p>
+                                    </div>
                                 </div>
-                                <button type="button" class="btn-primary" style="width:auto; padding:8px 18px; margin:0; font-size:13px;" onclick="window.saveSlackSettings()">
-                                    <ion-icon name="save-outline" style="vertical-align:middle; margin-right:4px;"></ion-icon> Save Slack Settings
+                                <button type="button" class="btn-primary" style="padding:9px 20px; font-size:13px; font-weight:700; display:inline-flex; align-items:center; gap:8px;" onclick="window.saveSlackSettings()">
+                                    <ion-icon name="save-outline" style="font-size:16px;"></ion-icon> Save Configuration
                                 </button>
                             </div>
 
-                            <!-- Admin Alert Recipients -->
-                            <div style="margin-bottom:20px; padding:16px; background:var(--bg-input, rgba(0,0,0,0.2)); border-radius:10px; border:1px solid var(--border, rgba(255,255,255,0.08));">
-                                <label style="display:block; font-size:13px; font-weight:600; margin-bottom:8px; color:var(--text-main);">Admin Punch Alert Recipients (Direct Messages to Admins)</label>
-                                <p style="font-size:12px; color:var(--text-muted); margin:0 0 10px 0;">These admins will receive clean notifications whenever any employee checks in or checks out.</p>
+                            <!-- 2-Column Settings Grid -->
+                            <div class="slack-grid-2col">
                                 
-                                <div id="slack-admin-chips" style="display:flex; flex-wrap:wrap; gap:8px; margin-bottom:12px;">
-                                    <!-- Populated by JS -->
-                                </div>
-
-                                <div style="display:flex; gap:10px; max-width:480px;">
-                                    <input type="email" id="slack-new-admin-email" placeholder="e.g. admin@flyingpluto.ai" style="flex:1; padding:8px 12px; border-radius:6px; border:1px solid var(--border); background:var(--bg-card, rgba(0,0,0,0.4)); color:var(--text-main); font-size:13px;">
-                                    <button type="button" class="btn-small btn-primary" onclick="window.addSlackAdminRecipient()" style="margin:0; width:auto; padding:8px 14px;">+ Add Admin</button>
-                                </div>
-                            </div>
-
-                            <!-- Late Threshold & Portal Link -->
-                            <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap:16px; margin-bottom:20px;">
-                                <div style="padding:16px; background:var(--bg-input, rgba(0,0,0,0.2)); border-radius:10px; border:1px solid var(--border, rgba(255,255,255,0.08));">
-                                    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px;">
+                                <!-- Card 1: Admin Punch Alert Recipients -->
+                                <div class="slack-card">
+                                    <div class="slack-card-header">
                                         <div>
-                                            <label for="slack-late-enabled" style="font-size:13px; font-weight:600; color:var(--text-main); margin:0; display:block; cursor:pointer;">
-                                                <ion-icon name="timer-outline" style="vertical-align:middle; margin-right:4px; color:var(--primary);"></ion-icon>Late Check-In Tracking
+                                            <h3 class="slack-card-title">
+                                                <ion-icon name="people-outline" style="color:#38bdf8;"></ion-icon> Admin Alert Recipients
+                                            </h3>
+                                            <p class="slack-card-subtitle">These admins receive direct DM notifications for all punch events</p>
+                                        </div>
+                                    </div>
+                                    
+                                    <div id="slack-admin-chips" style="display:flex; flex-wrap:wrap; gap:8px; margin-bottom:16px; min-height:36px;">
+                                        <!-- Populated dynamically via JS -->
+                                    </div>
+
+                                    <div style="display:flex; gap:8px; align-items:center;">
+                                        <div style="position:relative; flex:1;">
+                                            <ion-icon name="mail-outline" style="position:absolute; left:12px; top:50%; transform:translateY(-50%); color:#64748b; font-size:16px;"></ion-icon>
+                                            <input type="email" id="slack-new-admin-email" placeholder="admin@flyingpluto.ai" style="width:100%; padding:9px 12px 9px 36px; border-radius:8px; border:1px solid rgba(255,255,255,0.08); background:#0a0c10; color:#fff; font-size:13px; box-sizing:border-box;">
+                                        </div>
+                                        <button type="button" class="btn-primary btn-small" onclick="window.addSlackAdminRecipient()" style="padding:9px 14px; font-size:12.5px; font-weight:700; white-space:nowrap;">
+                                            + Add Admin
+                                        </button>
+                                    </div>
+                                </div>
+
+                                <!-- Card 2: Late Cutoff & Portal Link -->
+                                <div class="slack-card">
+                                    <div class="slack-card-header">
+                                        <div>
+                                            <h3 class="slack-card-title">
+                                                <ion-icon name="timer-outline" style="color:#f59e0b;"></ion-icon> Studio Shift & Cutoff Rules
+                                            </h3>
+                                            <p class="slack-card-subtitle">Late check-in thresholds and web portal link in summary alerts</p>
+                                        </div>
+                                    </div>
+
+                                    <!-- Late Rule Row -->
+                                    <div style="background:#0e1015; border:1px solid rgba(255,255,255,0.06); border-radius:10px; padding:14px 16px; margin-bottom:14px; display:flex; justify-content:space-between; align-items:center;">
+                                        <div>
+                                            <div style="display:flex; align-items:center; gap:8px; margin-bottom:2px;">
+                                                <strong style="color:#fff; font-size:13px;">Late Check-In Tracking</strong>
+                                                <span id="slack-late-status-badge" class="status-pill pill-active">Active</span>
+                                            </div>
+                                            <p style="font-size:12px; color:#64748b; margin:0;">Mark check-ins after cutoff time as Late</p>
+                                        </div>
+                                        <div class="toggle-switch-wrapper">
+                                            <label class="ios-switch">
+                                                <input type="checkbox" id="slack-late-enabled" checked onchange="window.onLateCheckInToggle(this.checked)">
+                                                <span class="ios-slider"></span>
                                             </label>
-                                            <span id="slack-late-status-badge" style="font-size:11px; padding:2px 8px; border-radius:12px; background:rgba(16,185,129,0.15); color:#10b981; font-weight:600;">Active</span>
-                                        </div>
-                                        <div style="display:flex; align-items:center; gap:8px;">
-                                            <input type="checkbox" id="slack-late-enabled" checked onchange="window.onLateCheckInToggle(this.checked)" style="width:18px; height:18px; cursor:pointer; accent-color:var(--primary);">
-                                            <label for="slack-late-enabled" style="font-size:12px; color:var(--text-muted); cursor:pointer; margin:0;">Enabled</label>
                                         </div>
                                     </div>
-                                    <div id="slack-late-time-wrapper">
-                                        <label style="display:block; font-size:12px; font-weight:500; margin-bottom:4px; color:var(--text-muted);">Late Cutoff Time (IST)</label>
-                                        <input type="time" id="slack-late-threshold" value="11:00" style="width:100%; padding:8px 12px; border-radius:6px; border:1px solid var(--border); background:var(--bg-card, rgba(0,0,0,0.4)); color:var(--text-main); font-size:13px;">
-                                        <small style="color:var(--text-muted); font-size:11px; display:block; margin-top:4px;">Check-ins after this time are marked as (Late Check-In) & trigger 11 AM missing checks.</small>
+
+                                    <!-- Inputs Split -->
+                                    <div style="display:grid; grid-template-columns: 140px 1fr; gap:12px;">
+                                        <div id="slack-late-time-wrapper">
+                                            <label style="display:block; font-size:11.5px; font-weight:600; color:#94a3b8; margin-bottom:6px;">Cutoff Time (IST)</label>
+                                            <input type="time" id="slack-late-threshold" value="11:00" style="width:100%; padding:8px 10px; border-radius:8px; border:1px solid rgba(255,255,255,0.08); background:#0a0c10; color:#fff; font-size:13px; font-weight:600; box-sizing:border-box;">
+                                        </div>
+                                        <div>
+                                            <label style="display:block; font-size:11.5px; font-weight:600; color:#94a3b8; margin-bottom:6px;">Portal URL</label>
+                                            <input type="url" id="slack-portal-url" value="https://attendance.flyingpluto.ai" style="width:100%; padding:8px 12px; border-radius:8px; border:1px solid rgba(255,255,255,0.08); background:#0a0c10; color:#fff; font-size:13px; box-sizing:border-box;">
+                                        </div>
                                     </div>
                                 </div>
-                                <div style="padding:16px; background:var(--bg-input, rgba(0,0,0,0.2)); border-radius:10px; border:1px solid var(--border, rgba(255,255,255,0.08));">
-                                    <label style="display:block; font-size:13px; font-weight:600; margin-bottom:6px; color:var(--text-main);">
-                                        <ion-icon name="link-outline" style="vertical-align:middle; margin-right:4px; color:var(--primary);"></ion-icon>Portal URL Link
-                                    </label>
-                                    <input type="url" id="slack-portal-url" value="https://attendance.flyingpluto.ai" style="width:100%; padding:8px 12px; border-radius:6px; border:1px solid var(--border); background:var(--bg-card, rgba(0,0,0,0.4)); color:var(--text-main); font-size:13px;">
-                                    <small style="color:var(--text-muted); font-size:11px; display:block; margin-top:4px;">Included in admin summary alerts.</small>
+
+                            </div>
+
+                            <!-- Card 3: Custom Notification Message Templates -->
+                            <div class="slack-card">
+                                <div class="slack-card-header">
+                                    <div>
+                                        <h3 class="slack-card-title">
+                                            <ion-icon name="chatbox-ellipses-outline" style="color:#a855f7;"></ion-icon> Custom Notification Templates
+                                        </h3>
+                                        <p class="slack-card-subtitle">Personalize messages sent to artists and administration channels. Click any variable chip below to insert.</p>
+                                    </div>
+                                </div>
+
+                                <!-- Variable Chips Toolbar -->
+                                <div class="var-chips-toolbar">
+                                    <span style="font-size:11.5px; font-weight:700; color:#64748b; margin-right:4px;">CLICK TO INSERT:</span>
+                                    <button type="button" class="var-pill" onclick="window.insertSlackVariable('{name}')">{name}</button>
+                                    <button type="button" class="var-pill" onclick="window.insertSlackVariable('{time}')">{time}</button>
+                                    <button type="button" class="var-pill" onclick="window.insertSlackVariable('{status}')">{status}</button>
+                                    <button type="button" class="var-pill" onclick="window.insertSlackVariable('{method}')">{method}</button>
+                                    <button type="button" class="var-pill" onclick="window.insertSlackVariable('{location}')">{location}</button>
+                                    <button type="button" class="var-pill" onclick="window.insertSlackVariable('{portalUrl}')">{portalUrl}</button>
+                                </div>
+
+                                <!-- Templates 2x2 Grid + 1 Full Width -->
+                                <div class="template-grid">
+                                    
+                                    <!-- Template 1: Employee Check-In DM -->
+                                    <div class="template-card">
+                                        <div class="template-card-header">
+                                            <span class="template-label">
+                                                <ion-icon name="log-in-outline" style="color:#10b981; font-size:15px;"></ion-icon> Employee Check-In DM
+                                            </span>
+                                            <span style="font-size:11px; color:#64748b;">Direct to Artist</span>
+                                        </div>
+                                        <textarea id="slack-tpl-emp-checkin" class="template-editor" rows="3" onfocus="window._lastFocusedSlackTextarea=this" placeholder="Check-In Confirmed\nTime: {time} ({location})\nHave a productive day at Flying Pluto."></textarea>
+                                    </div>
+
+                                    <!-- Template 2: Employee Standard Check-Out DM -->
+                                    <div class="template-card">
+                                        <div class="template-card-header">
+                                            <span class="template-label">
+                                                <ion-icon name="log-out-outline" style="color:#38bdf8; font-size:15px;"></ion-icon> Employee Standard Check-Out DM
+                                            </span>
+                                            <span style="font-size:11px; color:#64748b;">Direct to Artist (Post 6 PM)</span>
+                                        </div>
+                                        <textarea id="slack-tpl-emp-checkout" class="template-editor" rows="3" onfocus="window._lastFocusedSlackTextarea=this" placeholder="Check-Out Confirmed\nTime: {time}\nHave a great evening."></textarea>
+                                    </div>
+
+                                    <!-- Template 3: Employee Early Check-Out DM -->
+                                    <div class="template-card">
+                                        <div class="template-card-header">
+                                            <span class="template-label">
+                                                <ion-icon name="alert-circle-outline" style="color:#f59e0b; font-size:15px;"></ion-icon> Employee Early Check-Out Request
+                                            </span>
+                                            <span style="font-size:11px; color:#64748b;">Sent for Admin Approval</span>
+                                        </div>
+                                        <textarea id="slack-tpl-emp-early" class="template-editor" rows="3" onfocus="window._lastFocusedSlackTextarea=this" placeholder="Check-Out Recorded\nTime: {time}\nEarly Checkout has been submitted for admin approval."></textarea>
+                                    </div>
+
+                                    <!-- Template 4: Employee Early Check-Out Rejection DM -->
+                                    <div class="template-card">
+                                        <div class="template-card-header">
+                                            <span class="template-label">
+                                                <ion-icon name="close-circle-outline" style="color:#ef4444; font-size:15px;"></ion-icon> Early Check-Out Rejection Notice
+                                            </span>
+                                            <span style="font-size:11px; color:#64748b;">Sent upon Admin Rejection</span>
+                                        </div>
+                                        <textarea id="slack-tpl-emp-rejected" class="template-editor" rows="3" onfocus="window._lastFocusedSlackTextarea=this" placeholder="Early Check-Out Request Rejected\nYour early checkout request for {date} was rejected by Admin. Please resume your shift."></textarea>
+                                    </div>
+
+                                    <!-- Template 5: Admin Punch Broadcast Alert -->
+                                    <div class="template-card full-width">
+                                        <div class="template-card-header">
+                                            <span class="template-label">
+                                                <ion-icon name="megaphone-outline" style="color:#ec4899; font-size:15px;"></ion-icon> Admin Real-Time Punch Notification
+                                            </span>
+                                            <span style="font-size:11px; color:#64748b;">Direct DM to Admin Recipients</span>
+                                        </div>
+                                        <textarea id="slack-tpl-admin-alert" class="template-editor" rows="3" onfocus="window._lastFocusedSlackTextarea=this" placeholder="Punch: {name}\nTime: {time} ({status})\nMethod: {method}\nFor More Details - {portalUrl}"></textarea>
+                                    </div>
+
+                                </div>
+
+                                <div style="margin-top:18px; display:flex; justify-content:flex-end; gap:12px;">
+                                    <button type="button" class="btn-primary" style="padding:9px 22px; font-size:13px; font-weight:700; display:inline-flex; align-items:center; gap:8px;" onclick="window.saveSlackSettings()">
+                                        <ion-icon name="save-outline" style="font-size:16px;"></ion-icon> Save Configuration
+                                    </button>
                                 </div>
                             </div>
 
-                            <!-- Templates Grid -->
-                            <h4 style="margin:0 0 12px 0; font-size:14px; color:var(--text-main); border-top:1px solid var(--border, rgba(255,255,255,0.08)); padding-top:16px;">Custom Notification Message Templates</h4>
-                            <p style="font-size:12px; color:var(--text-muted); margin:0 0 14px 0;">Available variables: <code>{name}</code>, <code>{time}</code>, <code>{status}</code>, <code>{method}</code>, <code>{location}</code>, <code>{portalUrl}</code></p>
-
-                            <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap:16px;">
-                                <div>
-                                    <label style="display:block; font-size:12px; font-weight:600; margin-bottom:6px; color:var(--text-main);">Employee Check-In DM</label>
-                                    <textarea id="slack-tpl-emp-checkin" rows="4" style="width:100%; padding:10px; border-radius:6px; border:1px solid var(--border); background:var(--bg-input, rgba(0,0,0,0.3)); color:var(--text-main); font-family:monospace; font-size:12px; resize:vertical;"></textarea>
-                                </div>
-                                <div>
-                                    <label style="display:block; font-size:12px; font-weight:600; margin-bottom:6px; color:var(--text-main);">Employee Standard Check-Out DM</label>
-                                    <textarea id="slack-tpl-emp-checkout" rows="4" style="width:100%; padding:10px; border-radius:6px; border:1px solid var(--border); background:var(--bg-input, rgba(0,0,0,0.3)); color:var(--text-main); font-family:monospace; font-size:12px; resize:vertical;"></textarea>
-                                </div>
-                                <div>
-                                    <label style="display:block; font-size:12px; font-weight:600; margin-bottom:6px; color:var(--text-main);">Employee Early Check-Out DM (Sent for Approval)</label>
-                                    <textarea id="slack-tpl-emp-early" rows="4" style="width:100%; padding:10px; border-radius:6px; border:1px solid var(--border); background:var(--bg-input, rgba(0,0,0,0.3)); color:var(--text-main); font-family:monospace; font-size:12px; resize:vertical;"></textarea>
-                                </div>
-                                <div>
-                                    <label style="display:block; font-size:12px; font-weight:600; margin-bottom:6px; color:var(--text-main);">Employee Early Check-Out Rejection DM</label>
-                                    <textarea id="slack-tpl-emp-rejected" rows="4" style="width:100%; padding:10px; border-radius:6px; border:1px solid var(--border); background:var(--bg-input, rgba(0,0,0,0.3)); color:var(--text-main); font-family:monospace; font-size:12px; resize:vertical;"></textarea>
-                                </div>
-                                <div>
-                                    <label style="display:block; font-size:12px; font-weight:600; margin-bottom:6px; color:var(--text-main);">Admin Punch Alert</label>
-                                    <textarea id="slack-tpl-admin-alert" rows="4" style="width:100%; padding:10px; border-radius:6px; border:1px solid var(--border); background:var(--bg-input, rgba(0,0,0,0.3)); color:var(--text-main); font-family:monospace; font-size:12px; resize:vertical;"></textarea>
-                                </div>
-                            </div>
-
-                            <div style="margin-top:16px; display:flex; justify-content:flex-end;">
-                                <button type="button" class="btn-primary" style="width:auto; padding:8px 20px; margin:0; font-size:13px;" onclick="window.saveSlackSettings()">
-                                    <ion-icon name="save-outline" style="vertical-align:middle; margin-right:4px;"></ion-icon> Save Slack Settings
-                                </button>
-                            </div>
                         </div>
                     </section>
 
@@ -902,71 +1451,99 @@
 
 
 
-        <!-- Main App View -->
+        <!-- Main App View (Employee Mobile & Desktop View) -->
         <div id="app-view" class="view hidden">
-            <header class="app-header">
-                <div class="user-info">
-                    <div class="avatar">
-                        <span id="user-initial">U</span>
+            <header class="emp-header">
+                <div class="emp-brand">
+                    <div class="emp-brand-icon">
+                        <ion-icon name="planet-outline"></ion-icon>
                     </div>
-                    <div class="details">
-                        <span class="greeting">Good Morning,</span>
-                        <strong id="user-name">User</strong>
+                    <div class="emp-user-meta">
+                        <h2 id="user-name">Employee Name</h2>
+                        <p id="user-role-dept">Flying Pluto Studios · Team</p>
                     </div>
                 </div>
-                <button id="logout-btn" class="icon-btn" aria-label="Log out">
-                    <ion-icon name="log-out-outline"></ion-icon>
+                <button id="logout-btn" class="btn-neutral btn-small" aria-label="Log out">
+                    <ion-icon name="log-out-outline" style="font-size:16px;"></ion-icon> <span>Sign Out</span>
                 </button>
             </header>
 
             <main class="content-area">
                 <!-- TAB: Attendance -->
                 <section id="tab-attendance" class="tab-content active">
-                    <div class="time-display">
-                        <h2 id="current-time">00:00 AM</h2>
-                        <p id="current-date">Today</p>
-                    </div>
-                    
-                    <div class="action-card">
-                        <div class="status-indicator">
-                            <span class="dot unverified" id="attendance-status-dot"></span>
-                            <span id="attendance-status-text">Not Checked In</span>
+                    <div class="punch-card">
+                        <div class="punch-clock-display" id="current-time">00:00 AM</div>
+                        <div class="punch-date-display" id="current-date">Today</div>
+                        
+                        <div style="margin-bottom: 20px;">
+                            <span class="status-pill pill-late" id="attendance-status-text">Not Checked In</span>
                         </div>
                         
-                        <!-- Big Action Button -->
-                        <button id="main-action-btn" class="big-action-btn check-in">
-                            <div class="btn-ripple"></div>
-                            <ion-icon name="finger-print-outline" class="btn-icon"></ion-icon>
-                            <span class="btn-label" id="main-action-label">Check In</span>
+                        <!-- Big Tactile Punch Button -->
+                        <button id="main-action-btn" class="punch-circle-btn punch-in">
+                            <ion-icon name="finger-print-outline"></ion-icon>
+                            <span id="main-action-label">Check In</span>
                         </button>
 
-                        <div id="attendance-details" class="hidden" style="margin-top: 10px; font-size: 14px; color: var(--text-muted); text-align: left; width: 100%;">
-                            <div style="display: flex; justify-content: space-between; margin-bottom: 8px;">
-                                <span>Check-in:</span> <strong id="val-check-in" style="color:var(--text-main)">--:--</strong>
+                        <div id="attendance-details" class="hidden" style="margin-top: 16px; padding: 14px; background: var(--bg-input); border-radius: var(--radius-md); border: 1px solid var(--border-subtle);">
+                            <div style="display: flex; justify-content: space-between; margin-bottom: 6px; font-size: 13px;">
+                                <span style="color:var(--text-secondary)">Clocked In:</span> <strong id="val-check-in" style="color:var(--text-primary)">--:--</strong>
                             </div>
-                            <div style="display: flex; justify-content: space-between;">
-                                <span>Check-out:</span> <strong id="val-check-out" style="color:var(--text-main)">--:--</strong>
+                            <div style="display: flex; justify-content: space-between; font-size: 13px;">
+                                <span style="color:var(--text-secondary)">Clocked Out:</span> <strong id="val-check-out" style="color:var(--text-primary)">--:--</strong>
                             </div>
                         </div>
-                        <p class="history-hint">Your daily attendance is recorded securely.</p>
+                        <p style="font-size:12px; color:var(--text-tertiary); margin-top:16px;">Daily attendance is logged securely to Flying Pluto Studio records.</p>
                     </div>
                 </section>
 
-                <!-- TAB: Calendar -->
+                <!-- TAB: Calendar (Employee Studio Calendar) -->
                 <section id="tab-calendar" class="tab-content">
-                    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom: 20px;">
-                        <h2 class="section-title" style="margin:0"><span id="user-cal-month-title"></span> Calendar</h2>
-                        <div>
-                            <button class="btn-small btn-neutral" id="user-cal-prev-btn" style="margin:0; width:auto;">&lt;</button>
-                            <button class="btn-small btn-neutral" id="user-cal-next-btn" style="margin:0; width:auto;">&gt;</button>
-                        </div>
-                    </div>
-                    <div class="calendar-wrapper" style="background: var(--glass-bg); border-radius: 12px; padding: 10px;">
-                        <div class="calendar-inner">
-                            <div class="calendar-header-row">
-                                <div>Sun</div><div>Mon</div><div>Tue</div><div>Wed</div><div>Thu</div><div>Fri</div><div>Sat</div>
+                    <div class="calendar-app-layout">
+                        <!-- Calendar Month Grid -->
+                        <div class="cal-main-card">
+                            <div class="cal-nav-header">
+                                <div class="cal-nav-left">
+                                    <button type="button" class="cal-today-badge-btn" id="user-cal-today-btn" title="Jump to Current Month">
+                                        <span id="user-cal-today-day-icon">18</span>
+                                    </button>
+                                    <h2 class="cal-month-heading" id="user-cal-month-title">AUGUST 2026</h2>
+                                </div>
+                                <div class="cal-nav-right">
+                                    <button type="button" class="cal-icon-btn" id="user-cal-prev-btn" title="Previous Month">
+                                        <ion-icon name="chevron-back"></ion-icon>
+                                    </button>
+                                    <button type="button" class="cal-icon-btn" id="user-cal-next-btn" title="Next Month">
+                                        <ion-icon name="chevron-forward"></ion-icon>
+                                    </button>
+                                </div>
                             </div>
-                            <div id="user-calendar-grid" class="calendar-grid"></div>
+
+                            <div class="cal-weekdays-row">
+                                <div>M</div>
+                                <div>T</div>
+                                <div>W</div>
+                                <div>T</div>
+                                <div>F</div>
+                                <div>S</div>
+                                <div class="cal-weekday-sun">S</div>
+                            </div>
+
+                            <div id="user-calendar-grid" class="cal-days-grid"></div>
+                        </div>
+
+                        <!-- Selected Day Details Agenda -->
+                        <div class="cal-sidebar-card">
+                            <div class="cal-selected-header">
+                                <div class="cal-selected-title">
+                                    <span class="cal-sel-num" id="user-cal-sel-day-num">18</span>
+                                    <span class="cal-sel-name" id="user-cal-sel-day-name">TUE</span>
+                                </div>
+                            </div>
+
+                            <div class="cal-agenda-scroll" id="user-cal-agenda-container">
+                                <!-- Populated dynamically -->
+                            </div>
                         </div>
                     </div>
                 </section>
@@ -1103,7 +1680,7 @@
                 </div>
 
                 <!-- Device Status Pill -->
-                <div id="bio-device-status-pill" style="display:flex; align-items:center; justify-content:center; gap:8px; padding:8px 12px; border-radius:8px; background:rgba(16,185,129,0.1); color:#10b981; font-size:12px; font-weight:600; margin-bottom:16px;">
+                <div id="bio-modal-status-pill" style="display:flex; align-items:center; justify-content:center; gap:8px; padding:8px 12px; border-radius:8px; background:rgba(16,185,129,0.1); color:#10b981; font-size:12px; font-weight:600; margin-bottom:16px;">
                     <span style="display:inline-block; width:8px; height:8px; border-radius:50%; background:#10b981;"></span> Biometric Device Online
                 </div>
 
@@ -1114,9 +1691,14 @@
                     </select>
                 </div>
 
-                <div style="text-align:left; margin-bottom:20px;">
+                <div style="text-align:left; margin-bottom:12px;">
                     <label style="display:block; margin-bottom:6px; font-size:13px; font-weight:600; color:#cbd5e1;">Sensor Slot # (Auto-assigned)</label>
                     <input type="number" id="bio-enroll-slot" min="1" max="1000" placeholder="Auto-assigning..." style="width:100%; padding:10px 12px; border-radius:8px; border:1px solid var(--border); background:var(--bg-input, rgba(0,0,0,0.3)); color:var(--text-main, #fff); font-size:14px;">
+                </div>
+
+                <div style="font-size:11.5px; color:#94a3b8; background:rgba(56,189,248,0.06); border:1px solid rgba(56,189,248,0.18); border-radius:6px; padding:7px 10px; margin-bottom:18px; display:flex; align-items:center; gap:6px; text-align:left;">
+                    <ion-icon name="information-circle-outline" style="color:#38bdf8; font-size:15px; flex-shrink:0;"></ion-icon>
+                    <span><strong>Tip:</strong> You can enroll multiple fingers (e.g. thumb + index) for the same user by enrolling them again into an additional slot.</span>
                 </div>
 
                 <div style="display:flex; gap:10px; justify-content:flex-end;">
@@ -1156,7 +1738,7 @@
     
     <!-- Self-Contained Biometric Modal Controller -->
     <script>
-        window.openBioModal = function() {
+        window.openBioModal = function(preselectedUserId) {
             const modal = document.getElementById('biometric-enroll-modal');
             if (!modal) return;
             modal.style.display = 'flex';
@@ -1177,8 +1759,14 @@
                             const uid = u.user_id || u.id;
                             opt.value = uid;
                             opt.textContent = (u.name ? u.name + ' (' + uid + ')' : uid);
+                            if (preselectedUserId && uid === preselectedUserId) {
+                                opt.selected = true;
+                            }
                             select.appendChild(opt);
                         });
+                        if (preselectedUserId) {
+                            select.value = preselectedUserId;
+                        }
                     }).catch(e => console.error('Failed to fetch users:', e));
             }
             fetch('/api/biometric/next-slot')
@@ -1379,18 +1967,35 @@
             }
         };
 
+        window.insertSlackVariable = function(v) {
+            const el = window._lastFocusedSlackTextarea || document.getElementById('slack-tpl-emp-checkin');
+            if (!el) return;
+            const start = el.selectionStart || 0;
+            const end = el.selectionEnd || 0;
+            const text = el.value;
+            el.value = text.substring(0, start) + v + text.substring(end);
+            el.focus();
+            el.selectionStart = el.selectionEnd = start + v.length;
+        };
+
         window.renderSlackAdminChips = function() {
             const container = document.getElementById('slack-admin-chips');
             if (!container) return;
             container.innerHTML = '';
             currentSlackAdminRecipients.forEach(email => {
                 const chip = document.createElement('div');
-                chip.style.cssText = 'display:inline-flex; align-items:center; gap:6px; padding:4px 10px; border-radius:20px; background:rgba(59,130,246,0.15); color:var(--primary); font-size:12px; font-weight:600;';
-                chip.innerHTML = '<span>' + email + '</span><button type="button" style="background:none; border:none; color:var(--text-muted); cursor:pointer; font-size:14px; padding:0 2px; line-height:1;" onclick="window.removeSlackAdminRecipient(\'' + email + '\')">✕</button>';
+                chip.className = 'slack-chip';
+                chip.innerHTML = `
+                    <ion-icon name="person-circle-outline" style="color:#38bdf8; font-size:16px;"></ion-icon>
+                    <span>${email}</span>
+                    <button type="button" class="slack-chip-remove" title="Remove Recipient" onclick="window.removeSlackAdminRecipient('${email}')">
+                        <ion-icon name="close-circle"></ion-icon>
+                    </button>
+                `;
                 container.appendChild(chip);
             });
             if (currentSlackAdminRecipients.length === 0) {
-                container.innerHTML = '<span style="color:var(--text-muted); font-size:12px;">No admin alert recipients added.</span>';
+                container.innerHTML = '<span style="color:#64748b; font-size:12.5px; font-style:italic;">No admin alert recipients added.</span>';
             }
         };
 
@@ -1760,15 +2365,15 @@
 
     <!-- Socket.IO for Live Updates -->
     <script src="https://cdn.socket.io/4.7.5/socket.io.min.js" crossorigin="anonymous"></script>
-    <script src="js/socket-client.js?v=slack_2026_v5"></script>
+    <script src="js/socket-client.js?v=pluto_og_2026_v32"></script>
 
     <!-- Scripts -->
-    <script src="js/auth.js?v=slack_2026_v5"></script>
-    <script src="js/store.js?v=slack_2026_v5"></script>
-    <script src="js/app.js?v=slack_2026_v5"></script>
-    <script src="js/admin.js?v=slack_2026_v5"></script>
-    <script src="js/reports.js?v=slack_2026_v5"></script>
-    <script src="js/overtime.js?v=slack_2026_v5"></script>
+    <script src="js/auth.js?v=pluto_og_2026_v32"></script>
+    <script src="js/store.js?v=pluto_og_2026_v32"></script>
+    <script src="js/app.js?v=pluto_og_2026_v32"></script>
+    <script src="js/admin.js?v=pluto_og_2026_v32"></script>
+    <script src="js/reports.js?v=pluto_og_2026_v32"></script>
+    <script src="js/overtime.js?v=pluto_og_2026_v32"></script>
     
     <!-- Edit Holiday Modal -->
     <div id="edit-holiday-modal" class="modal hidden">
