@@ -151,7 +151,7 @@
                                     <span>Direct Checkout: After 6:00 PM</span>
                                 </div>
                             </div>
-                            <button type="button" class="btn-small btn-neutral" style="margin:0; width:auto; padding:6px 14px; font-size:12px;" onclick="window.AdminUI.switchToSlackTab()">
+                            <button type="button" class="btn-small btn-neutral" style="margin:0; width:auto; padding:6px 14px; font-size:12px;" onclick="window.switchToSlackTab()">
                                 <ion-icon name="settings-outline" style="vertical-align:middle; margin-right:4px;"></ion-icon> Adjust Late Rules & Slack
                             </button>
                         </div>
@@ -744,7 +744,7 @@
                     <section id="admin-tab-biometric" class="admin-tab hidden">
                         <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom: 20px; flex-wrap:wrap; gap:10px;">
                             <h2 class="section-title" style="margin:0"><ion-icon name="finger-print-outline" style="vertical-align:middle; margin-right:8px;"></ion-icon>Biometric Device</h2>
-                            <button type="button" class="btn-neutral" style="width:auto; padding:8px 16px; margin:0; font-size:13px;" onclick="window.AdminUI.switchToSlackTab()">
+                            <button type="button" class="btn-neutral" style="width:auto; padding:8px 16px; margin:0; font-size:13px;" onclick="window.switchToSlackTab()">
                                 <ion-icon name="logo-slack" style="vertical-align:middle; margin-right:4px; color:#36c5f0;"></ion-icon> Slack Notification Settings
                             </button>
                         </div>
@@ -1448,6 +1448,21 @@
             window.loadSlackSettings();
         }
 
+        window.switchToSlackTab = function() {
+            const slackBtn = document.querySelector('.admin-nav-item[data-target="admin-tab-slack"]');
+            if (slackBtn) {
+                slackBtn.click();
+            } else {
+                document.querySelectorAll('.admin-tab').forEach(t => t.classList.add('hidden'));
+                document.querySelectorAll('.admin-nav-item').forEach(n => n.classList.remove('active'));
+                const slackTab = document.getElementById('admin-tab-slack');
+                if (slackTab) {
+                    slackTab.classList.remove('hidden');
+                    if (window.loadSlackSettings) window.loadSlackSettings();
+                }
+            }
+        };
+
         if (!window.AdminUI) window.AdminUI = {};
         window.AdminUI.updateEnrollStepUI = window.updateBioEnrollStepUI;
         window.AdminUI.openBiometricEnrollModal = window.openBioModal;
@@ -1455,19 +1470,7 @@
         window.AdminUI.startLiveWebEnroll = window.startBioLiveEnroll;
         window.AdminUI.cancelLiveWebEnroll = window.cancelBioLiveEnroll;
         window.AdminUI.loadSlackSettings = window.loadSlackSettings;
-        window.AdminUI.switchToSlackTab = function() {
-            const slackBtn = document.querySelector('.admin-nav-item[data-target="admin-tab-slack"]');
-            if (slackBtn) {
-                slackBtn.click();
-            } else {
-                document.querySelectorAll('.admin-tab').forEach(t => t.classList.add('hidden'));
-                const slackTab = document.getElementById('admin-tab-slack');
-                if (slackTab) {
-                    slackTab.classList.remove('hidden');
-                    window.loadSlackSettings();
-                }
-            }
-        };
+        window.AdminUI.switchToSlackTab = window.switchToSlackTab;
     </script>
 
     <div id="holiday-modal" class="modal hidden">
@@ -1757,15 +1760,15 @@
 
     <!-- Socket.IO for Live Updates -->
     <script src="https://cdn.socket.io/4.7.5/socket.io.min.js" crossorigin="anonymous"></script>
-    <script src="js/socket-client.js?v=slack_2026_v2"></script>
+    <script src="js/socket-client.js?v=slack_2026_v4"></script>
 
     <!-- Scripts -->
-    <script src="js/auth.js?v=slack_2026_v2"></script>
-    <script src="js/store.js?v=slack_2026_v2"></script>
-    <script src="js/app.js?v=slack_2026_v2"></script>
-    <script src="js/admin.js?v=slack_2026_v2"></script>
-    <script src="js/reports.js?v=slack_2026_v2"></script>
-    <script src="js/overtime.js?v=slack_2026_v2"></script>
+    <script src="js/auth.js?v=slack_2026_v4"></script>
+    <script src="js/store.js?v=slack_2026_v4"></script>
+    <script src="js/app.js?v=slack_2026_v4"></script>
+    <script src="js/admin.js?v=slack_2026_v4"></script>
+    <script src="js/reports.js?v=slack_2026_v4"></script>
+    <script src="js/overtime.js?v=slack_2026_v4"></script>
     
     <!-- Edit Holiday Modal -->
     <div id="edit-holiday-modal" class="modal hidden">

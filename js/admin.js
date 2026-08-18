@@ -1,5 +1,5 @@
 // admin.js
-window.AdminUI = {
+window.AdminUI = Object.assign(window.AdminUI || {}, {
     currentUser: null,
     currentCalDate: new Date(),
     kitsuPersons: [],
@@ -29,8 +29,6 @@ window.AdminUI = {
     
     init: async function(user) {
         try {
-
-            
             this.currentUser = user;
             
             document.getElementById('admin-greeting').textContent = 'Hello, ' + user.name;
@@ -52,6 +50,21 @@ window.AdminUI = {
         await Store.approveEarlyClockout(userId, date, action);
         await Store.syncWithBackend();
         this.renderDashboard();
+    },
+
+    switchToSlackTab: function() {
+        const slackBtn = document.querySelector('.admin-nav-item[data-target="admin-tab-slack"]');
+        if (slackBtn) {
+            slackBtn.click();
+        } else {
+            document.querySelectorAll('.admin-tab').forEach(t => t.classList.add('hidden'));
+            document.querySelectorAll('.admin-nav-item').forEach(n => n.classList.remove('active'));
+            const slackTab = document.getElementById('admin-tab-slack');
+            if (slackTab) {
+                slackTab.classList.remove('hidden');
+                if (window.loadSlackSettings) window.loadSlackSettings();
+            }
+        }
     },
     
     setupEventListeners: function() {
