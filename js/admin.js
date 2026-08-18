@@ -2105,7 +2105,7 @@ window.AdminUI = Object.assign(window.AdminUI || {}, {
         link.click();
         URL.revokeObjectURL(link.href);
     }
-};
+});
 
 // ============================================
 // Biometric Tab Functions
