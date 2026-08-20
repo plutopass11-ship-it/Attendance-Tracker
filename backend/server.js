@@ -164,6 +164,93 @@ async function loginToKitsu(email, password) {
   }
 }
 
+let cachedKitsuDepartments = null;
+let kitsuDepartmentsExpiry = 0;
+
+// Utility to fetch and cache Kitsu departments dictionary
+async function getKitsuDepartments() {
+  if (cachedKitsuDepartments && Date.now() < kitsuDepartmentsExpiry) {
+    return cachedKitsuDepartments;
+  }
+  try {
+    const adminToken = await getAdminToken();
+    if (!adminToken) return {};
+    const response = await fetch(`${KITSU_URL}/api/data/departments`, {
+      headers: { 'Authorization': `Bearer ${adminToken}` }
+    });
+    if (!response.ok) return {};
+    const depts = await response.json();
+    const map = {};
+    if (Array.isArray(depts)) {
+      depts.forEach(d => {
+        if (d.id && d.name) map[d.id] = d.name;
+      });
+    }
+    cachedKitsuDepartments = map;
+    kitsuDepartmentsExpiry = Date.now() + 30 * 60 * 1000; // 30 mins
+    return map;
+  } catch (err) {
+    console.error('Failed to fetch Kitsu departments:', err.message);
+    return {};
+  }
+}
+
+// Helper to resolve department name from Kitsu person object
+function resolveDepartmentName(kitsuUser, deptMap) {
+  if (!kitsuUser) return 'Production';
+  if (typeof kitsuUser.department === 'string' && kitsuUser.department.trim()) {
+    return kitsuUser.department.trim();
+  }
+  if (typeof kitsuUser.department_name === 'string' && kitsuUser.department_name.trim()) {
+    return kitsuUser.department_name.trim();
+  }
+  if (Array.isArray(kitsuUser.departments) && kitsuUser.departments.length > 0) {
+    const names = kitsuUser.departments.map(d => {
+      if (typeof d === 'string') return deptMap[d] || d;
+      if (d && typeof d === 'object' && d.name) return d.name;
+      if (d && typeof d === 'object' && d.id) return deptMap[d.id] || d.id;
+      return null;
+    }).filter(Boolean);
+    if (names.length > 0) return names.join(', ');
+  }
+  if (kitsuUser.department_id && deptMap[kitsuUser.department_id]) {
+    return deptMap[kitsuUser.department_id];
+  }
+  return 'Production';
+}
+
+// Utility to sync departments for all existing users from Kitsu
+async function syncKitsuDepartments() {
+  try {
+    const adminToken = await getAdminToken();
+    if (!adminToken) return;
+    const [deptRes, personsRes] = await Promise.all([
+      fetch(`${KITSU_URL}/api/data/departments`, { headers: { 'Authorization': `Bearer ${adminToken}` } }),
+      fetch(`${KITSU_URL}/api/data/persons`, { headers: { 'Authorization': `Bearer ${adminToken}` } })
+    ]);
+    if (!personsRes.ok) return;
+    const persons = await personsRes.json();
+    let deptMap = {};
+    if (deptRes.ok) {
+      const depts = await deptRes.json();
+      if (Array.isArray(depts)) {
+        depts.forEach(d => { if (d.id && d.name) deptMap[d.id] = d.name; });
+      }
+    }
+    const hasDeptCol = await columnExists('users', 'department');
+    if (!hasDeptCol) return;
+
+    for (const p of persons) {
+      if (!p.email) continue;
+      const dept = resolveDepartmentName(p, deptMap);
+      await pool.query('UPDATE users SET department = $1 WHERE user_id = $2', [dept, p.email]);
+    }
+    console.log(`[Kitsu Sync] Synced departments for ${persons.length} user(s).`);
+  } catch (err) {
+    console.error('[Kitsu Sync] Error syncing departments:', err.message);
+  }
+}
+
 // Utility to get user info from Kitsu using the ADMIN token
 async function getKitsuUser(email) {
   try {
@@ -195,7 +282,7 @@ app.post('/api/auth/login', async (req, res) => {
 
   // --- Bypass for SuperAdmin default ---
   if(email === 'admin1' && password === 'password') {
-       return res.json({ success: true, user: { id: 'admin1', name: 'Super Admin', role: 'admin' }});
+       return res.json({ success: true, user: { id: 'admin1', name: 'Super Admin', role: 'admin', department: 'Management' }});
   }
 
   // Check if user is deactivated locally
@@ -224,22 +311,40 @@ app.post('/api/auth/login', async (req, res) => {
   const phone = kitsuUser.phone || null; // Sync phone from Kitsu for WhatsApp identity
   const slackId = kitsuUser.notifications_slack_userid || null; // Sync Slack Member ID
 
+  // Resolve department from Kitsu
+  const deptMap = await getKitsuDepartments();
+  const department = resolveDepartmentName(kitsuUser, deptMap);
+
   // Upsert user into purely local Postgres Database to sync them natively
   try {
-    const result = await pool.query(
-      `INSERT INTO users (user_id, name, password, role, phone, slack_id) 
-       VALUES ($1, $2, 'synced_from_kitsu', $3, $4, $5)
-       ON CONFLICT (user_id) 
-       DO UPDATE SET name = $2, role = $3, phone = COALESCE($4, users.phone), slack_id = COALESCE($5, users.slack_id)
-       RETURNING id, user_id, name, role`,
-      [email, fullName, role, phone, slackId]
-    );
+    const hasDeptCol = await columnExists('users', 'department');
+    let result;
+    if (hasDeptCol) {
+      result = await pool.query(
+        `INSERT INTO users (user_id, name, password, role, phone, slack_id, department) 
+         VALUES ($1, $2, 'synced_from_kitsu', $3, $4, $5, $6)
+         ON CONFLICT (user_id) 
+         DO UPDATE SET name = $2, role = $3, phone = COALESCE($4, users.phone), slack_id = COALESCE($5, users.slack_id), department = $6
+         RETURNING id, user_id, name, role, department`,
+        [email, fullName, role, phone, slackId, department]
+      );
+    } else {
+      result = await pool.query(
+        `INSERT INTO users (user_id, name, password, role, phone, slack_id) 
+         VALUES ($1, $2, 'synced_from_kitsu', $3, $4, $5)
+         ON CONFLICT (user_id) 
+         DO UPDATE SET name = $2, role = $3, phone = COALESCE($4, users.phone), slack_id = COALESCE($5, users.slack_id)
+         RETURNING id, user_id, name, role`,
+        [email, fullName, role, phone, slackId]
+      );
+    }
 
     // Provide response directly mirroring Store.js output
     const userForFrontend = {
       id: result.rows[0].user_id,
       name: result.rows[0].name,
-      role: result.rows[0].role
+      role: result.rows[0].role,
+      department: result.rows[0].department || department || 'Production'
     };
 
     res.json({ success: true, user: userForFrontend });
@@ -265,8 +370,14 @@ app.get('/api/sync/store', async (req, res) => {
       columnExists('leave_policies', 'cycle')
     ]);
 
+    const hasDeptCol = await columnExists('users', 'department');
     const hasIsActiveCol = await columnExists('users', 'is_active');
-    const users = await pool.query(`SELECT user_id as id, name, role, ${hasIsActiveCol ? 'is_active' : 'true'} as is_active FROM users;`);
+    const users = await pool.query(`
+      SELECT user_id as id, name, role, 
+             ${hasDeptCol ? "COALESCE(department, 'Production')" : "'Production'"} as department,
+             ${hasIsActiveCol ? 'is_active' : 'true'} as is_active 
+      FROM users;
+    `);
     const leaves = await pool.query(`
       SELECT id::text, user_id as "userId", type, 
              CAST(start_date as text) as "startDate", 
@@ -1873,6 +1984,12 @@ async function runMigrations() {
             await pool.query('ALTER TABLE leave_requests ADD COLUMN is_auto_applied BOOLEAN DEFAULT false;');
             console.log('Added is_auto_applied column to leave_requests table.');
         }
+        // Add department column to users table
+        if (await tableExists('users') && !(await columnExists('users', 'department'))) {
+            await pool.query("ALTER TABLE users ADD COLUMN department VARCHAR(100) DEFAULT 'Production';");
+            console.log('Added department column to users table.');
+        }
+
         // Add pending_removal and is_active columns to users table
         if (await tableExists('users')) {
             if (!(await columnExists('users', 'pending_removal'))) {
@@ -1891,6 +2008,17 @@ async function runMigrations() {
     }
 }
 
+// 12c. Manual Kitsu Sync Endpoint (Admin)
+app.post('/api/users/sync-kitsu', async (req, res) => {
+    try {
+        await syncKitsuDepartments();
+        res.json({ success: true, message: 'Kitsu departments synced successfully' });
+    } catch (err) {
+        console.error('Manual Kitsu sync error:', err);
+        res.status(500).json({ success: false, message: err.message });
+    }
+});
+
 // Fallback for SPA routing
 app.get('*', (req, res, next) => {
     if (req.path.startsWith('/api') || req.path.startsWith('/socket.io')) {
@@ -1902,6 +2030,9 @@ app.get('*', (req, res, next) => {
 // Startup
 const PORT = process.env.PORT || 4000;
 runMigrations().then(() => {
+    // Initial sync of departments from Kitsu (fire and forget)
+    syncKitsuDepartments().catch(e => console.error('[Kitsu Sync Startup] Non-critical error:', e.message));
+
     httpServer.listen(PORT, () => {
         console.log(`Backend running on port ${PORT} (HTTP + Socket.IO)`);
 
@@ -1931,6 +2062,7 @@ runMigrations().then(() => {
             if (h === 23 && lastSweepDate !== currentDateStr) {
                 lastSweepDate = currentDateStr;
                 checkKitsuRemovals();
+                syncKitsuDepartments().catch(e => console.error('[Kitsu Sync] Error:', e.message));
                 autoCheckoutMissing();
             }
         }, 30 * 60 * 1000); // Check every 30 minutes
