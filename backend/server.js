@@ -241,9 +241,17 @@ async function syncKitsuDepartments() {
     if (!hasDeptCol) return;
 
     for (const p of persons) {
-      if (!p.email) continue;
-      const dept = resolveDepartmentName(p, deptMap);
-      await pool.query('UPDATE users SET department = $1 WHERE user_id = $2', [dept, p.email]);
+      if (!p.email || !p.id) continue;
+      try {
+        const detailRes = await fetch(`${KITSU_URL}/api/data/persons/${p.id}`, {
+          headers: { 'Authorization': `Bearer ${adminToken}` }
+        });
+        const personData = detailRes.ok ? await detailRes.json() : p;
+        const dept = resolveDepartmentName(personData, deptMap);
+        await pool.query('UPDATE users SET department = $1 WHERE user_id = $2', [dept, p.email]);
+      } catch (e) {
+        console.error(`Error updating dept for ${p.email}:`, e.message);
+      }
     }
     console.log(`[Kitsu Sync] Synced departments for ${persons.length} user(s).`);
   } catch (err) {
@@ -269,7 +277,21 @@ async function getKitsuUser(email) {
       return null;
     }
     const persons = await response.json(); 
-    return persons.find(p => p.email === email);
+    const summary = persons.find(p => p.email === email);
+    if (!summary) return null;
+
+    try {
+      const detailRes = await fetch(`${KITSU_URL}/api/data/persons/${summary.id}`, {
+        headers: { 'Authorization': `Bearer ${adminToken}` }
+      });
+      if (detailRes.ok) {
+        const detail = await detailRes.json();
+        return { ...summary, ...detail };
+      }
+    } catch (e) {
+      console.error('Error fetching full person detail:', e.message);
+    }
+    return summary;
   } catch (err) {
     console.error('Kitsu fetch user error:', err);
     return null;
