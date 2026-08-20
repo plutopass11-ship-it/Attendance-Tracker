@@ -885,7 +885,7 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     });
 
-    document.getElementById('apply-leave-form')?.addEventListener('submit', (e) => {
+    document.getElementById('apply-leave-form')?.addEventListener('submit', async (e) => {
         e.preventDefault();
         const reqVal = document.querySelector('input[name="reqType"]:checked').value;
         const type = reqVal === 'WFH' ? 'Work From Home' : document.getElementById('leave-type').value;
@@ -908,9 +908,34 @@ document.addEventListener('DOMContentLoaded', () => {
             return;
         }
 
-        Store.addLeaveRequest({
+        const requestedDays = isHalfDay ? 0.5 : (Math.round(Math.abs(new Date(end) - new Date(start)) / 86400000) + 1);
+        const balances = Store.getUserLeaveBalances(currentUser.id);
+        const isWfh = reqVal === 'WFH';
+        const matchedPolicy = balances.find(b => {
+            if (isWfh) return b.name.toLowerCase().includes('wfh') || b.name.toLowerCase().includes('work from home');
+            return type.toLowerCase().startsWith(b.name.toLowerCase()) || b.name.toLowerCase().startsWith(type.toLowerCase());
+        });
+
+        // Pre-validate on client
+        if (matchedPolicy && requestedDays > matchedPolicy.remaining) {
+            window.showInsufficientLeaveModal({
+                message: `You requested <strong>${requestedDays} day(s)</strong> of <strong>${matchedPolicy.name}</strong>, but you only have <strong>${matchedPolicy.remaining} day(s)</strong> remaining.`,
+                requestedDays,
+                availableDays: matchedPolicy.remaining,
+                leaveType: matchedPolicy.name,
+                balances
+            });
+            return;
+        }
+
+        const btn = e.target.querySelector('button[type="submit"]');
+        const origText = btn.textContent;
+        btn.disabled = true;
+        btn.textContent = "Checking balance...";
+
+        const result = await Store.addLeaveRequest({
             userId: currentUser.id,
-            type: type,
+            type: isHalfDay ? `${type} (Half Day)` : type,
             startDate: start,
             endDate: end,
             reason: reason,
@@ -918,13 +943,23 @@ document.addEventListener('DOMContentLoaded', () => {
             isHalfDay: isHalfDay
         });
 
+        btn.disabled = false;
+
+        if (!result.success) {
+            btn.textContent = origText;
+            if (result.error === 'INSUFFICIENT_LEAVE_BALANCE' || result.balances) {
+                window.showInsufficientLeaveModal(result);
+            } else {
+                alert(result.message || 'Failed to submit leave request.');
+            }
+            return;
+        }
+
         e.target.reset();
         renderLeaveHistory();
         renderLeaveBalances();
         
         // Form submit feedback
-        const btn = e.target.querySelector('button[type="submit"]');
-        const origText = btn.textContent;
         btn.textContent = "Request Sent ✓";
         btn.style.background = "var(--success)";
         setTimeout(() => {
@@ -932,6 +967,54 @@ document.addEventListener('DOMContentLoaded', () => {
             btn.style.background = "";
         }, 2000);
     });
+
+    // Modal helpers for Insufficient Leave
+    window.showInsufficientLeaveModal = function(data) {
+        const modal = document.getElementById('insufficient-leave-modal');
+        if (!modal) return;
+        modal.style.display = 'flex';
+        modal.classList.remove('hidden');
+
+        const msgEl = document.getElementById('insufficient-leave-msg');
+        if (msgEl) {
+            msgEl.innerHTML = data.message || `You requested <strong>${data.requestedDays || ''} day(s)</strong> of <strong>${data.leaveType || 'Leave'}</strong>, but only have <strong>${data.availableDays || 0} day(s)</strong> remaining.`;
+        }
+
+        const breakdownEl = document.getElementById('insufficient-leave-breakdown');
+        if (breakdownEl && data.balances) {
+            breakdownEl.innerHTML = '';
+            data.balances.forEach(b => {
+                const isZero = b.remaining <= 0;
+                const badgeColor = isZero ? '#ef4444' : b.remaining <= 2 ? '#f59e0b' : '#10b981';
+                const badgeBg = isZero ? 'rgba(239,68,68,0.15)' : b.remaining <= 2 ? 'rgba(245,158,11,0.15)' : 'rgba(16,185,129,0.15)';
+                const borderCol = isZero ? 'rgba(239,68,68,0.3)' : 'rgba(255,255,255,0.08)';
+                const usedVal = b.totalUsed !== undefined ? b.totalUsed : (b.used !== undefined ? b.used : 0);
+
+                breakdownEl.innerHTML += `
+                    <div style="background:rgba(255,255,255,0.03); border:1px solid ${borderCol}; border-radius:10px; padding:10px 12px; display:flex; flex-direction:column; justify-content:space-between;">
+                        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
+                            <strong style="font-size:12.5px; color:#f8fafc;">${b.name || b.label}</strong>
+                            <span style="font-size:10px; color:#64748b; text-transform:uppercase; font-weight:600;">${b.cycle || 'Yearly'}</span>
+                        </div>
+                        <div style="display:flex; justify-content:space-between; align-items:center; font-size:11.5px; color:#94a3b8;">
+                            <span>Used: <strong style="color:#ffffff;">${usedVal}</strong></span>
+                            <span style="background:${badgeBg}; color:${badgeColor}; border:1px solid ${badgeColor}40; padding:2px 8px; border-radius:6px; font-weight:700; font-size:11px;">
+                                ${b.remaining} / ${b.quota || b.limit} left
+                            </span>
+                        </div>
+                    </div>
+                `;
+            });
+        }
+    };
+
+    window.closeInsufficientLeaveModal = function() {
+        const modal = document.getElementById('insufficient-leave-modal');
+        if (modal) {
+            modal.style.display = 'none';
+            modal.classList.add('hidden');
+        }
+    };
 
     // Expose refresh function for Socket.IO live updates
     window.refreshAttendanceUI = async function() {

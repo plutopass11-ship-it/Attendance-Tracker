@@ -282,7 +282,7 @@ window.AdminUI = Object.assign(window.AdminUI || {}, {
         document.getElementById('close-grant-leave-modal')?.addEventListener('click', () => {
             grantLeaveModal.classList.add('hidden');
         });
-        document.getElementById('grant-leave-form')?.addEventListener('submit', (e) => {
+        document.getElementById('grant-leave-form')?.addEventListener('submit', async (e) => {
             e.preventDefault();
             const start = document.getElementById('grant-leave-start').value;
             const end = document.getElementById('grant-leave-end').value;
@@ -299,15 +299,34 @@ window.AdminUI = Object.assign(window.AdminUI || {}, {
                 return;
             }
 
+            const requestedDays = isHalfDay ? 0.5 : (Math.round(Math.abs(new Date(end) - new Date(start)) / 86400000) + 1);
+            const balances = Store.getUserLeaveBalances(uid);
+            const isWfh = reqVal === 'WFH';
+            const matchedPolicy = balances.find(b => {
+                if (isWfh) return b.name.toLowerCase().includes('wfh') || b.name.toLowerCase().includes('work from home');
+                return type.toLowerCase().startsWith(b.name.toLowerCase()) || b.name.toLowerCase().startsWith(type.toLowerCase());
+            });
+
+            if (matchedPolicy && requestedDays > matchedPolicy.remaining) {
+                window.showInsufficientLeaveModal({
+                    message: `Cannot grant leave: Employee requested <strong>${requestedDays} day(s)</strong> of <strong>${matchedPolicy.name}</strong>, but only has <strong>${matchedPolicy.remaining} day(s)</strong> remaining.`,
+                    requestedDays,
+                    availableDays: matchedPolicy.remaining,
+                    leaveType: matchedPolicy.name,
+                    balances
+                });
+                return;
+            }
+
             const activePersons = window.AdminUI._cachedUsers || [];
-            const user = activePersons.find(x => x.id === uid) || { first_name: 'Unknown', last_name: 'User', email: 'unknown' };
+            const user = activePersons.find(x => x.id === uid) || { first_name: 'Unknown', last_name: 'User', email: uid, name: uid };
 
             const request = {
                 id: Date.now().toString(),
                 userId: uid,
-                userName: `${user.first_name} ${user.last_name}`,
-                userEmail: user.email,
-                type,
+                userName: user.name || `${user.first_name || ''} ${user.last_name || ''}`.trim() || uid,
+                userEmail: user.email || uid,
+                type: isHalfDay ? `${type} (Half Day)` : type,
                 startDate: start,
                 endDate: end,
                 reason: reason + ' (Admin Granted)',
@@ -316,7 +335,16 @@ window.AdminUI = Object.assign(window.AdminUI || {}, {
                 isHalfDay: isHalfDay
             };
             
-            Store.addLeaveRequest(request);
+            const result = await Store.addLeaveRequest(request);
+            if (!result.success) {
+                if (result.error === 'INSUFFICIENT_LEAVE_BALANCE' || result.balances) {
+                    window.showInsufficientLeaveModal(result);
+                } else {
+                    alert(result.message || 'Failed to grant leave.');
+                }
+                return;
+            }
+
             window.AdminUI.renderLeaves();
             e.target.reset();
             grantLeaveModal.classList.add('hidden');
@@ -1262,7 +1290,38 @@ window.AdminUI = Object.assign(window.AdminUI || {}, {
     },
 
     updateLeave: async function(leaveId, status) {
-        await Store.updateLeaveStatus(leaveId, status);
+        if (status.toLowerCase() === 'approved') {
+            const allLeaves = Store.getAllLeaves();
+            const leave = allLeaves.find(l => l.id == leaveId || String(l.id) === String(leaveId));
+            if (leave) {
+                const balances = Store.getUserLeaveBalances(leave.userId, leaveId);
+                const isWfh = this._isWfh(leave.type);
+                const matchedPolicy = balances.find(b => {
+                    if (isWfh) return b.name.toLowerCase().includes('wfh') || b.name.toLowerCase().includes('work from home');
+                    return leave.type.toLowerCase().startsWith(b.name.toLowerCase()) || b.name.toLowerCase().startsWith(leave.type.toLowerCase());
+                });
+                const reqDays = this._calcDays(leave);
+                if (matchedPolicy && reqDays > matchedPolicy.remaining) {
+                    window.showInsufficientLeaveModal({
+                        message: `Cannot approve leave: Employee requested <strong>${reqDays} day(s)</strong> of <strong>${matchedPolicy.name}</strong>, but only has <strong>${matchedPolicy.remaining} day(s)</strong> remaining.`,
+                        requestedDays: reqDays,
+                        availableDays: matchedPolicy.remaining,
+                        leaveType: matchedPolicy.name,
+                        balances
+                    });
+                    return;
+                }
+            }
+        }
+        const res = await Store.updateLeaveStatus(leaveId, status);
+        if (res && !res.success) {
+            if (res.error === 'INSUFFICIENT_LEAVE_BALANCE' || res.balances) {
+                window.showInsufficientLeaveModal(res);
+            } else {
+                alert(res.message || 'Failed to update leave status.');
+            }
+            return;
+        }
         this.renderLeaves();
         this.renderDashboard();
         this.updatePendingLeaveBadge();
@@ -1633,7 +1692,37 @@ window.AdminUI = Object.assign(window.AdminUI || {}, {
                 return;
             }
 
-            await Store.editLeave(leave.id, updates);
+            if (updates.status.toLowerCase() === 'approved') {
+                const balances = Store.getUserLeaveBalances(leave.userId, leave.id);
+                const isWfh = this._isWfh(updates.type);
+                const matchedPolicy = balances.find(b => {
+                    if (isWfh) return b.name.toLowerCase().includes('wfh') || b.name.toLowerCase().includes('work from home');
+                    return updates.type.toLowerCase().startsWith(b.name.toLowerCase()) || b.name.toLowerCase().startsWith(updates.type.toLowerCase());
+                });
+                const isHalf = updates.type.toLowerCase().includes('half day');
+                const reqDays = isHalf ? 0.5 : (Math.round(Math.abs(new Date(updates.endDate) - new Date(updates.startDate)) / 86400000) + 1);
+                if (matchedPolicy && reqDays > matchedPolicy.remaining) {
+                    window.showInsufficientLeaveModal({
+                        message: `Cannot save leave: Employee requested <strong>${reqDays} day(s)</strong> of <strong>${matchedPolicy.name}</strong>, but only has <strong>${matchedPolicy.remaining} day(s)</strong> remaining.`,
+                        requestedDays: reqDays,
+                        availableDays: matchedPolicy.remaining,
+                        leaveType: matchedPolicy.name,
+                        balances
+                    });
+                    return;
+                }
+            }
+
+            const res = await Store.editLeave(leave.id, updates);
+            if (res && !res.success) {
+                if (res.error === 'INSUFFICIENT_LEAVE_BALANCE' || res.balances) {
+                    window.showInsufficientLeaveModal(res);
+                } else {
+                    alert(res.message || 'Failed to update leave.');
+                }
+                return;
+            }
+
             await Store.syncWithBackend();
             modal.classList.add('hidden');
             // Refresh the user detail modal

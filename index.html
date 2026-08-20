@@ -8,8 +8,8 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="css/style.css?v=pluto_og_2026_v33">
-    <link rel="stylesheet" href="css/admin.css?v=pluto_og_2026_v33">
+    <link rel="stylesheet" href="css/style.css?v=pluto_og_2026_v34">
+    <link rel="stylesheet" href="css/admin.css?v=pluto_og_2026_v34">
     <!-- Ionicons for modern icons -->
     <script type="module" src="https://unpkg.com/ionicons@7.1.0/dist/ionicons/ionicons.esm.js"></script>
     <script src="https://unpkg.com/ionicons@7.1.0/dist/ionicons/ionicons.js"></script>
@@ -2357,15 +2357,15 @@
 
     <!-- Socket.IO for Live Updates -->
     <script src="https://cdn.socket.io/4.7.5/socket.io.min.js" crossorigin="anonymous"></script>
-    <script src="js/socket-client.js?v=pluto_og_2026_v33"></script>
+    <script src="js/socket-client.js?v=pluto_og_2026_v34"></script>
 
     <!-- Scripts -->
-    <script src="js/auth.js?v=pluto_og_2026_v33"></script>
-    <script src="js/store.js?v=pluto_og_2026_v33"></script>
-    <script src="js/app.js?v=pluto_og_2026_v33"></script>
-    <script src="js/admin.js?v=pluto_og_2026_v33"></script>
-    <script src="js/reports.js?v=pluto_og_2026_v33"></script>
-    <script src="js/overtime.js?v=pluto_og_2026_v33"></script>
+    <script src="js/auth.js?v=pluto_og_2026_v34"></script>
+    <script src="js/store.js?v=pluto_og_2026_v34"></script>
+    <script src="js/app.js?v=pluto_og_2026_v34"></script>
+    <script src="js/admin.js?v=pluto_og_2026_v34"></script>
+    <script src="js/reports.js?v=pluto_og_2026_v34"></script>
+    <script src="js/overtime.js?v=pluto_og_2026_v34"></script>
     
     <!-- Edit Holiday Modal -->
     <div id="edit-holiday-modal" class="modal hidden">
@@ -2414,6 +2414,42 @@
             </div>
         </div>
     </div>
-    
+
+    <!-- Insufficient Leave Balance Modal -->
+    <div id="insufficient-leave-modal" class="modal hidden" style="position:fixed; top:0; left:0; width:100vw; height:100vh; z-index:999999; display:none; justify-content:center; align-items:center;">
+        <div class="modal-overlay" onclick="window.closeInsufficientLeaveModal()" style="position:absolute; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.8); backdrop-filter:blur(8px);"></div>
+        <div class="modal-content glass-panel" style="position:relative; z-index:1000000; max-width:540px; width:92%; padding:24px; background:rgba(15, 23, 42, 0.96); border:1px solid rgba(239, 68, 68, 0.35); border-radius:16px; box-shadow:0 25px 60px rgba(0,0,0,0.95);">
+            <div style="display:flex; align-items:flex-start; gap:14px; margin-bottom:16px;">
+                <div style="width:44px; height:44px; border-radius:12px; background:rgba(239, 68, 68, 0.15); border:1px solid rgba(239, 68, 68, 0.3); display:flex; align-items:center; justify-content:center; color:#ef4444; font-size:24px; flex-shrink:0;">
+                    <ion-icon name="alert-circle-outline"></ion-icon>
+                </div>
+                <div style="flex:1;">
+                    <h3 style="margin:0; font-size:18px; color:#ffffff; font-weight:700;">Insufficient Leave Balance</h3>
+                    <div id="insufficient-leave-msg" style="margin:4px 0 0; font-size:13px; color:#f87171; line-height:1.4;">
+                        You do not have enough leave balance remaining for this request.
+                    </div>
+                </div>
+                <button type="button" class="btn-small" style="background:transparent; color:#94a3b8; border:none; padding:4px; font-size:20px; cursor:pointer;" onclick="window.closeInsufficientLeaveModal()">
+                    <ion-icon name="close-outline"></ion-icon>
+                </button>
+            </div>
+
+            <div style="background:rgba(0,0,0,0.4); border:1px solid rgba(255,255,255,0.08); border-radius:12px; padding:16px; margin-bottom:20px;">
+                <h4 style="margin:0 0 12px; font-size:12px; color:#94a3b8; text-transform:uppercase; letter-spacing:0.6px; font-weight:700; display:flex; align-items:center; gap:6px;">
+                    <ion-icon name="pie-chart-outline" style="color:#38bdf8; font-size:15px;"></ion-icon>
+                    <span>Leaves Left in Each Section</span>
+                </h4>
+                <div id="insufficient-leave-breakdown" style="display:grid; grid-template-columns:1fr 1fr; gap:10px;">
+                    <!-- Dynamically populated leave cards -->
+                </div>
+            </div>
+
+            <div style="display:flex; justify-content:space-between; align-items:center;">
+                <span style="font-size:12px; color:#64748b;">Adjust your dates or select an alternative leave type</span>
+                <button type="button" class="btn-primary" onclick="window.closeInsufficientLeaveModal()" style="margin:0; padding:9px 22px; font-size:13px; font-weight:600; border-radius:8px;">Understood</button>
+            </div>
+        </div>
+    </div>
+
 </body>
 </html>

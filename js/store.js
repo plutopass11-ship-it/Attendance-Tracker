@@ -144,21 +144,102 @@ const Store = {
         return Store.getAttendance().find(r => r.userId === userId && r.date === dateStr);
     },
     
+    // Leaves Helper
+    calculateLeaveDays: (l) => {
+        if (!l) return 0;
+        const lType = (l.type || '').toLowerCase();
+        if (l.isHalfDay || lType.includes('(half day)') || lType.includes('half-day') || lType.includes('half day')) return 0.5;
+        if (!l.startDate || !l.endDate) return 1;
+        const diff = Math.round(Math.abs(new Date(l.endDate) - new Date(l.startDate)) / (1000 * 60 * 60 * 24)) + 1;
+        return isNaN(diff) ? 1 : diff;
+    },
+
+    getUserLeaveBalances: (userId, excludeLeaveId = null) => {
+        const leaveTypes = Store.getLeaveTypes();
+        const allLeaves = Store.getUserLeaves(userId).filter(l => {
+            const st = (l.status || '').toLowerCase();
+            return st !== 'rejected';
+        });
+        const extra = Store.getExtraOff(userId) || { leaves: 0, wfh: 0 };
+        const now = new Date();
+        const currYear = now.getFullYear();
+        const currMonthStr = `${currYear}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+
+        return leaveTypes.map(t => {
+            const tName = t.name;
+            const isWfh = tName.toLowerCase().includes('wfh') || tName.toLowerCase().includes('work from home');
+            const isMonthly = (t.cycle || '').toLowerCase() === 'monthly';
+
+            const matchingLeaves = allLeaves.filter(l => {
+                if (excludeLeaveId && (l.id == excludeLeaveId || String(l.id) === String(excludeLeaveId))) return false;
+                const lType = (l.type || '').toLowerCase();
+                if (isWfh) {
+                    return lType.includes('wfh') || lType.includes('work from home');
+                }
+                return lType.startsWith(tName.toLowerCase()) || lType === tName.toLowerCase();
+            });
+
+            let usedApproved = 0;
+            let usedPending = 0;
+
+            matchingLeaves.forEach(l => {
+                const sDate = l.startDate;
+                const eDate = l.endDate;
+                if (isMonthly) {
+                    if (!sDate.startsWith(currMonthStr) && !eDate.startsWith(currMonthStr)) return;
+                } else {
+                    if (new Date(sDate).getFullYear() !== currYear) return;
+                }
+
+                const days = Store.calculateLeaveDays(l);
+                const st = (l.status || '').toLowerCase();
+                if (st === 'approved') usedApproved += days;
+                else if (st === 'pending') usedPending += days;
+            });
+
+            const totalUsed = usedApproved + usedPending;
+            const extraAllowance = isWfh ? (extra.wfh || 0) : 0;
+            const quota = parseInt(t.limit || t.quota, 10) || 0;
+            const totalQuota = quota + extraAllowance;
+            const remaining = Math.max(0, totalQuota - totalUsed);
+
+            return {
+                name: tName,
+                quota: totalQuota,
+                cycle: t.cycle || 'Yearly',
+                usedApproved,
+                usedPending,
+                totalUsed,
+                used: totalUsed,
+                remaining
+            };
+        });
+    },
+
     // Leaves
     addLeaveRequest: async (request) => {
-        const data = Store.getLeaves();
-        request.id = Date.now().toString();
-        data.push(request);
-        localStorage.setItem('leaves', JSON.stringify(data));
-        
-        // Sync to backend
         try {
-            await fetch('/api/leaves', {
+            const res = await fetch('/api/leaves', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(request)
             });
-        } catch (err) { console.error('Leave sync error:', err); }
+            const data = await res.json();
+            if (!res.ok || !data.success) {
+                return { success: false, ...data };
+            }
+
+            const storedData = Store.getLeaves();
+            request.id = data.leave ? String(data.leave.id) : Date.now().toString();
+            if (data.leave && data.leave.startDate) request.startDate = data.leave.startDate;
+            if (data.leave && data.leave.endDate) request.endDate = data.leave.endDate;
+            storedData.unshift(request);
+            localStorage.setItem('leaves', JSON.stringify(storedData));
+            return { success: true, leave: request };
+        } catch (err) {
+            console.error('Leave sync error:', err);
+            return { success: false, message: err.message };
+        }
     },
     getUserLeaves: (userId) => {
         return Store.getLeaves().filter(l => l.userId === userId).sort((a, b) => b.id - a.id);
@@ -173,42 +254,58 @@ const Store = {
         return Store.getLeaves().sort((a, b) => b.id - a.id);
     },
     updateLeaveStatus: async (leaveId, status) => {
-        const data = Store.getLeaves();
-        const index = data.findIndex(l => l.id == leaveId);
-        if(index > -1) {
-            data[index].status = status;
-            localStorage.setItem('leaves', JSON.stringify(data));
-            
-            // Sync to backend
-            try {
-                await fetch(`/api/leaves/${leaveId}`, {
-                    method: 'PUT',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ status })
-                });
-            } catch (err) { console.error('Leave status sync error:', err); }
+        try {
+            const res = await fetch(`/api/leaves/${leaveId}`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ status })
+            });
+            const data = await res.json();
+            if (!res.ok || !data.success) {
+                return { success: false, ...data };
+            }
+
+            const leaves = Store.getLeaves();
+            const index = leaves.findIndex(l => l.id == leaveId || String(l.id) === String(leaveId));
+            if (index > -1) {
+                leaves[index].status = status;
+                localStorage.setItem('leaves', JSON.stringify(leaves));
+            }
+            return { success: true };
+        } catch (err) {
+            console.error('Leave status sync error:', err);
+            return { success: false, message: err.message };
         }
     },
     deleteLeave: async (leaveId) => {
-        const data = Store.getLeaves().filter(l => l.id != leaveId);
+        const data = Store.getLeaves().filter(l => l.id != leaveId && String(l.id) !== String(leaveId));
         localStorage.setItem('leaves', JSON.stringify(data));
         try {
             await fetch(`/api/leaves/${leaveId}`, { method: 'DELETE' });
         } catch (err) { console.error('Leave delete sync error:', err); }
     },
     editLeave: async (leaveId, updates) => {
-        const data = Store.getLeaves();
-        const index = data.findIndex(l => l.id == leaveId);
-        if (index > -1) {
-            Object.assign(data[index], updates);
-            localStorage.setItem('leaves', JSON.stringify(data));
-            try {
-                await fetch(`/api/leaves/${leaveId}`, {
-                    method: 'PUT',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify(updates)
-                });
-            } catch (err) { console.error('Leave edit sync error:', err); }
+        try {
+            const res = await fetch(`/api/leaves/${leaveId}`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(updates)
+            });
+            const data = await res.json();
+            if (!res.ok || !data.success) {
+                return { success: false, ...data };
+            }
+
+            const leaves = Store.getLeaves();
+            const index = leaves.findIndex(l => l.id == leaveId || String(l.id) === String(leaveId));
+            if (index > -1) {
+                Object.assign(leaves[index], updates);
+                localStorage.setItem('leaves', JSON.stringify(leaves));
+            }
+            return { success: true };
+        } catch (err) {
+            console.error('Leave edit sync error:', err);
+            return { success: false, message: err.message };
         }
     },
     deleteAttendanceRecord: async (userId, date) => {

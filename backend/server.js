@@ -460,27 +460,198 @@ app.put('/api/attendance/approve', async (req, res) => {
     }
 });
 
-// 4. Submit Leave Request  (status stored lowercase for DB constraint)
+// Helper: Calculate accurate user leave balances across all leave policies
+async function getUserLeaveBalances(userId, excludeLeaveId = null) {
+  const hasPolicyLabel = await columnExists('leave_policies', 'label');
+  const hasPolicyQuota = await columnExists('leave_policies', 'quota');
+  const hasPolicyCycle = await columnExists('leave_policies', 'cycle');
+
+  const policiesRes = await pool.query(`
+    SELECT id::text,
+           ${hasPolicyLabel ? 'label' : 'type'} as "name",
+           ${hasPolicyQuota ? 'quota' : '12'} as "quota",
+           ${hasPolicyCycle ? 'cycle' : "'yearly'"} as "cycle"
+    FROM leave_policies
+    ORDER BY id ASC;
+  `);
+
+  let query = `
+    SELECT id::text, user_id as "userId", type,
+           CAST(start_date as text) as "startDate",
+           CAST(end_date as text) as "endDate",
+           status
+    FROM leave_requests
+    WHERE user_id = $1 AND LOWER(status) != 'rejected'
+  `;
+  const params = [userId];
+  if (excludeLeaveId) {
+    query += ` AND id != $2`;
+    params.push(excludeLeaveId);
+  }
+  const leavesRes = await pool.query(query, params);
+
+  const now = new Date();
+  const currYear = now.getFullYear();
+  const currMonthStr = `${currYear}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+
+  function calcDays(l) {
+    const lType = (l.type || '').toLowerCase();
+    if (lType.includes('half day') || lType.includes('half-day')) return 0.5;
+    if (!l.startDate || !l.endDate) return 1;
+    const diff = Math.round(Math.abs(new Date(l.endDate) - new Date(l.startDate)) / (1000 * 60 * 60 * 24)) + 1;
+    return isNaN(diff) ? 1 : diff;
+  }
+
+  const balances = policiesRes.rows.map(p => {
+    const pName = p.name;
+    const isWfh = pName.toLowerCase().includes('wfh') || pName.toLowerCase().includes('work from home');
+    const isMonthly = (p.cycle || '').toLowerCase() === 'monthly';
+
+    const matchingLeaves = leavesRes.rows.filter(l => {
+      const lType = (l.type || '').toLowerCase();
+      if (isWfh) {
+        return lType.includes('wfh') || lType.includes('work from home');
+      }
+      return lType.startsWith(pName.toLowerCase()) || lType === pName.toLowerCase();
+    });
+
+    let usedApproved = 0;
+    let usedPending = 0;
+
+    matchingLeaves.forEach(l => {
+      const sDate = l.startDate;
+      const eDate = l.endDate;
+      if (isMonthly) {
+        if (!sDate.startsWith(currMonthStr) && !eDate.startsWith(currMonthStr)) return;
+      } else {
+        if (new Date(sDate).getFullYear() !== currYear) return;
+      }
+
+      const days = calcDays(l);
+      const st = (l.status || '').toLowerCase();
+      if (st === 'approved') usedApproved += days;
+      else if (st === 'pending') usedPending += days;
+    });
+
+    const totalUsed = usedApproved + usedPending;
+    const quota = parseInt(p.quota, 10) || 0;
+    const remaining = Math.max(0, quota - totalUsed);
+
+    return {
+      name: pName,
+      quota: quota,
+      cycle: p.cycle || 'Yearly',
+      usedApproved,
+      usedPending,
+      totalUsed,
+      remaining
+    };
+  });
+
+  return balances;
+}
+
+// 4. Submit Leave Request (enforces balance validation)
 app.post('/api/leaves', async (req, res) => {
-    const { userId, type, startDate, endDate, reason, status, isHalfDay } = req.body;
+    let { userId, type, startDate, endDate, reason, status, isHalfDay } = req.body;
     try {
+        if (!userId || !type || !startDate || !endDate) {
+            return res.status(400).json({ success: false, message: 'Missing required leave fields.' });
+        }
+
+        if (new Date(startDate) > new Date(endDate)) {
+            return res.status(400).json({ success: false, message: 'End date cannot be before start date.' });
+        }
+
+        let fullType = type;
+        if (isHalfDay && !fullType.toLowerCase().includes('half day')) {
+            fullType = `${type} (Half Day)`;
+        }
+
+        function calcReqDays(start, end, half) {
+            if (half || (fullType && fullType.toLowerCase().includes('half day'))) return 0.5;
+            const diff = Math.round(Math.abs(new Date(end) - new Date(start)) / (1000 * 60 * 60 * 24)) + 1;
+            return isNaN(diff) ? 1 : diff;
+        }
+
+        const requestedDays = calcReqDays(startDate, endDate, isHalfDay);
+        const balances = await getUserLeaveBalances(userId);
+
+        const isWfh = type.toLowerCase().includes('wfh') || type.toLowerCase().includes('work from home');
+        const matchedPolicy = balances.find(b => {
+            if (isWfh) return b.name.toLowerCase().includes('wfh') || b.name.toLowerCase().includes('work from home');
+            return type.toLowerCase().startsWith(b.name.toLowerCase()) || b.name.toLowerCase().startsWith(type.toLowerCase());
+        });
+
+        if (matchedPolicy) {
+            if (requestedDays > matchedPolicy.remaining) {
+                return res.status(400).json({
+                    success: false,
+                    error: 'INSUFFICIENT_LEAVE_BALANCE',
+                    message: `You do not have enough ${matchedPolicy.name} balance. Requested: ${requestedDays} day(s), Available: ${matchedPolicy.remaining} day(s).`,
+                    requestedDays,
+                    availableDays: matchedPolicy.remaining,
+                    leaveType: matchedPolicy.name,
+                    balances
+                });
+            }
+        }
+
         const dbStatus = (status || 'Pending').toLowerCase();
-        await pool.query(
+        const insertRes = await pool.query(
             `INSERT INTO leave_requests (user_id, type, start_date, end_date, reason, status)
-             VALUES ($1, $2, $3, $4, $5, $6)`,
-             [userId, type, startDate, endDate, reason, dbStatus]
+             VALUES ($1, $2, $3, $4, $5, $6)
+             RETURNING id, user_id, type, CAST(start_date as text) as "startDate", CAST(end_date as text) as "endDate", status, reason`,
+             [userId, fullType, startDate, endDate, reason || '', dbStatus]
         );
         io.emit('attendance:update', { userId });
-        res.json({ success: true });
+        res.json({ success: true, leave: insertRes.rows[0] });
     } catch(err) {
         console.error('Leave insert error:', err);
         res.status(500).json({ success: false, message: err.message });
     }
 });
 
+// 4a. Update / Approve Leave Request (enforces balance validation on approval)
 app.put('/api/leaves/:id', async (req, res) => {
    const { status, type, startDate, endDate, reason } = req.body;
    try {
+       const curLeaveRes = await pool.query(
+           'SELECT id, user_id, type, CAST(start_date as text) as "startDate", CAST(end_date as text) as "endDate", status FROM leave_requests WHERE id = $1',
+           [req.params.id]
+       );
+       if (curLeaveRes.rowCount === 0) {
+           return res.status(404).json({ success: false, message: 'Leave record not found' });
+       }
+       const currentLeave = curLeaveRes.rows[0];
+       const targetStatus = (status || currentLeave.status || 'pending').toLowerCase();
+       const targetType = type || currentLeave.type;
+       const targetStart = startDate || currentLeave.startDate;
+       const targetEnd = endDate || currentLeave.endDate;
+
+       if (targetStatus === 'approved') {
+           const balances = await getUserLeaveBalances(currentLeave.user_id, req.params.id);
+           const isWfh = targetType.toLowerCase().includes('wfh') || targetType.toLowerCase().includes('work from home');
+           const matchedPolicy = balances.find(b => {
+               if (isWfh) return b.name.toLowerCase().includes('wfh') || b.name.toLowerCase().includes('work from home');
+               return targetType.toLowerCase().startsWith(b.name.toLowerCase()) || b.name.toLowerCase().startsWith(targetType.toLowerCase());
+           });
+
+           const reqDays = (targetType.toLowerCase().includes('half day')) ? 0.5 : (Math.round(Math.abs(new Date(targetEnd) - new Date(targetStart)) / 86400000) + 1);
+
+           if (matchedPolicy && reqDays > matchedPolicy.remaining) {
+               return res.status(400).json({
+                   success: false,
+                   error: 'INSUFFICIENT_LEAVE_BALANCE',
+                   message: `Cannot approve leave: Employee has insufficient ${matchedPolicy.name} balance. Requested: ${reqDays} day(s), Available: ${matchedPolicy.remaining} day(s).`,
+                   requestedDays: reqDays,
+                   availableDays: matchedPolicy.remaining,
+                   leaveType: matchedPolicy.name,
+                   balances
+               });
+           }
+       }
+
        let result;
        if (type && startDate && endDate) {
            // Full edit mode: update all fields
@@ -491,7 +662,7 @@ app.put('/api/leaves/:id', async (req, res) => {
                [type, startDate, endDate, reason || '', dbStatus, req.params.id]
            );
        } else {
-           // Status-only update (existing behavior)
+           // Status-only update
            const dbStatus = (status || 'pending').toLowerCase();
            result = await pool.query(
                `UPDATE leave_requests SET status = $1 WHERE id = $2
@@ -517,7 +688,7 @@ app.put('/api/leaves/:id', async (req, res) => {
         if (result.rowCount > 0) {
             io.emit('attendance:update', { userId: result.rows[0].user_id });
         }
-        res.json({ success: true });
+        res.json({ success: true, leave: result.rows[0] });
 
        // Fire-and-forget webhook to n8n for WhatsApp notifications
        if (N8N_WEBHOOK_URL && result.rowCount > 0) {
@@ -538,8 +709,19 @@ app.put('/api/leaves/:id', async (req, res) => {
        }
    } catch(err) {
        console.error(err);
-       res.status(500).json({ success: false });
+       res.status(500).json({ success: false, message: err.message });
    }
+});
+
+// 4a-2. Fetch Live User Leave Balances
+app.get('/api/users/:id/leave-balances', async (req, res) => {
+    try {
+        const balances = await getUserLeaveBalances(req.params.id);
+        res.json({ success: true, balances });
+    } catch (err) {
+        console.error('Error fetching user leave balances:', err);
+        res.status(500).json({ success: false, message: err.message });
+    }
 });
 
 // 4b. Delete a specific leave request
