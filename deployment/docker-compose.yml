@@ -45,6 +45,9 @@ services:
     restart: unless-stopped
     ports:
       - "4000:4000"
+    volumes:
+      - ../backend/server.js:/usr/src/app/server.js
+      - ../backend/services:/usr/src/app/services
     environment:
       POSTGRES_DB: ${POSTGRES_DB}
       POSTGRES_USER: ${POSTGRES_USER}
@@ -53,6 +56,7 @@ services:
       KITSU_URL: http://cgwire:80
       KITSU_ADMIN_EMAIL: ${KITSU_ADMIN_EMAIL}
       KITSU_ADMIN_PASSWORD: ${KITSU_ADMIN_PASSWORD}
+      PEMDA_URL: http://192.168.1.60:7589
       N8N_WEBHOOK_URL: ${N8N_WEBHOOK_URL:-}
       BIOMETRIC_API_KEY: ${BIOMETRIC_API_KEY:-pluto-bio-2026}
       SLACK_BOT_TOKEN: ${SLACK_BOT_TOKEN:-}

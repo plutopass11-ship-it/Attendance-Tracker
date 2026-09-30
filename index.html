@@ -10,6 +10,7 @@
     <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="css/style.css?v=pluto_og_2026_v36">
     <link rel="stylesheet" href="css/admin.css?v=pluto_og_2026_v36">
+    <link rel="stylesheet" href="css/mobile-fitness.css?v=pluto_fitness_v1">
     <!-- Ionicons for modern icons -->
     <script type="module" src="https://unpkg.com/ionicons@7.1.0/dist/ionicons/ionicons.esm.js"></script>
     <script src="https://unpkg.com/ionicons@7.1.0/dist/ionicons/ionicons.js"></script>
@@ -139,6 +140,10 @@
                         </div>
                     </div>
                     <div class="header-actions">
+                        <button id="btn-birthdays" type="button" class="btn-neutral btn-small" onclick="window.showUpcomingBirthdaysModal()" title="Studio Birthdays (PEMDA)">
+                            <ion-icon name="gift-outline" style="color:#f43f5e;"></ion-icon> <span>Birthdays</span>
+                            <span id="birthday-badge" class="badge-count" style="display:none; background:#f43f5e; color:#fff; border-radius:10px; font-size:10px; font-weight:700; padding:1px 6px; margin-left:4px;">0</span>
+                        </button>
                         <button id="btn-export-data" class="btn-neutral btn-small">
                             <ion-icon name="download-outline"></ion-icon> <span>Export Backup</span>
                         </button>
@@ -198,6 +203,20 @@
                                     <span>Early Clockout & Leave Requests</span>
                                 </div>
                             </div>
+                        </div>
+
+                        <!-- Studio Birthday Alert / Celebration Bar -->
+                        <div id="dash-birthday-banner" style="display:none; margin-bottom:20px; background:linear-gradient(135deg, rgba(244,63,94,0.18), rgba(168,85,247,0.18)); border:1px solid rgba(244,63,94,0.4); border-radius:14px; padding:14px 20px; align-items:center; justify-content:space-between; gap:16px;">
+                            <div style="display:flex; align-items:center; gap:14px;">
+                                <div style="font-size:32px; line-height:1; animation: bounce 2s infinite;">🎂</div>
+                                <div>
+                                    <h4 id="dash-birthday-title" style="margin:0 0 3px; font-size:15px; color:#fff; font-weight:700;">Happy Birthday!</h4>
+                                    <p id="dash-birthday-subtitle" style="margin:0; font-size:12.5px; color:#cbd5e1;">Wishing our team member a fantastic celebration!</p>
+                                </div>
+                            </div>
+                            <button type="button" class="btn-primary btn-small" onclick="window.showUpcomingBirthdaysModal()" style="background:linear-gradient(135deg,#f43f5e,#ec4899); border:none; padding:6px 14px; font-weight:600; white-space:nowrap;">
+                                <ion-icon name="gift-outline"></ion-icon> <span>Upcoming Birthdays</span>
+                            </button>
                         </div>
 
                         <!-- Shift & Late Rules Banner Bar -->
@@ -1246,6 +1265,55 @@
 
                         </div>
 
+                        <!-- 4. Database & Biometric Failsafes Card -->
+                        <div class="bio-card" style="margin-top:20px;">
+                            <div class="bio-card-header" style="flex-wrap:wrap; gap:10px;">
+                                <div>
+                                    <h3 style="margin:0 0 4px 0; font-size:15px; font-weight:700; color:#ffffff; display:flex; align-items:center; gap:8px;">
+                                        <ion-icon name="server-outline" style="color:#6366f1;"></ion-icon>
+                                        Automated Backups & Disaster Recovery
+                                    </h3>
+                                    <p style="margin:0; font-size:12px; color:#64748b;">Daily compressed database archives (.sql.gz) & biometric sensor template cloud preservation</p>
+                                </div>
+                                <div style="display:flex; gap:10px; align-items:center; flex-wrap:wrap;">
+                                    <button type="button" class="btn-primary" style="margin:0; padding:7px 14px; font-size:12px; font-weight:600; display:inline-flex; align-items:center; gap:6px;" onclick="window.AdminUI.triggerDatabaseBackup()">
+                                        <ion-icon name="cloud-download-outline" style="font-size:15px;"></ion-icon> Create Database Backup Now
+                                    </button>
+                                    <button type="button" class="btn-neutral" style="margin:0; padding:7px 14px; font-size:12px; font-weight:600; display:inline-flex; align-items:center; gap:6px;" onclick="window.AdminUI.triggerTemplateBackup()">
+                                        <ion-icon name="finger-print-outline" style="font-size:15px; color:#38bdf8;"></ion-icon> Sync Sensor Templates to DB
+                                    </button>
+                                </div>
+                            </div>
+
+                            <div style="padding:14px 18px; border-bottom:1px solid rgba(255,255,255,0.06); background:rgba(99,102,241,0.04); display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:12px;">
+                                <div style="display:flex; align-items:center; gap:16px; font-size:12.5px;">
+                                    <span style="color:#94a3b8;"><strong style="color:#fff;">Schedule:</strong> Daily at 02:00 AM IST</span>
+                                    <span style="color:#94a3b8;"><strong style="color:#fff;">Retention:</strong> 7-Day Daily / 4-Week / 3-Month Rotation</span>
+                                    <span style="color:#94a3b8;"><strong style="color:#fff;">Format:</strong> Gzip SQL (.sql.gz)</span>
+                                </div>
+                                <div id="backup-status-badge" style="font-size:12px; color:#4ade80; display:inline-flex; align-items:center; gap:5px;">
+                                    <span class="pulse-dot-green"></span> <span>Auto-Scheduler Active</span>
+                                </div>
+                            </div>
+
+                            <div style="overflow-x:auto;">
+                                <table class="admin-table" style="width:100%; border-collapse:separate; border-spacing:0;">
+                                    <thead>
+                                        <tr>
+                                            <th style="padding:10px 14px; text-align:left;">BACKUP FILE</th>
+                                            <th style="padding:10px 14px; text-align:left;">CREATED AT</th>
+                                            <th style="padding:10px 14px; text-align:left;">ARCHIVE SIZE</th>
+                                            <th style="padding:10px 14px; text-align:left;">TYPE</th>
+                                            <th style="padding:10px 14px; text-align:right;">ACTION</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="database-backups-tbody">
+                                        <tr><td colspan="5" style="text-align:center; color:var(--text-muted); padding:24px;">Loading backups...</td></tr>
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+
                     </section>
 
                     <!-- Slack Notification Settings Tab (OnlyGenius Dark Theme Design) -->
@@ -1447,6 +1515,7 @@
         <div id="app-view" class="view hidden">
             <header class="emp-header">
                 <div class="emp-brand">
+                    <span class="fitness-date-eyebrow" id="header-today-eyebrow">TODAY</span>
                     <div class="emp-brand-icon">
                         <ion-icon name="planet-outline"></ion-icon>
                     </div>
@@ -1455,8 +1524,13 @@
                         <p id="user-role-dept">Flying Pluto Studios · Team</p>
                     </div>
                 </div>
+                <!-- Desktop Sign Out Button (Preserved for desktop) -->
                 <button id="logout-btn" class="btn-neutral btn-small" aria-label="Log out">
                     <ion-icon name="log-out-outline" style="font-size:16px;"></ion-icon> <span>Sign Out</span>
+                </button>
+                <!-- Mobile iOS Profile Avatar Trigger Button -->
+                <button type="button" class="fitness-avatar-btn" id="fitness-avatar-btn" aria-label="Open Profile Settings">
+                    <span id="user-initial">U</span>
                 </button>
             </header>
 
@@ -1471,18 +1545,28 @@
                             <span class="status-pill pill-late" id="attendance-status-text">Not Checked In</span>
                         </div>
                         
-                        <!-- Big Tactile Punch Button -->
-                        <button id="main-action-btn" class="punch-circle-btn punch-in">
-                            <ion-icon name="finger-print-outline"></ion-icon>
-                            <span id="main-action-label">Check In</span>
-                        </button>
+                        <!-- Apple Fitness Activity Ring & Biometric Punch Button -->
+                        <div class="fitness-ring-wrapper ring-not-checked-in" id="fitness-ring-wrapper">
+                            <div class="fitness-ring-track"></div>
+                            <button id="main-action-btn" class="punch-circle-btn punch-in">
+                                <ion-icon name="finger-print-outline"></ion-icon>
+                                <span id="main-action-label">Check In</span>
+                            </button>
+                        </div>
 
-                        <div id="attendance-details" class="hidden" style="margin-top: 16px; padding: 14px; background: var(--bg-input); border-radius: var(--radius-md); border: 1px solid var(--border-subtle);">
-                            <div style="display: flex; justify-content: space-between; margin-bottom: 6px; font-size: 13px;">
-                                <span style="color:var(--text-secondary)">Clocked In:</span> <strong id="val-check-in" style="color:var(--text-primary)">--:--</strong>
+                        <!-- Apple Fitness 3-Metric Summary Bar -->
+                        <div id="attendance-details" class="hidden">
+                            <div class="fitness-metric-cell">
+                                <span class="metric-label"><span class="metric-dot dot-lime"></span> Clock In</span>
+                                <span class="metric-val" id="val-check-in">--:--</span>
                             </div>
-                            <div style="display: flex; justify-content: space-between; font-size: 13px;">
-                                <span style="color:var(--text-secondary)">Clocked Out:</span> <strong id="val-check-out" style="color:var(--text-primary)">--:--</strong>
+                            <div class="fitness-metric-cell">
+                                <span class="metric-label"><span class="metric-dot dot-rose"></span> Clock Out</span>
+                                <span class="metric-val" id="val-check-out">--:--</span>
+                            </div>
+                            <div class="fitness-metric-cell">
+                                <span class="metric-label"><span class="metric-dot dot-cyan"></span> Time</span>
+                                <span class="metric-val" id="val-duration">--:--</span>
                             </div>
                         </div>
                         <p style="font-size:12px; color:var(--text-tertiary); margin-top:16px;">Daily attendance is logged securely to Flying Pluto Studio records.</p>
@@ -1655,10 +1739,74 @@
                     <span>Holidays</span>
                 </button>
             </nav>
+
+            <!-- iOS Profile Bottom Action Sheet (Mobile Only) -->
+            <div id="fitness-sheet-overlay" class="fitness-sheet-overlay"></div>
+            <div id="fitness-action-sheet" class="fitness-action-sheet">
+                <div class="fitness-sheet-handle"></div>
+                <div class="fitness-sheet-user">
+                    <div class="fitness-sheet-avatar" id="sheet-user-initial">U</div>
+                    <div class="fitness-sheet-user-meta">
+                        <h3 id="sheet-user-name">Employee Name</h3>
+                        <p id="sheet-user-dept">Flying Pluto Studios · Team</p>
+                    </div>
+                </div>
+                <div class="fitness-sheet-actions">
+                    <button type="button" class="fitness-sheet-btn fitness-sheet-logout" id="sheet-logout-btn">
+                        <ion-icon name="log-out-outline" style="font-size:18px;"></ion-icon>
+                        <span>Sign Out</span>
+                    </button>
+                    <button type="button" class="fitness-sheet-btn fitness-sheet-cancel" id="sheet-cancel-btn">
+                        <span>Cancel</span>
+                    </button>
+                </div>
+            </div>
         </div>
     </div>
 
     <!-- Admin Modals -->
+    <!-- Upcoming Birthdays Modal -->
+    <div id="birthdays-modal" class="modal hidden" style="position:fixed; top:0; left:0; width:100vw; height:100vh; z-index:99999; display:none; justify-content:center; align-items:center;">
+        <div class="modal-overlay" onclick="window.closeBirthdaysModal()" style="position:absolute; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.7); backdrop-filter:blur(6px);"></div>
+        <div class="modal-content glass-panel" style="position:relative; z-index:100000; max-width:540px; width:92%; max-height:85vh; overflow-y:auto; padding:24px; background:rgba(15, 23, 42, 0.95); border:1px solid rgba(255,255,255,0.2); border-radius:16px; box-shadow:0 25px 60px rgba(0,0,0,0.9);">
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:16px; text-align:left;">
+                <h3 style="margin:0; font-size:18px; color:#fff; display:flex; align-items:center; gap:8px;">
+                    <span style="font-size:22px;">🎂</span> Studio Birthdays & Celebrations
+                </h3>
+                <button type="button" style="background:none; border:none; color:var(--text-muted); cursor:pointer; font-size:24px; line-height:1; padding:4px;" onclick="window.closeBirthdaysModal()">✕</button>
+            </div>
+
+            <!-- PEMDA Sync Status Pill -->
+            <div style="display:flex; justify-content:space-between; align-items:center; background:rgba(255,255,255,0.04); border:1px solid rgba(255,255,255,0.08); border-radius:8px; padding:8px 12px; margin-bottom:16px; font-size:12px;">
+                <div style="display:flex; align-items:center; gap:6px; color:#94a3b8;">
+                    <span style="display:inline-block; width:8px; height:8px; border-radius:50%; background:#10b981;"></span>
+                    <span>Synced with PEMDA NAS (Port 7589)</span>
+                </div>
+                <button type="button" class="btn-neutral btn-small" style="padding:3px 8px; font-size:11px;" onclick="window.refreshBirthdays(true)">
+                    <ion-icon name="sync-outline"></ion-icon> <span>Sync Now</span>
+                </button>
+            </div>
+
+            <!-- Today's Birthday Section (if any) -->
+            <div id="modal-today-birthdays" style="margin-bottom:16px; display:none;">
+                <div style="background:linear-gradient(135deg, rgba(244,63,94,0.15), rgba(168,85,247,0.15)); border:1px solid rgba(244,63,94,0.3); border-radius:12px; padding:16px; text-align:center;">
+                    <div style="font-size:32px; margin-bottom:6px;">🎉 🎂 🎈</div>
+                    <h4 style="margin:0 0 4px; font-size:16px; color:#fff;">Celebrating Today!</h4>
+                    <div id="modal-today-names" style="font-size:15px; font-weight:700; color:#fb7185;"></div>
+                    <div style="font-size:12px; color:#cbd5e1; margin-top:4px;">ESP32 Biometric Scanner will play Happy Birthday on punch! 🎵</div>
+                </div>
+            </div>
+
+            <!-- Upcoming Birthdays List -->
+            <div style="text-align:left;">
+                <h4 style="font-size:13px; text-transform:uppercase; letter-spacing:0.05em; color:#94a3b8; margin:0 0 10px;">Upcoming Birthdays</h4>
+                <div id="modal-birthdays-list" style="display:flex; flex-direction:column; gap:8px;">
+                    <div style="text-align:center; padding:20px; color:#64748b; font-size:13px;">Loading birthdays...</div>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <!-- Biometric Live Enroll Modal -->
     <div id="biometric-enroll-modal" class="modal hidden" style="position:fixed; top:0; left:0; width:100vw; height:100vh; z-index:99999; display:none; justify-content:center; align-items:center;">
         <div class="modal-overlay" onclick="window.AdminUI.closeBiometricModal()" style="position:absolute; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.7); backdrop-filter:blur(6px);"></div>

@@ -48,5 +48,72 @@ The CRM and management dashboard for HR/Management. Expands to full-desktop widt
 │   ├── auth.js      # Session management and login logic
 │   ├── app.js       # Normal User View Logic and SPA routing
 │   └── admin.js     # Super Admin UI controllers and dashboard rendering
+├── backend/         # Express & PostgreSQL API microservice
+├── mcp-server/      # Model Context Protocol (MCP) server for AI agents
+├── firmware/        # ESP32 Biometric Device Firmware & tools
+│   └── esp32_attendance/
+│       ├── platformio.ini  # PlatformIO build & OTA configuration
+│       └── src/
+│           ├── main.cpp    # Hardware loop, OLED, Fingerprint & OTA
+│           └── config.h    # Wi-Fi, Pinouts & Server URL settings
 └── README.md        # Project documentation
 ```
+
+---
+
+## 📟 Hardware: ESP32 Biometric Terminal
+
+The system includes a dedicated ESP32-based biometric punch terminal that synchronizes in real time with the backend attendance API.
+
+### Hardware Components & Pinout
+| Component | Interface / Pin | ESP32 GPIO | Description |
+|---|---|---|---|
+| **OLED Display** | I2C SDA | **GPIO 21** | SH1106 / SSD1306 128×64 OLED |
+| **OLED Display** | I2C SCL | **GPIO 22** | Center-aligned typography (U8g2) |
+| **Fingerprint Sensor** | UART RX (Green) | **GPIO 16** | Connects to Sensor TX (Serial2) |
+| **Fingerprint Sensor** | UART TX (White) | **GPIO 17** | Connects to Sensor RX (Serial2) |
+| **Piezo Buzzer** | Digital Output | **GPIO 14** | Auditory chimes & feedback tones |
+| **Power** | 5V / GND | **VIN / GND** | Micro-USB or external 5V power supply |
+
+---
+
+## 📡 Wireless Programming & Over-The-Air (OTA) Updates
+
+The ESP32 firmware includes **ArduinoOTA** support, allowing you to update and flash firmware completely over Wi-Fi without needing a physical USB connection.
+
+### How OTA Works
+1. **Dual Application Partitions (`min_spiffs.csv`)**:
+   The ESP32 flash is divided into two ~1.9 MB partitions (`ota_0` and `ota_1`). When flashing wirelessly, the new firmware is downloaded safely into the inactive partition. If successful, the bootloader switches to it upon reboot.
+2. **Local Network Discovery (mDNS)**:
+   The device announces itself on your Wi-Fi network as:
+   ```text
+   esp32-attendance.local
+   ```
+3. **On-Screen Visual Progress**:
+   - **Boot:** The OLED screen displays `WiFi Connected`, its assigned IP address, and `OTA Ready`.
+   - **During Upload:** The OLED displays an animated progress bar with live percentage (`0% - 100%`) and a `"Do not unplug!"` safety warning.
+
+### Flashing Over Wi-Fi
+
+#### Step 1: Ensure ESP32 is Powered & Connected to Wi-Fi
+Power the ESP32 using any standard 5V USB charger or battery bank within your Wi-Fi coverage. Note the IP address displayed on the OLED screen.
+
+#### Step 2: Push Update via PlatformIO
+Run the following command from the `firmware/esp32_attendance` directory:
+```bash
+# Upload wirelessly using mDNS
+pio run -e esp32dev-ota -t upload
+```
+
+> **Tip (Direct IP):** If your local network router or Windows firewall restricts mDNS resolution, specify the IP address directly in `firmware/esp32_attendance/platformio.ini`:
+> ```ini
+> [env:esp32dev-ota]
+> upload_port = 192.168.1.xxx   ; Replace with ESP32 IP shown on OLED
+> ```
+
+#### Step 3 (Fallback): Flashing via USB Cable
+To flash via USB (e.g. for initial setup or partition table modifications):
+```bash
+pio run -e esp32dev -t upload
+```
+

@@ -31,6 +31,8 @@ const pool = new Pool({
 const KITSU_URL = process.env.KITSU_URL || 'http://host.docker.internal:3002';
 const N8N_WEBHOOK_URL = process.env.N8N_WEBHOOK_URL || '';  // e.g. http://n8n:5678/webhook/leave-status-changed
 const slackNotifier = require('./services/slack-notifier');
+const backupService = require('./services/backup-service');
+const birthdayService = require('./services/birthday-service');
 
 // --- Service Account (Admin Token Cache) ---
 // Uses a dedicated Kitsu admin account to fetch person data,
@@ -1351,23 +1353,56 @@ async function checkKitsuRemovals() {
             return;
         }
         const persons = await response.json();
-        const kitsuEmails = persons.map(p => p.email);
+        const deptMap = await getKitsuDepartments();
+        const localUsersResult = await pool.query(`SELECT user_id, name, phone, kitsu_id, is_active FROM users WHERE role != 'admin'`);
 
-        const hasIsActiveCol = await columnExists('users', 'is_active');
-        const activeCondition = hasIsActiveCol ? 'AND is_active = true' : '';
-        const localUsersResult = await pool.query(`SELECT user_id FROM users WHERE role != 'admin' ${activeCondition}`);
-        const localUserIds = localUsersResult.rows.map(r => r.user_id);
+        for (const localUser of localUsersResult.rows) {
+            const localId = localUser.user_id;
+            
+            // 1. Match by kitsu_id, email, phone, or name
+            const matchedPerson = persons.find(p => 
+                (localUser.kitsu_id && p.id === localUser.kitsu_id) ||
+                (p.email && p.email.toLowerCase() === localId.toLowerCase()) ||
+                (localUser.phone && p.phone && p.phone.trim() === localUser.phone.trim()) ||
+                (`${p.first_name || ''} ${p.last_name || ''}`.trim().toLowerCase() === (localUser.name || '').trim().toLowerCase())
+            );
 
-        for (const localId of localUserIds) {
-            if (!kitsuEmails.includes(localId)) {
-                await pool.query("UPDATE users SET pending_removal = true WHERE user_id = $1", [localId]);
-                console.log(`[Kitsu Sweep] User ${localId} not found in Kitsu. Marked for pending removal.`);
+            if (matchedPerson) {
+                const isKitsuActive = matchedPerson.active !== false;
+                const kitsuEmail = matchedPerson.email ? matchedPerson.email.trim() : localId;
+                const kitsuDept = resolveDepartmentName(matchedPerson, deptMap);
+
+                // Check if email changed in Kitsu
+                if (kitsuEmail && kitsuEmail.toLowerCase() !== localId.toLowerCase()) {
+                    console.log(`[Kitsu Sync] Detected updated email for ${localUser.name}: ${localId} -> ${kitsuEmail}`);
+                    await pool.query(
+                        "UPDATE users SET user_id = $1, kitsu_id = $2, is_active = $3, pending_removal = false WHERE user_id = $4",
+                        [kitsuEmail, matchedPerson.id, isKitsuActive, localId]
+                    );
+                    await pool.query(
+                        "UPDATE biometric_logs SET user_id = $1 WHERE user_id = $2",
+                        [kitsuEmail, localId]
+                    );
+                    console.log(`[Kitsu Sync] Successfully migrated user_id from ${localId} to ${kitsuEmail}`);
+                } else {
+                    // Update active status, kitsu_id, and department
+                    if (localUser.is_active !== isKitsuActive) {
+                        console.log(`[Kitsu Sync] User ${localUser.name} (${localId}) active status changed: ${localUser.is_active} -> ${isKitsuActive}`);
+                    }
+                    await pool.query(
+                        "UPDATE users SET is_active = $1, kitsu_id = COALESCE($2, kitsu_id), department = COALESCE($3, department), pending_removal = false WHERE user_id = $4",
+                        [isKitsuActive, matchedPerson.id, kitsuDept, localId]
+                    );
+                }
             } else {
-                await pool.query("UPDATE users SET pending_removal = false WHERE user_id = $1", [localId]);
+                // Not found in Kitsu person directory at all
+                await pool.query("UPDATE users SET pending_removal = true WHERE user_id = $1", [localId]);
+                console.log(`[Kitsu Sync] User ${localId} not found in Kitsu. Marked for pending removal.`);
             }
         }
+        console.log('[Kitsu Sync] Employee status synchronization completed.');
     } catch (err) {
-        console.error('[Kitsu Sweep] Error:', err);
+        console.error('[Kitsu Sync] Error:', err);
     }
 }
 
@@ -1616,11 +1651,27 @@ app.post('/api/biometric/punch', requireBioApiKey, async (req, res) => {
   if (!fingerprint_id) return res.status(400).json({ success: false, message: 'Missing fingerprint_id' });
   
   try {
-    const userRes = await pool.query(`SELECT u.user_id, u.name FROM biometric_users b JOIN users u ON b.user_id = u.user_id WHERE b.fingerprint_id = $1`, [fingerprint_id]);
+    const userRes = await pool.query(`SELECT u.user_id, u.name, u.role, u.is_active FROM biometric_users b JOIN users u ON b.user_id = u.user_id WHERE b.fingerprint_id = $1`, [fingerprint_id]);
     if (userRes.rowCount === 0) {
       return res.json({ success: false, action: 'unknown', message: 'Fingerprint not enrolled' });
     }
-    const { user_id: userId, name } = userRes.rows[0];
+    const { user_id: userId, name, role, is_active } = userRes.rows[0];
+    if (is_active === false) {
+      console.log(`[Biometric Punch] BLOCKED scan: User ${name} (${userId}) is deactivated.`);
+      await pool.query(
+        `INSERT INTO biometric_logs (fingerprint_id, user_id, action, status) VALUES ($1, $2, 'blocked_inactive', 'denied')`,
+        [fingerprint_id, userId]
+      );
+      return res.json({ success: false, action: 'deactivated', name, message: 'Account deactivated' });
+    }
+    const isAdmin = role === 'admin' || /joel|albert/i.test(name);
+    // Evaluate employee birthday status from PEMDA
+    const birthdayCheck = birthdayService.isBirthdayToday(userId, name);
+    const isBirthday = birthdayCheck.isBirthday;
+    if (isBirthday) {
+      console.log(`[Biometric Punch] 🎉 Birthday detected for ${name} (${userId})! Triggering birthday celebration response.`);
+    }
+
     // Date in IST using standard string format (YYYY-MM-DD)
     const date = new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Kolkata' })).toISOString().split('T')[0];
     
@@ -1647,11 +1698,14 @@ app.post('/api/biometric/punch', requireBioApiKey, async (req, res) => {
           [userId, date, checkInStatus]
         );
         await client.query(`INSERT INTO biometric_logs (fingerprint_id, user_id, action, status) VALUES ($1, $2, 'check_in', 'success')`, [fingerprint_id, userId]);
-        responseObj = { success: true, action: 'check_in', name, time: timeIST, status: 'working', hours_worked: null, message: 'Welcome!' };
+        const checkInMsg = isBirthday 
+          ? `🎉 Happy Birthday ${name.split(' ')[0]}! 🎂` 
+          : (isAdmin ? 'Welcome Boss!' : 'Welcome!');
+        responseObj = { success: true, action: 'check_in', name, time: timeIST, is_admin: isAdmin, is_birthday: isBirthday, status: 'working', hours_worked: null, message: checkInMsg };
 
         // Send clean Slack notification
         try {
-          slackNotifier.notifyCheckIn({ pool, name, userId, timeIST, method: `Biometric Scanner (Slot #${fingerprint_id})`, isWfh: checkInStatus === 'wfh_working' });
+          slackNotifier.notifyCheckIn({ pool, name, userId, timeIST, method: `Biometric Scanner (Slot #${fingerprint_id})`, isWfh: checkInStatus === 'wfh_working', isBirthday });
         } catch (sErr) {
           console.error('[Slack] Biometric check-in notify error:', sErr.message);
         }
@@ -1660,7 +1714,10 @@ app.post('/api/biometric/punch', requireBioApiKey, async (req, res) => {
         if (record.check_out_time) {
           // Already checked out
           await client.query(`INSERT INTO biometric_logs (fingerprint_id, user_id, action, status) VALUES ($1, $2, 'already_completed', 'success')`, [fingerprint_id, userId]);
-          responseObj = { success: true, action: 'already_completed', name, time: null, status: 'completed', hours_worked: null, message: 'Already completed today' };
+          const alreadyMsg = isBirthday
+            ? `🎉 Happy Birthday ${name.split(' ')[0]}!`
+            : 'Already completed today';
+          responseObj = { success: true, action: 'already_completed', name, time: null, is_admin: isAdmin, is_birthday: isBirthday, status: 'completed', hours_worked: null, message: alreadyMsg };
         } else {
           // CHECK-OUT
           const checkInTime = new Date(record.check_in_time);
@@ -1698,7 +1755,10 @@ app.post('/api/biometric/punch', requireBioApiKey, async (req, res) => {
           );
           await client.query(`INSERT INTO biometric_logs (fingerprint_id, user_id, action, status, hours_worked) VALUES ($1, $2, 'check_out', 'success', $3)`, [fingerprint_id, userId, hoursWorkedDecimal.toFixed(2)]);
           
-          responseObj = { success: true, action: 'check_out', name, time: timeIST, status: newStatus.replace('wfh_', ''), hours_worked: hoursWorkedStr, message: 'Goodbye!' };
+          const checkOutMsg = isBirthday
+            ? `🎉 Happy Birthday ${name.split(' ')[0]}!`
+            : (isAdmin ? 'Have a great evening Boss' : 'Goodbye!');
+          responseObj = { success: true, action: 'check_out', name, time: timeIST, is_admin: isAdmin, is_birthday: isBirthday, status: newStatus.replace('wfh_', ''), hours_worked: hoursWorkedStr, message: checkOutMsg };
 
           // Send clean Slack notification
           try {
@@ -1724,9 +1784,107 @@ app.post('/api/biometric/punch', requireBioApiKey, async (req, res) => {
   }
 });
 
+app.post('/api/biometric/punch/offline-sync', requireBioApiKey, async (req, res) => {
+  const { punches } = req.body;
+  if (!Array.isArray(punches) || punches.length === 0) {
+    return res.status(400).json({ success: false, message: 'Missing or empty punches array' });
+  }
+
+  console.log(`[Offline Sync] Processing batch of ${punches.length} offline punch(es) from ESP32.`);
+  const results = [];
+
+  for (const item of punches) {
+    const { fingerprint_id, epoch } = item;
+    if (!fingerprint_id || !epoch) continue;
+
+    try {
+      const userRes = await pool.query(
+        `SELECT u.user_id, u.name, u.role, u.is_active FROM biometric_users b JOIN users u ON b.user_id = u.user_id WHERE b.fingerprint_id = $1`,
+        [fingerprint_id]
+      );
+      if (userRes.rowCount === 0) {
+        results.push({ fingerprint_id, epoch, status: 'unknown' });
+        continue;
+      }
+      const { user_id: userId, name, role, is_active } = userRes.rows[0];
+      if (is_active === false) {
+        results.push({ fingerprint_id, epoch, status: 'deactivated', name });
+        continue;
+      }
+
+      // Convert original epoch to dates
+      const punchDate = new Date(Number(epoch) * 1000);
+      const istDate = new Date(punchDate.toLocaleString('en-US', { timeZone: 'Asia/Kolkata' }));
+      const dateStr = `${istDate.getFullYear()}-${String(istDate.getMonth()+1).padStart(2,'0')}-${String(istDate.getDate()).padStart(2,'0')}`;
+      const timeIST = punchDate.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Kolkata' });
+
+      const client = await pool.connect();
+      try {
+        await client.query('BEGIN');
+        const attRes = await client.query(
+          `SELECT check_in_time, check_out_time, status FROM attendance WHERE user_id = $1 AND date = $2 FOR UPDATE`,
+          [userId, dateStr]
+        );
+
+        if (attRes.rowCount === 0) {
+          // Check-in
+          await client.query(
+            `INSERT INTO attendance (user_id, date, check_in_time, status) VALUES ($1, $2, $3, 'working')`,
+            [userId, dateStr, punchDate]
+          );
+          await client.query(
+            `INSERT INTO biometric_logs (fingerprint_id, user_id, action, status) VALUES ($1, $2, 'check_in', 'offline_synced')`,
+            [fingerprint_id, userId]
+          );
+          results.push({ fingerprint_id, epoch, action: 'check_in', name, time: timeIST });
+          try {
+            slackNotifier.notifyCheckIn({ pool, name, userId, timeIST, method: `Biometric Scanner (Offline Synced Slot #${fingerprint_id})`, isWfh: false });
+          } catch(e){}
+        } else {
+          const record = attRes.rows[0];
+          if (!record.check_out_time) {
+            // Check-out
+            const checkInTime = new Date(record.check_in_time);
+            const hoursWorkedDecimal = (punchDate - checkInTime) / (1000 * 60 * 60);
+            const hours = Math.floor(hoursWorkedDecimal);
+            const minutes = Math.floor((hoursWorkedDecimal - hours) * 60);
+            const hoursWorkedStr = `${hours}h ${minutes}m`;
+            
+            await client.query(
+              `UPDATE attendance SET check_out_time = $3, status = 'completed' WHERE user_id = $1 AND date = $2`,
+              [userId, dateStr, punchDate]
+            );
+            await client.query(
+              `INSERT INTO biometric_logs (fingerprint_id, user_id, action, status, hours_worked) VALUES ($1, $2, 'check_out', 'offline_synced', $3)`,
+              [fingerprint_id, userId, hoursWorkedDecimal.toFixed(2)]
+            );
+            results.push({ fingerprint_id, epoch, action: 'check_out', name, time: timeIST, hours_worked: hoursWorkedStr });
+            try {
+              slackNotifier.notifyCheckOut({ pool, name, userId, timeIST, hoursWorked: hoursWorkedStr, isEarly: false, method: `Biometric Scanner (Offline Synced Slot #${fingerprint_id})` });
+            } catch(e){}
+          } else {
+            results.push({ fingerprint_id, epoch, action: 'already_completed', name });
+          }
+        }
+        await client.query('COMMIT');
+      } catch (txnErr) {
+        await client.query('ROLLBACK');
+        console.error(`[Offline Sync] Transaction error for ${userId}:`, txnErr.message);
+      } finally {
+        client.release();
+      }
+    } catch (err) {
+      console.error(`[Offline Sync] Item error:`, err.message);
+    }
+  }
+
+  io.emit('attendance:update', { broadcast: true });
+  res.json({ success: true, processed: results.length, total: punches.length, results });
+});
+
 app.get('/api/biometric/users', async (req, res) => {
   try {
-    const result = await pool.query(`SELECT b.fingerprint_id, b.user_id, u.name, b.enrolled_at FROM biometric_users b JOIN users u ON b.user_id = u.user_id`);
+    const result = await pool.query(`SELECT b.fingerprint_id, b.user_id, u.name, b.enrolled_at FROM biometric_users b JOIN users u ON b.user_id = u.user_id WHERE u.is_active = true ORDER BY b.fingerprint_id ASC`);
     res.json({ success: true, users: result.rows });
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });
@@ -1777,17 +1935,31 @@ app.get('/api/biometric/logs', async (req, res) => {
 // --- Live Biometric Web Enrollment & Heartbeat State ---
 let lastDeviceHeartbeat = null;
 let activeEnrollment = null; // { id, user_id, name, slot, step, started_at }
+let pendingDeviceCommand = null;
 
 app.get('/api/biometric/device/poll', (req, res) => {
   lastDeviceHeartbeat = Date.now();
+  const epoch = Math.floor(Date.now() / 1000);
   if (activeEnrollment && (Date.now() - activeEnrollment.started_at < 45000)) {
     return res.json({
       command: 'enroll',
       slot: activeEnrollment.slot,
-      session_id: activeEnrollment.id
+      session_id: activeEnrollment.id,
+      epoch
     });
   }
-  res.json({ command: 'idle' });
+  if (pendingDeviceCommand) {
+    const cmd = pendingDeviceCommand;
+    pendingDeviceCommand = null;
+    return res.json({ ...cmd, epoch });
+  }
+  res.json({ command: 'idle', epoch });
+});
+
+app.post('/api/biometric/templates/trigger-backup', (req, res) => {
+  pendingDeviceCommand = { command: 'backup_all_templates' };
+  console.log('[BIOMETRIC] Admin queued backup_all_templates command for device');
+  res.json({ success: true, message: 'Backup command queued for ESP32' });
 });
 
 app.get('/api/biometric/device/status', async (req, res) => {
@@ -1906,6 +2078,80 @@ app.post('/api/biometric/enroll/cancel', (req, res) => {
   res.json({ success: true });
 });
 
+// ============================================================
+// Biometric Template Cloud Backup & Recovery
+// ============================================================
+app.post('/api/biometric/template/save', async (req, res) => {
+  const { fingerprint_id, template_data } = req.body;
+  if (!fingerprint_id || !template_data) {
+    return res.status(400).json({ success: false, message: 'fingerprint_id and template_data are required' });
+  }
+
+  try {
+    const result = await pool.query(
+      `UPDATE biometric_users SET template_data = $1 WHERE fingerprint_id = $2 RETURNING user_id, name`,
+      [template_data, fingerprint_id]
+    );
+
+    if (result.rowCount === 0) {
+      return res.status(404).json({ success: false, message: `Fingerprint slot #${fingerprint_id} not found` });
+    }
+
+    console.log(`[BIOMETRIC TEMPLATE] Saved sensor template for Slot #${fingerprint_id} (${result.rows[0].name})`);
+    res.json({ success: true, message: `Template saved for slot #${fingerprint_id}` });
+  } catch (err) {
+    console.error('[BIOMETRIC TEMPLATE] Error saving template:', err);
+    res.status(500).json({ success: false, message: err.message });
+  }
+});
+
+app.get('/api/biometric/templates', async (req, res) => {
+  try {
+    const result = await pool.query(`
+      SELECT b.fingerprint_id, b.user_id, u.name,
+             (b.template_data IS NOT NULL AND LENGTH(b.template_data) > 0) AS has_template,
+             b.template_data
+      FROM biometric_users b
+      JOIN users u ON b.user_id = u.user_id
+      ORDER BY b.fingerprint_id ASC
+    `);
+    res.json({ success: true, templates: result.rows });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+});
+
+// ============================================================
+// PostgreSQL Automated Backup & Recovery Endpoints
+// ============================================================
+app.get('/api/admin/backups', (req, res) => {
+  try {
+    const backups = backupService.listBackups();
+    res.json({ success: true, backups });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+});
+
+app.post('/api/admin/backups/trigger', async (req, res) => {
+  try {
+    console.log('[BACKUP] Admin triggered manual database backup...');
+    const result = await backupService.createBackup(pool);
+    res.json({ success: true, backup: result });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+});
+
+app.get('/api/admin/backups/download/:filename', (req, res) => {
+  const filename = req.params.filename;
+  const filePath = backupService.getBackupFilePath(filename);
+  if (!filePath) {
+    return res.status(404).json({ success: false, message: 'Backup file not found' });
+  }
+  res.download(filePath, filename);
+});
+
 
 // ============================================================
 // Socket.IO Connection Handler
@@ -1944,9 +2190,13 @@ async function runMigrations() {
             fingerprint_id INTEGER NOT NULL UNIQUE,
             user_id VARCHAR(50) NOT NULL REFERENCES users(user_id) ON DELETE CASCADE,
             name VARCHAR(100),
+            template_data TEXT,
             enrolled_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
           );
         `);
+        if (await tableExists('biometric_users') && !(await columnExists('biometric_users', 'template_data'))) {
+            await pool.query('ALTER TABLE biometric_users ADD COLUMN template_data TEXT;');
+        }
         await pool.query(`
           CREATE TABLE IF NOT EXISTS biometric_logs (
             id SERIAL PRIMARY KEY,
@@ -2012,7 +2262,7 @@ async function runMigrations() {
             console.log('Added department column to users table.');
         }
 
-        // Add pending_removal and is_active columns to users table
+        // Add pending_removal, is_active, and kitsu_id columns to users table
         if (await tableExists('users')) {
             if (!(await columnExists('users', 'pending_removal'))) {
                 await pool.query('ALTER TABLE users ADD COLUMN pending_removal BOOLEAN DEFAULT false;');
@@ -2022,6 +2272,19 @@ async function runMigrations() {
                 await pool.query('ALTER TABLE users ADD COLUMN is_active BOOLEAN DEFAULT true;');
                 console.log('Added is_active column to users table.');
             }
+            if (!(await columnExists('users', 'kitsu_id'))) {
+                await pool.query('ALTER TABLE users ADD COLUMN kitsu_id VARCHAR(64) UNIQUE;');
+                console.log('Added kitsu_id column to users table.');
+            }
+            // Ensure foreign keys cascade on user_id update
+            await pool.query(`
+              ALTER TABLE attendance DROP CONSTRAINT IF EXISTS attendance_user_id_fkey;
+              ALTER TABLE attendance ADD CONSTRAINT attendance_user_id_fkey FOREIGN KEY (user_id) REFERENCES users(user_id) ON UPDATE CASCADE ON DELETE CASCADE;
+              ALTER TABLE leave_requests DROP CONSTRAINT IF EXISTS leave_requests_user_id_fkey;
+              ALTER TABLE leave_requests ADD CONSTRAINT leave_requests_user_id_fkey FOREIGN KEY (user_id) REFERENCES users(user_id) ON UPDATE CASCADE ON DELETE CASCADE;
+              ALTER TABLE biometric_users DROP CONSTRAINT IF EXISTS biometric_users_user_id_fkey;
+              ALTER TABLE biometric_users ADD CONSTRAINT biometric_users_user_id_fkey FOREIGN KEY (user_id) REFERENCES users(user_id) ON UPDATE CASCADE ON DELETE CASCADE;
+            `);
         }
 
         console.log('DB migrations completed.');
@@ -2041,6 +2304,41 @@ app.post('/api/users/sync-kitsu', async (req, res) => {
     }
 });
 
+// 12d. PEMDA & Birthday Endpoints
+app.get('/api/birthdays', async (req, res) => {
+    try {
+        const upcoming = birthdayService.getUpcomingBirthdays(30);
+        const today = birthdayService.getTodayCelebrants();
+        const status = birthdayService.getStatus();
+        res.json({
+            success: true,
+            count: upcoming.length,
+            birthdays: upcoming,
+            today,
+            status
+        });
+    } catch (err) {
+        res.status(500).json({ success: false, error: err.message });
+    }
+});
+
+app.get('/api/pemda/status', async (req, res) => {
+    try {
+        res.json({ success: true, ...birthdayService.getStatus() });
+    } catch (err) {
+        res.status(500).json({ success: false, error: err.message });
+    }
+});
+
+app.post('/api/pemda/sync', async (req, res) => {
+    try {
+        await birthdayService.syncFromPemda();
+        res.json({ success: true, message: 'Synced successfully with PEMDA', ...birthdayService.getStatus() });
+    } catch (err) {
+        res.status(500).json({ success: false, error: err.message });
+    }
+});
+
 // Fallback for SPA routing
 app.get('*', (req, res, next) => {
     if (req.path.startsWith('/api') || req.path.startsWith('/socket.io')) {
@@ -2054,6 +2352,8 @@ const PORT = process.env.PORT || 4000;
 runMigrations().then(() => {
     // Initial sync of departments from Kitsu (fire and forget)
     syncKitsuDepartments().catch(e => console.error('[Kitsu Sync Startup] Non-critical error:', e.message));
+    // Initial sync of birthdays and employees from PEMDA
+    birthdayService.init().catch(e => console.error('[Birthday Service Startup] Non-critical error:', e.message));
 
     httpServer.listen(PORT, () => {
         console.log(`Backend running on port ${PORT} (HTTP + Socket.IO)`);
@@ -2072,22 +2372,34 @@ runMigrations().then(() => {
 
         console.log('Auto half-day leave scheduler initialized (11:00-11:30 AM IST)');
 
-        // Schedule Kitsu user sweep
-        let lastSweepDate = null;
+        // Schedule Kitsu & PEMDA user synchronization every evening (once per 24 hours)
+        let lastEveningSyncDate = null;
+        let lastAutoCheckoutDate = null;
+
         setInterval(() => {
             const now = new Date();
             const istTime = new Date(now.toLocaleString('en-US', { timeZone: 'Asia/Kolkata' }));
             const h = istTime.getHours();
             const currentDateStr = istTime.toDateString();
             
-            // Run at 23:xx IST, once per day
-            if (h === 23 && lastSweepDate !== currentDateStr) {
-                lastSweepDate = currentDateStr;
-                checkKitsuRemovals();
-                syncKitsuDepartments().catch(e => console.error('[Kitsu Sync] Error:', e.message));
-                autoCheckoutMissing();
+            // 1. Evening Kitsu employee synchronization (8:00 PM IST, once per 24 hours)
+            if (h === 20 && lastEveningSyncDate !== currentDateStr) {
+                lastEveningSyncDate = currentDateStr;
+                console.log(`[Evening Sync] Running 24-hr Kitsu & PEMDA synchronization for ${currentDateStr}...`);
+                checkKitsuRemovals().catch(e => console.error('[Kitsu Sync] Error:', e.message));
+                syncKitsuDepartments().catch(e => console.error('[Kitsu Dept Sync] Error:', e.message));
+                birthdayService.syncFromPemda().catch(e => console.error('[PEMDA Sync] Error:', e.message));
             }
-        }, 30 * 60 * 1000); // Check every 30 minutes
-        console.log('EOD Kitsu removal sweep scheduler initialized (23:xx IST)');
+
+            // 2. EOD auto-checkout at 23:xx IST
+            if (h === 23 && lastAutoCheckoutDate !== currentDateStr) {
+                lastAutoCheckoutDate = currentDateStr;
+                autoCheckoutMissing().catch(e => console.error('[Auto-Checkout] Error:', e.message));
+            }
+        }, 15 * 60 * 1000); // Check every 15 minutes
+        console.log('Kitsu sync & EOD auto-checkout scheduler initialized (Evening 8:00 PM IST & 11:00 PM IST)');
+
+        // Schedule automated daily PostgreSQL backup (02:00 AM IST with rotation)
+        backupService.scheduleDailyBackup(pool);
     });
 });

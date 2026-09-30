@@ -1,0 +1,826 @@
+/* ==========================================================================
+   Pluto Attendance — Apple Fitness (iOS) Mobile Experience
+   Targeted exclusively to mobile viewports (<= 768px).
+   Desktop experience remains 100% untouched.
+   ========================================================================== */
+
+@media (max-width: 768px) {
+    /* --------------------------------------------------------------------------
+       1. Core Canvas & Theme Overrides (OLED Pure Black)
+       -------------------------------------------------------------------------- */
+    :root {
+        --fitness-black: #000000;
+        --fitness-card: #1c1c1e;
+        --fitness-card-elevated: #2c2c2e;
+        --fitness-border: rgba(255, 255, 255, 0.08);
+        --fitness-border-highlight: rgba(255, 255, 255, 0.15);
+        
+        /* Apple Fitness Signature Activity Neon Palette */
+        --fitness-neon-rose: #fa114f;
+        --fitness-neon-rose-glow: rgba(250, 17, 79, 0.45);
+        --fitness-neon-lime: #a8ff00;
+        --fitness-neon-green: #30d158;
+        --fitness-neon-green-glow: rgba(48, 209, 88, 0.45);
+        --fitness-neon-cyan: #00f0ff;
+        --fitness-neon-blue: #0a84ff;
+        --fitness-neon-amber: #ffd60a;
+        --fitness-neon-orange: #ff9f0a;
+
+        /* iOS Label Hierarchies */
+        --fitness-label-primary: #ffffff;
+        --fitness-label-secondary: #8e8e93;
+        --fitness-label-tertiary: #636366;
+        --fitness-label-quaternary: #48484a;
+
+        /* iOS Continuous Geometry */
+        --fitness-radius-sm: 12px;
+        --fitness-radius-md: 18px;
+        --fitness-radius-lg: 24px;
+        --fitness-radius-xl: 28px;
+        --fitness-radius-pill: 9999px;
+    }
+
+    body {
+        background-color: var(--fitness-black) !important;
+        background-image: none !important;
+        color: var(--fitness-label-primary) !important;
+        font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", "SF Pro Text", "Helvetica Neue", sans-serif !important;
+        -webkit-font-smoothing: antialiased;
+        overscroll-behavior-y: none;
+    }
+
+    #app-container {
+        background-color: var(--fitness-black) !important;
+        min-height: 100vh;
+        width: 100%;
+        max-width: 100vw;
+        overflow-x: hidden;
+    }
+
+    #app-view {
+        background-color: var(--fitness-black) !important;
+        padding: env(safe-area-inset-top, 16px) 16px max(90px, calc(env(safe-area-inset-bottom, 16px) + 76px)) 16px !important;
+        max-width: 100% !important;
+        min-height: 100vh !important;
+        margin: 0 !important;
+        box-sizing: border-box !important;
+    }
+
+    /* --------------------------------------------------------------------------
+       2. Apple Fitness iOS Navigation Bar (Bottom Tab Bar)
+       -------------------------------------------------------------------------- */
+    .bottom-nav {
+        position: fixed !important;
+        bottom: 0 !important;
+        left: 0 !important;
+        right: 0 !important;
+        width: 100vw !important;
+        max-width: 100vw !important;
+        transform: none !important;
+        background: rgba(18, 18, 20, 0.82) !important;
+        backdrop-filter: blur(28px) saturate(200%) !important;
+        -webkit-backdrop-filter: blur(28px) saturate(200%) !important;
+        border-top: 0.5px solid rgba(255, 255, 255, 0.12) !important;
+        display: flex !important;
+        justify-content: space-around !important;
+        align-items: center !important;
+        padding: 8px 12px max(12px, env(safe-area-inset-bottom, 12px)) !important;
+        box-shadow: 0 -4px 30px rgba(0, 0, 0, 0.6) !important;
+        z-index: 9999 !important;
+        box-sizing: border-box !important;
+    }
+
+    .bottom-nav .nav-item {
+        display: flex !important;
+        flex-direction: column !important;
+        align-items: center !important;
+        justify-content: center !important;
+        gap: 3px !important;
+        background: transparent !important;
+        border: none !important;
+        border-radius: 0 !important;
+        padding: 4px 10px !important;
+        color: var(--fitness-label-secondary) !important;
+        font-size: 10.5px !important;
+        font-weight: 500 !important;
+        letter-spacing: 0.02em !important;
+        transition: transform 0.15s cubic-bezier(0.16, 1, 0.3, 1), color 0.15s ease !important;
+        cursor: pointer !important;
+        position: relative !important;
+        flex: 1 !important;
+        max-width: 80px !important;
+    }
+
+    .bottom-nav .nav-item ion-icon {
+        font-size: 22px !important;
+        color: var(--fitness-label-secondary) !important;
+        transition: transform 0.18s cubic-bezier(0.16, 1, 0.3, 1), color 0.18s ease, filter 0.18s ease !important;
+    }
+
+    .bottom-nav .nav-item:active {
+        transform: scale(0.92) !important;
+    }
+
+    /* Active State: Apple Fitness Neon Accent */
+    .bottom-nav .nav-item.active {
+        background: transparent !important;
+        color: #ffffff !important;
+        font-weight: 700 !important;
+    }
+
+    /* Tab-Specific Neon Accents */
+    .bottom-nav .nav-item[data-target="tab-attendance"].active ion-icon {
+        color: var(--fitness-neon-lime) !important;
+        filter: drop-shadow(0 0 8px rgba(168, 255, 0, 0.55)) !important;
+    }
+    .bottom-nav .nav-item[data-target="tab-attendance"].active span {
+        color: var(--fitness-neon-lime) !important;
+    }
+
+    .bottom-nav .nav-item[data-target="tab-calendar"].active ion-icon {
+        color: var(--fitness-neon-cyan) !important;
+        filter: drop-shadow(0 0 8px rgba(0, 240, 255, 0.55)) !important;
+    }
+    .bottom-nav .nav-item[data-target="tab-calendar"].active span {
+        color: var(--fitness-neon-cyan) !important;
+    }
+
+    .bottom-nav .nav-item[data-target="tab-leaves"].active ion-icon {
+        color: var(--fitness-neon-rose) !important;
+        filter: drop-shadow(0 0 8px rgba(250, 17, 79, 0.55)) !important;
+    }
+    .bottom-nav .nav-item[data-target="tab-leaves"].active span {
+        color: var(--fitness-neon-rose) !important;
+    }
+
+    .bottom-nav .nav-item[data-target="tab-holidays"].active ion-icon {
+        color: var(--fitness-neon-amber) !important;
+        filter: drop-shadow(0 0 8px rgba(255, 214, 10, 0.55)) !important;
+    }
+    .bottom-nav .nav-item[data-target="tab-holidays"].active span {
+        color: var(--fitness-neon-amber) !important;
+    }
+
+    /* Subtle active indicator dot */
+    .bottom-nav .nav-item.active::after {
+        content: '';
+        position: absolute;
+        bottom: 0px;
+        width: 4px;
+        height: 4px;
+        border-radius: 50%;
+        background: currentColor;
+    }
+
+    /* --------------------------------------------------------------------------
+       3. iOS Large Title Navigation Header
+       -------------------------------------------------------------------------- */
+    .emp-header {
+        display: flex !important;
+        align-items: flex-start !important;
+        justify-content: space-between !important;
+        padding: 8px 0 20px 0 !important;
+        margin-bottom: 16px !important;
+        border-bottom: none !important;
+        position: relative !important;
+    }
+
+    /* Hide the old inline desktop Sign Out button on mobile */
+    .emp-header #logout-btn {
+        display: none !important;
+    }
+
+    .emp-brand {
+        display: flex !important;
+        flex-direction: column !important;
+        align-items: flex-start !important;
+        gap: 2px !important;
+    }
+
+    /* Hide the old small logo square on mobile to make room for clean iOS Large Title */
+    .emp-brand-icon {
+        display: none !important;
+    }
+
+    .emp-user-meta {
+        display: flex !important;
+        flex-direction: column !important;
+    }
+
+    /* iOS Eyebrow Date */
+    .fitness-date-eyebrow {
+        display: block !important;
+        font-size: 13px !important;
+        font-weight: 700 !important;
+        letter-spacing: 0.06em !important;
+        text-transform: uppercase !important;
+        color: var(--fitness-label-secondary) !important;
+        margin-bottom: 2px !important;
+    }
+
+    /* iOS Large Title */
+    .emp-user-meta h2 {
+        font-size: 32px !important;
+        font-weight: 800 !important;
+        letter-spacing: -0.035em !important;
+        color: #ffffff !important;
+        line-height: 1.15 !important;
+        margin: 0 !important;
+    }
+
+    .emp-user-meta p {
+        font-size: 13px !important;
+        font-weight: 500 !important;
+        color: var(--fitness-label-tertiary) !important;
+        margin-top: 4px !important;
+    }
+
+    /* iOS Profile Avatar Trigger Button */
+    .fitness-avatar-btn {
+        display: flex !important;
+        align-items: center !important;
+        justify-content: center !important;
+        width: 38px !important;
+        height: 38px !important;
+        border-radius: 50% !important;
+        background: linear-gradient(135deg, #2c2c2e 0%, #1c1c1e 100%) !important;
+        border: 1.5px solid rgba(255, 255, 255, 0.18) !important;
+        color: #ffffff !important;
+        font-size: 14px !important;
+        font-weight: 700 !important;
+        cursor: pointer !important;
+        padding: 0 !important;
+        margin-top: 4px !important;
+        box-shadow: 0 4px 14px rgba(0, 0, 0, 0.4) !important;
+        transition: transform 0.15s ease, border-color 0.15s ease !important;
+    }
+    .fitness-avatar-btn:active {
+        transform: scale(0.92) !important;
+        border-color: var(--fitness-neon-lime) !important;
+    }
+
+    /* --------------------------------------------------------------------------
+       4. Apple Fitness Activity Ring Hero Card
+       -------------------------------------------------------------------------- */
+    .punch-card {
+        background: var(--fitness-card) !important;
+        border: 1px solid var(--fitness-border) !important;
+        border-radius: var(--fitness-radius-lg) !important;
+        padding: 24px 18px 20px !important;
+        margin-bottom: 20px !important;
+        box-shadow: 0 10px 30px rgba(0, 0, 0, 0.6) !important;
+        overflow: hidden !important;
+        position: relative !important;
+    }
+
+    .punch-card::before {
+        display: none !important;
+    }
+
+    /* Bold Digital Time */
+    .punch-clock-display {
+        font-size: 44px !important;
+        font-weight: 800 !important;
+        letter-spacing: -0.04em !important;
+        color: #ffffff !important;
+        margin-bottom: 2px !important;
+        font-variant-numeric: tabular-nums !important;
+        line-height: 1.1 !important;
+    }
+
+    .punch-date-display {
+        font-size: 13px !important;
+        font-weight: 500 !important;
+        color: var(--fitness-label-secondary) !important;
+        margin-bottom: 18px !important;
+    }
+
+    /* Apple Fitness Status Pill Badge */
+    .status-pill {
+        display: inline-flex !important;
+        align-items: center !important;
+        gap: 6px !important;
+        font-size: 12px !important;
+        font-weight: 700 !important;
+        letter-spacing: 0.02em !important;
+        border-radius: var(--fitness-radius-pill) !important;
+        padding: 4px 14px !important;
+        margin-bottom: 20px !important;
+        backdrop-filter: blur(10px) !important;
+    }
+
+    .status-pill::before {
+        content: '';
+        display: inline-block;
+        width: 6px;
+        height: 6px;
+        border-radius: 50%;
+        background-color: currentColor;
+    }
+
+    .status-pill.pill-active {
+        background: rgba(48, 209, 88, 0.16) !important;
+        color: var(--fitness-neon-green) !important;
+        border: 1px solid rgba(48, 209, 88, 0.3) !important;
+    }
+    .status-pill.pill-active::before {
+        box-shadow: 0 0 8px var(--fitness-neon-green);
+        animation: fitnessPulseDot 2s infinite ease-in-out;
+    }
+
+    .status-pill.pill-wfh {
+        background: rgba(0, 240, 255, 0.16) !important;
+        color: var(--fitness-neon-cyan) !important;
+        border: 1px solid rgba(0, 240, 255, 0.3) !important;
+    }
+    .status-pill.pill-wfh::before {
+        box-shadow: 0 0 8px var(--fitness-neon-cyan);
+    }
+
+    .status-pill.pill-late {
+        background: rgba(250, 17, 79, 0.16) !important;
+        color: var(--fitness-neon-rose) !important;
+        border: 1px solid rgba(250, 17, 79, 0.3) !important;
+    }
+
+    .status-pill.pill-completed {
+        background: rgba(142, 142, 147, 0.16) !important;
+        color: var(--fitness-label-secondary) !important;
+        border: 1px solid rgba(142, 142, 147, 0.25) !important;
+    }
+
+    @keyframes fitnessPulseDot {
+        0%, 100% { opacity: 1; transform: scale(1); }
+        50% { opacity: 0.4; transform: scale(0.85); }
+    }
+
+    /* --------------------------------------------------------------------------
+       5. Activity Ring Container & Tactile Biometric Button
+       -------------------------------------------------------------------------- */
+    .fitness-ring-wrapper {
+        position: relative !important;
+        width: 172px !important;
+        height: 172px !important;
+        margin: 0 auto 24px auto !important;
+        display: flex !important;
+        align-items: center !important;
+        justify-content: center !important;
+    }
+
+    /* Conic Activity Ring Background Glow */
+    .fitness-ring-track {
+        position: absolute !important;
+        inset: 0 !important;
+        border-radius: 50% !important;
+        padding: 5px !important;
+        background: conic-gradient(from 180deg at 50% 50%, rgba(255, 255, 255, 0.08) 0deg, rgba(255, 255, 255, 0.18) 180deg, rgba(255, 255, 255, 0.08) 360deg) !important;
+        transition: background 0.4s ease, filter 0.4s ease !important;
+    }
+
+    /* Ring Color States */
+    .fitness-ring-wrapper.ring-checked-in .fitness-ring-track {
+        background: conic-gradient(from 180deg at 50% 50%, #fa114f 0deg, #ff3366 180deg, #fa114f 360deg) !important;
+        filter: drop-shadow(0 0 16px rgba(250, 17, 79, 0.5)) !important;
+    }
+
+    .fitness-ring-wrapper.ring-not-checked-in .fitness-ring-track {
+        background: conic-gradient(from 180deg at 50% 50%, #a8ff00 0deg, #30d158 180deg, #a8ff00 360deg) !important;
+        filter: drop-shadow(0 0 16px rgba(168, 255, 0, 0.45)) !important;
+    }
+
+    .fitness-ring-wrapper.ring-wfh .fitness-ring-track {
+        background: conic-gradient(from 180deg at 50% 50%, #00f0ff 0deg, #0a84ff 180deg, #00f0ff 360deg) !important;
+        filter: drop-shadow(0 0 16px rgba(0, 240, 255, 0.5)) !important;
+    }
+
+    .fitness-ring-wrapper.ring-completed .fitness-ring-track {
+        background: rgba(255, 255, 255, 0.12) !important;
+        filter: none !important;
+    }
+
+    /* Inner Button */
+    .punch-circle-btn {
+        width: 148px !important;
+        height: 148px !important;
+        margin: 0 !important;
+        border-radius: 50% !important;
+        position: relative !important;
+        z-index: 2 !important;
+        display: flex !important;
+        flex-direction: column !important;
+        align-items: center !important;
+        justify-content: center !important;
+        gap: 5px !important;
+        cursor: pointer !important;
+        border: none !important;
+        transition: transform 0.18s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.2s ease !important;
+    }
+
+    .punch-circle-btn:active {
+        transform: scale(0.93) !important;
+    }
+
+    .punch-circle-btn.punch-in {
+        background: linear-gradient(145deg, #1c1c1e 0%, #101012 100%) !important;
+        box-shadow: inset 0 2px 6px rgba(255, 255, 255, 0.1), 0 8px 24px rgba(0, 0, 0, 0.8) !important;
+        color: #ffffff !important;
+    }
+    .punch-circle-btn.punch-in ion-icon {
+        color: var(--fitness-neon-lime) !important;
+        filter: drop-shadow(0 0 10px rgba(168, 255, 0, 0.6)) !important;
+    }
+    .punch-circle-btn.punch-in span {
+        color: #ffffff !important;
+    }
+
+    .punch-circle-btn.punch-out {
+        background: linear-gradient(145deg, #241418 0%, #160a0d 100%) !important;
+        box-shadow: inset 0 2px 6px rgba(250, 17, 79, 0.25), 0 8px 24px rgba(0, 0, 0, 0.8) !important;
+        color: #ffffff !important;
+    }
+    .punch-circle-btn.punch-out ion-icon {
+        color: var(--fitness-neon-rose) !important;
+        filter: drop-shadow(0 0 10px rgba(250, 17, 79, 0.7)) !important;
+    }
+    .punch-circle-btn.punch-out span {
+        color: #ffffff !important;
+    }
+
+    .punch-circle-btn ion-icon {
+        font-size: 40px !important;
+    }
+    .punch-circle-btn span {
+        font-size: 13.5px !important;
+        font-weight: 800 !important;
+        letter-spacing: 0.05em !important;
+        text-transform: uppercase !important;
+    }
+
+    /* --------------------------------------------------------------------------
+       6. Apple Fitness 3-Metric Summary Bar
+       -------------------------------------------------------------------------- */
+    #attendance-details {
+        display: grid !important;
+        grid-template-columns: repeat(3, 1fr) !important;
+        gap: 8px !important;
+        margin-top: 18px !important;
+        padding: 0 !important;
+        background: transparent !important;
+        border: none !important;
+    }
+
+    #attendance-details.hidden {
+        display: none !important;
+    }
+
+    .fitness-metric-cell {
+        background: var(--fitness-card-elevated) !important;
+        border: 1px solid var(--fitness-border) !important;
+        border-radius: var(--fitness-radius-md) !important;
+        padding: 12px 8px !important;
+        text-align: center !important;
+        display: flex !important;
+        flex-direction: column !important;
+        align-items: center !important;
+        justify-content: center !important;
+        gap: 2px !important;
+    }
+
+    .fitness-metric-cell .metric-label {
+        font-size: 9.5px !important;
+        font-weight: 700 !important;
+        letter-spacing: 0.05em !important;
+        text-transform: uppercase !important;
+        color: var(--fitness-label-secondary) !important;
+        display: flex !important;
+        align-items: center !important;
+        gap: 4px !important;
+    }
+
+    .fitness-metric-cell .metric-dot {
+        width: 5px;
+        height: 5px;
+        border-radius: 50%;
+        display: inline-block;
+    }
+    .fitness-metric-cell .metric-dot.dot-lime { background: var(--fitness-neon-lime); box-shadow: 0 0 6px var(--fitness-neon-lime); }
+    .fitness-metric-cell .metric-dot.dot-rose { background: var(--fitness-neon-rose); box-shadow: 0 0 6px var(--fitness-neon-rose); }
+    .fitness-metric-cell .metric-dot.dot-cyan { background: var(--fitness-neon-cyan); box-shadow: 0 0 6px var(--fitness-neon-cyan); }
+
+    .fitness-metric-cell .metric-val {
+        font-size: 14px !important;
+        font-weight: 800 !important;
+        color: #ffffff !important;
+        font-variant-numeric: tabular-nums !important;
+    }
+
+    /* Subtitle note */
+    .punch-card > p {
+        font-size: 11px !important;
+        color: var(--fitness-label-tertiary) !important;
+        margin-top: 14px !important;
+        margin-bottom: 0 !important;
+    }
+
+    /* --------------------------------------------------------------------------
+       7. Apple Fitness Style Inset Cards for Calendar, Leaves & Holidays
+       -------------------------------------------------------------------------- */
+    .section-title {
+        font-size: 22px !important;
+        font-weight: 800 !important;
+        letter-spacing: -0.025em !important;
+        color: #ffffff !important;
+        margin-bottom: 14px !important;
+    }
+
+    .section-subtitle {
+        font-size: 12px !important;
+        font-weight: 700 !important;
+        letter-spacing: 0.05em !important;
+        text-transform: uppercase !important;
+        color: var(--fitness-label-secondary) !important;
+        margin-bottom: 10px !important;
+    }
+
+    /* Balances Grid: Activity Trend Tiles */
+    #user-balances-grid {
+        display: grid !important;
+        grid-template-columns: 1fr 1fr !important;
+        gap: 10px !important;
+        margin-bottom: 14px !important;
+    }
+
+    #user-balances-grid .balance-card,
+    #user-balances-grid > div {
+        background: var(--fitness-card) !important;
+        border: 1px solid var(--fitness-border) !important;
+        border-radius: var(--fitness-radius-md) !important;
+        padding: 14px 14px !important;
+        box-shadow: 0 4px 14px rgba(0, 0, 0, 0.4) !important;
+    }
+
+    #user-wfh-balance {
+        margin-bottom: 20px !important;
+    }
+    #user-wfh-balance > div {
+        background: var(--fitness-card) !important;
+        border: 1px solid var(--fitness-border) !important;
+        border-radius: var(--fitness-radius-md) !important;
+        padding: 14px 14px !important;
+    }
+
+    /* Forms & Inset Cards */
+    .card, #apply-leave-form {
+        background: var(--fitness-card) !important;
+        border: 1px solid var(--fitness-border) !important;
+        border-radius: var(--fitness-radius-lg) !important;
+        padding: 18px 16px !important;
+        box-shadow: 0 6px 20px rgba(0, 0, 0, 0.4) !important;
+    }
+
+    /* iOS Segmented Control */
+    .toggle-group {
+        background: var(--fitness-card-elevated) !important;
+        border: 1px solid var(--fitness-border) !important;
+        border-radius: var(--fitness-radius-sm) !important;
+        padding: 3px !important;
+    }
+    .toggle-group label {
+        padding: 7px 12px !important;
+        font-size: 12px !important;
+        font-weight: 600 !important;
+        border-radius: 8px !important;
+        color: var(--fitness-label-secondary) !important;
+        transition: all 0.15s ease !important;
+    }
+    .toggle-group input[type="radio"]:checked + label {
+        background: #3a3a3c !important;
+        color: #ffffff !important;
+        box-shadow: 0 2px 6px rgba(0, 0, 0, 0.5) !important;
+    }
+
+    /* Inputs */
+    input[type="text"], input[type="password"], input[type="date"], select, textarea {
+        background: var(--fitness-card-elevated) !important;
+        border: 1px solid var(--fitness-border) !important;
+        border-radius: var(--fitness-radius-sm) !important;
+        color: #ffffff !important;
+        padding: 10px 12px !important;
+        font-size: 13px !important;
+        outline: none !important;
+        transition: border-color 0.15s ease !important;
+    }
+    input:focus, select:focus, textarea:focus {
+        border-color: var(--fitness-neon-lime) !important;
+    }
+
+    /* Buttons */
+    .btn-primary {
+        background: linear-gradient(135deg, #fa114f 0%, #d4003d 100%) !important;
+        border: none !important;
+        border-radius: var(--fitness-radius-sm) !important;
+        color: #ffffff !important;
+        font-weight: 700 !important;
+        font-size: 14px !important;
+        padding: 12px 18px !important;
+        box-shadow: 0 4px 14px rgba(250, 17, 79, 0.4) !important;
+        transition: transform 0.15s ease !important;
+    }
+    .btn-primary:active {
+        transform: scale(0.97) !important;
+    }
+
+    /* History & Holiday Inset Grouped Items */
+    .history-item, .holiday-card {
+        background: var(--fitness-card) !important;
+        border: 1px solid var(--fitness-border) !important;
+        border-radius: var(--fitness-radius-md) !important;
+        padding: 14px 16px !important;
+        margin-bottom: 8px !important;
+    }
+
+    /* Calendar in Mobile View */
+    .calendar-app-layout {
+        display: flex !important;
+        flex-direction: column !important;
+        gap: 14px !important;
+    }
+    .cal-main-card, .cal-sidebar-card {
+        background: var(--fitness-card) !important;
+        border: 1px solid var(--fitness-border) !important;
+        border-radius: var(--fitness-radius-lg) !important;
+        padding: 16px !important;
+    }
+
+    /* --------------------------------------------------------------------------
+       8. iOS Profile Bottom Action Sheet
+       -------------------------------------------------------------------------- */
+    .fitness-sheet-overlay {
+        position: fixed !important;
+        inset: 0 !important;
+        background: rgba(0, 0, 0, 0.72) !important;
+        backdrop-filter: blur(12px) !important;
+        -webkit-backdrop-filter: blur(12px) !important;
+        z-index: 99998 !important;
+        opacity: 0 !important;
+        pointer-events: none !important;
+        transition: opacity 0.25s ease !important;
+    }
+    .fitness-sheet-overlay.active {
+        opacity: 1 !important;
+        pointer-events: auto !important;
+    }
+
+    .fitness-action-sheet {
+        position: fixed !important;
+        bottom: 0 !important;
+        left: 0 !important;
+        right: 0 !important;
+        background: #1c1c1e !important;
+        border-top: 1px solid rgba(255, 255, 255, 0.12) !important;
+        border-radius: 26px 26px 0 0 !important;
+        padding: 12px 20px max(24px, env(safe-area-inset-bottom, 24px)) 20px !important;
+        z-index: 99999 !important;
+        transform: translateY(100%) !important;
+        transition: transform 0.3s cubic-bezier(0.16, 1, 0.3, 1) !important;
+        box-shadow: 0 -10px 40px rgba(0, 0, 0, 0.8) !important;
+        box-sizing: border-box !important;
+    }
+    .fitness-action-sheet.active {
+        transform: translateY(0) !important;
+    }
+
+    .fitness-sheet-handle {
+        width: 38px;
+        height: 4.5px;
+        background: rgba(255, 255, 255, 0.25);
+        border-radius: 9999px;
+        margin: 0 auto 16px auto;
+    }
+
+    .fitness-sheet-user {
+        display: flex;
+        align-items: center;
+        gap: 14px;
+        padding-bottom: 18px;
+        border-bottom: 0.5px solid rgba(255, 255, 255, 0.1);
+        margin-bottom: 16px;
+    }
+    .fitness-sheet-avatar {
+        width: 50px;
+        height: 50px;
+        border-radius: 50%;
+        background: linear-gradient(135deg, #2c2c2e 0%, #1c1c1e 100%);
+        border: 2px solid rgba(255, 255, 255, 0.2);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 18px;
+        font-weight: 800;
+        color: #ffffff;
+    }
+    .fitness-sheet-user-meta h3 {
+        font-size: 17px;
+        font-weight: 700;
+        color: #ffffff;
+        margin: 0 0 2px 0;
+    }
+    .fitness-sheet-user-meta p {
+        font-size: 12.5px;
+        color: var(--fitness-label-secondary);
+        margin: 0;
+    }
+
+    .fitness-sheet-actions {
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+    }
+    .fitness-sheet-btn {
+        width: 100%;
+        padding: 14px 16px;
+        border-radius: var(--fitness-radius-sm);
+        border: none;
+        font-size: 15px;
+        font-weight: 600;
+        cursor: pointer;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 8px;
+        transition: transform 0.15s ease, background-color 0.15s ease;
+    }
+    .fitness-sheet-btn:active {
+        transform: scale(0.97);
+    }
+    .fitness-sheet-logout {
+        background: rgba(255, 69, 58, 0.14) !important;
+        color: #ff453a !important;
+    }
+    .fitness-sheet-cancel {
+        background: #2c2c2e !important;
+        color: #ffffff !important;
+    }
+}
+
+/* Desktop baseline (> 768px): Guarantee zero regression on desktop */
+@media (min-width: 769px) {
+    .fitness-date-eyebrow,
+    .fitness-avatar-btn,
+    .fitness-sheet-overlay,
+    .fitness-action-sheet {
+        display: none !important;
+    }
+    .fitness-ring-wrapper {
+        position: relative;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        margin: 0 auto 24px;
+    }
+    .fitness-ring-track {
+        display: none !important;
+    }
+    #attendance-details {
+        display: flex;
+        justify-content: center;
+        gap: 12px;
+        margin-top: 16px;
+    }
+    #attendance-details.hidden {
+        display: none !important;
+    }
+    .fitness-metric-cell {
+        background: var(--bg-input);
+        border: 1px solid var(--border-subtle);
+        border-radius: var(--radius-md);
+        padding: 10px 18px;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 4px;
+    }
+    .fitness-metric-cell .metric-label {
+        font-size: 11px;
+        color: var(--text-secondary);
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        text-transform: uppercase;
+        font-weight: 600;
+    }
+    .fitness-metric-cell .metric-dot {
+        width: 6px;
+        height: 6px;
+        border-radius: 50%;
+        display: inline-block;
+    }
+    .fitness-metric-cell .metric-dot.dot-lime { background: #10b981; }
+    .fitness-metric-cell .metric-dot.dot-rose { background: #ef4444; }
+    .fitness-metric-cell .metric-dot.dot-cyan { background: #06b6d4; }
+    .fitness-metric-cell .metric-val {
+        font-size: 14px;
+        font-weight: 700;
+        color: var(--text-primary);
+    }
+}

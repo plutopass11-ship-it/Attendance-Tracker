@@ -69,6 +69,7 @@ window.AdminUI = Object.assign(window.AdminUI || {}, {
             // Initial render with cached data
             this.renderDashboard();
             this.updatePendingLeaveBadge();
+            this.fetchBirthdays();
 
             // Sync with backend DB in background, then update
             Store.syncWithBackend().then(() => {
@@ -79,6 +80,7 @@ window.AdminUI = Object.assign(window.AdminUI || {}, {
                 this.renderDashboard();
                 this.updatePendingLeaveBadge();
                 this.fetchPendingRemovals();
+                this.fetchBirthdays();
             }).catch(err => {
                 console.error("Backend sync notice:", err);
             });
@@ -1053,6 +1055,111 @@ window.AdminUI = Object.assign(window.AdminUI || {}, {
                 });
             } catch(e) { console.error("Takers chart error:", e); }
         }
+
+        // Update Birthday celebration banner & badges
+        this.updateBirthdayUI();
+    },
+
+    // ==========================================
+    // Studio Birthdays & Celebrations (PEMDA Integration)
+    // ==========================================
+    fetchBirthdays: async function(forceSync = false) {
+        try {
+            const url = forceSync ? '/api/pemda/sync' : '/api/birthdays';
+            const method = forceSync ? 'POST' : 'GET';
+            const res = await fetch(url, { method });
+            if (!res.ok) return;
+            const data = await res.json();
+            this.birthdaysData = data;
+            this.updateBirthdayUI();
+        } catch (e) {
+            console.warn('[Birthdays] Fetch failed:', e.message);
+        }
+    },
+
+    updateBirthdayUI: function() {
+        const data = this.birthdaysData;
+        if (!data) return;
+
+        // 1. Update Header Badge
+        const badge = document.getElementById('birthday-badge');
+        if (badge) {
+            const todayCount = (data.today && data.today.length) || 0;
+            if (todayCount > 0) {
+                badge.textContent = todayCount;
+                badge.style.display = 'inline-block';
+            } else if (data.count > 0) {
+                badge.textContent = data.count;
+                badge.style.display = 'inline-block';
+            } else {
+                badge.style.display = 'none';
+            }
+        }
+
+        // 2. Update Dashboard Celebration Banner if today has birthdays
+        const banner = document.getElementById('dash-birthday-banner');
+        const title = document.getElementById('dash-birthday-title');
+        const subtitle = document.getElementById('dash-birthday-subtitle');
+
+        if (banner && data.today && data.today.length > 0) {
+            const names = data.today.map(p => p.name).join(', ');
+            if (title) title.textContent = `🎂 Happy Birthday ${names}! 🎉`;
+            if (subtitle) subtitle.textContent = `Today is their special day! The ESP32 biometric terminal will play Happy Birthday on punch.`;
+            banner.style.display = 'flex';
+        } else if (banner) {
+            banner.style.display = 'none';
+        }
+
+        // 3. Update Modal content if open
+        this.renderBirthdaysModal();
+    },
+
+    renderBirthdaysModal: function() {
+        const data = this.birthdaysData;
+        const listEl = document.getElementById('modal-birthdays-list');
+        const todaySection = document.getElementById('modal-today-birthdays');
+        const todayNames = document.getElementById('modal-today-names');
+
+        if (!listEl) return;
+
+        if (data && data.today && data.today.length > 0) {
+            if (todaySection) todaySection.style.display = 'block';
+            if (todayNames) todayNames.textContent = data.today.map(p => p.name).join(' & ');
+        } else if (todaySection) {
+            todaySection.style.display = 'none';
+        }
+
+        if (!data || !data.birthdays || data.birthdays.length === 0) {
+            listEl.innerHTML = `<div style="text-align:center; padding:20px; color:#64748b; font-size:13px;">No birthdays recorded yet in PEMDA.</div>`;
+            return;
+        }
+
+        listEl.innerHTML = data.birthdays.map(b => {
+            const daysLeft = b.daysUntilBirthday;
+            let timeBadge = '';
+            if (daysLeft === 0) {
+                timeBadge = `<span style="background:rgba(244,63,94,0.2); color:#fb7185; padding:3px 8px; border-radius:12px; font-size:11px; font-weight:700;">🎉 TODAY!</span>`;
+            } else if (daysLeft === 1) {
+                timeBadge = `<span style="background:rgba(251,191,36,0.2); color:#fbbf24; padding:3px 8px; border-radius:12px; font-size:11px; font-weight:600;">Tomorrow</span>`;
+            } else {
+                timeBadge = `<span style="color:#94a3b8; font-size:12px;">in ${daysLeft} days</span>`;
+            }
+
+            return `
+                <div style="display:flex; justify-content:space-between; align-items:center; background:rgba(255,255,255,0.03); border:1px solid rgba(255,255,255,0.06); border-radius:10px; padding:10px 14px;">
+                    <div>
+                        <div style="font-weight:600; color:#fff; font-size:14px; display:flex; align-items:center; gap:8px;">
+                            <span>${b.name}</span>
+                            ${b.empId ? `<span style="font-family:monospace; font-size:10px; background:rgba(255,255,255,0.1); padding:1px 5px; border-radius:4px; color:#94a3b8;">${b.empId}</span>` : ''}
+                        </div>
+                        <div style="font-size:12px; color:#64748b; margin-top:2px;">
+                            ${b.birthdayMonth} ${b.birthdayDay} ${b.turningAge ? `· Turning ${b.turningAge}` : ''} · <span style="color:#94a3b8;">${b.role || b.department || ''}</span>
+                        </div>
+                    </div>
+                    <div>${timeBadge}</div>
+                </div>
+            `;
+        }).join('');
     },
 
     // Segmented tab filtering for Live Attendance Feed
@@ -3137,23 +3244,42 @@ window.AdminUI.renderBiometricTab = async function() {
 
     // 2. Fetch mapped biometric users
     try {
-        const res = await fetch('/api/biometric/users');
-        const data = await res.json();
+        let usersList = [];
+        try {
+            const tRes = await fetch('/api/biometric/templates');
+            const tData = await tRes.json();
+            if (tData.success && tData.templates) {
+                usersList = tData.templates;
+            }
+        } catch (_) {}
+
+        if (usersList.length === 0) {
+            const res = await fetch('/api/biometric/users');
+            const data = await res.json();
+            if (data.success && data.users) {
+                usersList = data.users;
+            }
+        }
+
         const tbody = document.getElementById('biometric-users-tbody');
         const countEl = document.getElementById('bio-users-count');
         if (tbody) {
             tbody.innerHTML = '';
 
-            if (!data.success || !data.users || data.users.length === 0) {
+            if (usersList.length === 0) {
                 tbody.innerHTML = '<tr><td colspan="5" style="text-align:center; color:#64748b; padding:32px;"><ion-icon name="finger-print-outline" style="font-size:36px; opacity:0.3; display:block; margin:0 auto 8px;"></ion-icon>No fingerprints mapped yet.<br><small style="color:#475569;">Click "Enroll Fingerprint" to map an employee.</small></td></tr>';
                 if (countEl) countEl.textContent = '0 slots allocated';
             } else {
-                if (countEl) countEl.textContent = `${data.users.length} active scanner slot allocations`;
-                data.users.forEach(u => {
+                if (countEl) countEl.textContent = `${usersList.length} active scanner slot allocations`;
+                usersList.forEach(u => {
                     const tr = document.createElement('tr');
                     const enrollDate = u.enrolled_at ? new Date(u.enrolled_at).toLocaleDateString('en-US', { day:'numeric', month:'short', year:'numeric' }) : '-';
                     const initials = (u.name || u.user_id || '??').split(' ').map(n => n[0]).join('').substring(0, 2).toUpperCase();
                     
+                    const templateBadge = u.has_template 
+                        ? `<span style="display:inline-flex; align-items:center; gap:3px; font-size:10px; color:#4ade80; background:rgba(34,197,94,0.1); border:1px solid rgba(34,197,94,0.25); padding:1px 5px; border-radius:4px; margin-left:6px;"><ion-icon name="cloud-done-outline"></ion-icon> Cloud Saved</span>`
+                        : `<span style="display:inline-flex; align-items:center; gap:3px; font-size:10px; color:#fbbf24; background:rgba(251,191,36,0.1); border:1px solid rgba(251,191,36,0.25); padding:1px 5px; border-radius:4px; margin-left:6px;"><ion-icon name="cloud-upload-outline"></ion-icon> Sensor Only</span>`;
+
                     tr.innerHTML = `
                         <td style="padding:12px 14px;">
                             <span class="badge-slot">#${String(u.fingerprint_id).padStart(2, '0')}</span>
@@ -3164,7 +3290,7 @@ window.AdminUI.renderBiometricTab = async function() {
                                     ${initials}
                                 </div>
                                 <div>
-                                    <div style="font-weight:700; color:#ffffff; font-size:13px;">${u.name || '-'}</div>
+                                    <div style="font-weight:700; color:#ffffff; font-size:13px; display:flex; align-items:center;">${u.name || '-'}${templateBadge}</div>
                                     <div style="font-size:11px; color:#64748b;">${u.department || 'Studio Artist'}</div>
                                 </div>
                             </div>
@@ -3251,6 +3377,76 @@ window.AdminUI.renderBiometricTab = async function() {
         }
     } catch (err) {
         console.error('Failed to load biometric logs:', err);
+    }
+
+    // 4. Fetch Database Backups
+    try {
+        const res = await fetch('/api/admin/backups');
+        const data = await res.json();
+        const tbody = document.getElementById('database-backups-tbody');
+        if (tbody) {
+            tbody.innerHTML = '';
+            if (!data.success || !data.backups || data.backups.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="5" style="text-align:center; color:#64748b; padding:24px;">No backups generated yet.<br><small style="color:#475569;">Click "Create Database Backup Now" or wait for 02:00 AM IST scheduled run.</small></td></tr>';
+            } else {
+                data.backups.forEach(b => {
+                    const tr = document.createElement('tr');
+                    const dateStr = b.createdAt ? new Date(b.createdAt).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata', dateStyle: 'medium', timeStyle: 'short' }) + ' IST' : '-';
+                    tr.innerHTML = `
+                        <td style="padding:12px 14px; font-family:monospace; color:#38bdf8; font-size:12.5px;">
+                            <ion-icon name="document-text-outline" style="vertical-align:middle; margin-right:6px; color:#818cf8; font-size:15px;"></ion-icon>${b.filename}
+                        </td>
+                        <td style="padding:12px 14px; color:#94a3b8; font-size:12px;">${dateStr}</td>
+                        <td style="padding:12px 14px; color:#cbd5e1; font-weight:600; font-size:12.5px;">${b.sizeFormatted}</td>
+                        <td style="padding:12px 14px;">
+                            <span style="display:inline-flex; align-items:center; gap:4px; font-size:11px; color:#a5b4fc; background:rgba(99,102,241,0.12); border:1px solid rgba(99,102,241,0.25); padding:2px 8px; border-radius:12px;">
+                                <ion-icon name="shield-checkmark-outline"></ion-icon> PostgreSQL Gzip
+                            </span>
+                        </td>
+                        <td style="padding:12px 14px; text-align:right;">
+                            <a href="/api/admin/backups/download/${encodeURIComponent(b.filename)}" class="btn-small" style="padding:5px 12px; font-size:11.5px; font-weight:600; color:#38bdf8; border:1px solid rgba(56,189,248,0.3); background:rgba(56,189,248,0.08); display:inline-flex; align-items:center; gap:5px; border-radius:6px; text-decoration:none;" download>
+                                <ion-icon name="download-outline"></ion-icon> Download
+                            </a>
+                        </td>
+                    `;
+                    tbody.appendChild(tr);
+                });
+            }
+        }
+    } catch (err) {
+        console.error('Failed to load database backups:', err);
+    }
+};
+
+window.AdminUI.triggerDatabaseBackup = async function() {
+    try {
+        const res = await fetch('/api/admin/backups/trigger', { method: 'POST' });
+        const data = await res.json();
+        if (data.success) {
+            alert(`Database Backup Created Successfully!\n\nFile: ${data.backup.filename}\nSize: ${data.backup.sizeFormatted}\nRows: ${data.backup.totalRows} across ${data.backup.tablesCount} tables.`);
+            window.AdminUI.renderBiometricTab();
+        } else {
+            alert('Backup failed: ' + (data.message || 'Unknown error'));
+        }
+    } catch (err) {
+        alert('Error triggering backup: ' + err.message);
+    }
+};
+
+window.AdminUI.triggerTemplateBackup = async function() {
+    try {
+        const res = await fetch('/api/biometric/templates/trigger-backup', { method: 'POST' });
+        const data = await res.json();
+        if (data.success) {
+            alert('Sensor Template Backup Command Sent to ESP32!\n\nThe scanner will extract all enrolled fingerprint templates and upload them to the PostgreSQL database.');
+            setTimeout(() => {
+                window.AdminUI.renderBiometricTab();
+            }, 3000);
+        } else {
+            alert('Failed: ' + (data.message || 'Unknown error'));
+        }
+    } catch (err) {
+        alert('Error triggering template backup: ' + err.message);
     }
 };
 
@@ -3470,7 +3666,40 @@ window.AdminUI.deleteBiometricMapping = async function(fingerprintId, name) {
     }
 };
 
+// Global Birthday Modal Handlers
+window.showUpcomingBirthdaysModal = function() {
+    const modal = document.getElementById('birthdays-modal');
+    if (modal) {
+        modal.classList.remove('hidden');
+        modal.style.display = 'flex';
+        if (window.AdminUI && window.AdminUI.renderBirthdaysModal) {
+            window.AdminUI.renderBirthdaysModal();
+        }
+        if (window.AdminUI && window.AdminUI.fetchBirthdays) {
+            window.AdminUI.fetchBirthdays();
+        }
+    }
+};
+
+window.closeBirthdaysModal = function() {
+    const modal = document.getElementById('birthdays-modal');
+    if (modal) {
+        modal.classList.add('hidden');
+        modal.style.display = 'none';
+    }
+};
+
+window.refreshBirthdays = async function(force = false) {
+    if (window.AdminUI && window.AdminUI.fetchBirthdays) {
+        const btn = document.querySelector('#birthdays-modal button ion-icon[name="sync-outline"]');
+        if (btn && btn.parentElement) btn.parentElement.classList.add('loading');
+        await window.AdminUI.fetchBirthdays(force);
+        if (btn && btn.parentElement) btn.parentElement.classList.remove('loading');
+    }
+};
+
 // Force Vite cache invalidation
-console.log("AdminUI loaded successfully");
+console.log("AdminUI loaded successfully with PEMDA Birthday Support");
+
 
 

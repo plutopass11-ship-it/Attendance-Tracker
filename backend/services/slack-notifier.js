@@ -167,7 +167,7 @@ function renderTemplate(template, vars) {
 /**
  * Main Check-In Notification Dispatcher
  */
-async function notifyCheckIn({ pool, name, userId, email, timeIST, method = 'Biometric Scanner', isWfh = false }) {
+async function notifyCheckIn({ pool, name, userId, email, timeIST, method = 'Biometric Scanner', isWfh = false, isBirthday = false }) {
     try {
         const settings = await getSlackSettings(pool);
         const isLate = (settings.lateCheckInEnabled !== false) && isLateCheckIn(settings.lateThreshold);
@@ -187,14 +187,20 @@ async function notifyCheckIn({ pool, name, userId, email, timeIST, method = 'Bio
         // 1. Send clean 1-on-1 DM to employee
         const employeeSlackId = await resolveSlackUserId({ userId, name, email });
         if (employeeSlackId) {
-            const empMessage = renderTemplate(settings.employeeCheckInTemplate, templateVars);
+            let empMessage = renderTemplate(settings.employeeCheckInTemplate, templateVars);
+            if (isBirthday) {
+                empMessage = `🎉🎂 *HAPPY BIRTHDAY!* 🎂🎉\nWishing you a fantastic day and another great year ahead at Flying Pluto Studios!\n\n` + empMessage;
+            }
             await sendDirectMessage(employeeSlackId, empMessage);
         }
 
         // 2. Broadcast clean notification to all Admin Recipients
         const adminRecipients = Array.isArray(settings.adminRecipients) ? settings.adminRecipients : [];
         if (adminRecipients.length > 0) {
-            const adminMessage = renderTemplate(settings.adminCheckInTemplate, templateVars);
+            let adminMessage = renderTemplate(settings.adminCheckInTemplate, templateVars);
+            if (isBirthday) {
+                adminMessage += `\n🎉 *Birthday Alert:* Today is ${name || userId}'s Birthday! 🎂`;
+            }
             for (const adminEmail of adminRecipients) {
                 const adminSlackId = await resolveSlackUserId({ email: adminEmail });
                 if (adminSlackId) {
@@ -303,6 +309,33 @@ async function notifyEarlyClockoutDecision({ pool, userId, name, email, date, ac
     }
 }
 
+/**
+ * Notifies admins on automated database backup success or failure
+ */
+async function notifyBackupResult({ pool, success, filename, sizeFormatted, totalRows, durationMs, error }) {
+    try {
+        const settings = await getSlackSettings(pool);
+        const adminRecipients = Array.isArray(settings.adminRecipients) ? settings.adminRecipients : [];
+        if (adminRecipients.length === 0 && !process.env.SLACK_WEBHOOK_URL) return;
+
+        let message;
+        if (success) {
+            message = `*Database Automated Backup Succeeded*\n*File:* \`${filename}\` (${sizeFormatted})\n*Rows Dumped:* ${totalRows} rows\n*Duration:* ${(durationMs / 1000).toFixed(2)}s\n*Schedule:* Daily 02:00 AM IST (7-Day Rotation Active)`;
+        } else {
+            message = `*WARNING: Database Automated Backup Failed!*\n*Error:* ${error}\n*Time:* ${new Date().toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' })} IST\nPlease check the attendance server immediately.`;
+        }
+
+        for (const adminEmail of adminRecipients) {
+            const adminSlackId = await resolveSlackUserId({ email: adminEmail });
+            if (adminSlackId) {
+                await sendDirectMessage(adminSlackId, message);
+            }
+        }
+    } catch (err) {
+        console.error('[Slack] notifyBackupResult error:', err);
+    }
+}
+
 module.exports = {
     DEFAULT_SLACK_SETTINGS,
     getSlackSettings,
@@ -310,8 +343,10 @@ module.exports = {
     notifyCheckOut,
     notifyMissingCheckIns,
     notifyEarlyClockoutDecision,
+    notifyBackupResult,
     sendDirectMessage,
     resolveSlackUserId
 };
+
 
 

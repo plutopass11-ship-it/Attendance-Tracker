@@ -23,6 +23,8 @@ document.addEventListener('DOMContentLoaded', () => {
     const attendanceDetails = document.getElementById('attendance-details');
     const valCheckIn = document.getElementById('val-check-in');
     const valCheckOut = document.getElementById('val-check-out');
+    const valDuration = document.getElementById('val-duration');
+    const fitnessRingWrapper = document.getElementById('fitness-ring-wrapper');
     
     // Leaves Elements
     const leaveForm = document.getElementById('leave-form');
@@ -162,9 +164,57 @@ document.addEventListener('DOMContentLoaded', () => {
             const now = new Date();
             currentTimeEl.textContent = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
             currentDateEl.textContent = now.toLocaleDateString('en-US', { weekday: 'long', month: 'short', day: 'numeric' });
+            
+            // Apple Fitness iOS Eyebrow Date
+            const eyebrowEl = document.getElementById('header-today-eyebrow');
+            if (eyebrowEl) {
+                eyebrowEl.textContent = now.toLocaleDateString('en-US', { weekday: 'long', month: 'short', day: 'numeric' }).toUpperCase();
+            }
+
+            // Real-time duration ticker if clocked in
+            if (currentUser && valDuration) {
+                const todayStr = getTodayDateString();
+                const record = Store.getAttendanceToday(currentUser.id, todayStr);
+                if (record && !record.checkOutTime) {
+                    valDuration.textContent = calculateShiftDuration(record.checkInTime, null);
+                }
+            }
         };
         updateTime();
-        timerInterval = setInterval(updateTime, 60000); // update every minute
+        timerInterval = setInterval(updateTime, 30000); // update every 30s
+    }
+
+    function calculateShiftDuration(inTimeStr, outTimeStr) {
+        if (!inTimeStr || inTimeStr === '--:--') return '--:--';
+        try {
+            const parseTime = (tStr) => {
+                const match = tStr.match(/(\d+):(\d+)(?::\d+)?\s*([a-zA-Z]*)/);
+                if (!match) return null;
+                let hrs = parseInt(match[1], 10);
+                const mins = parseInt(match[2], 10);
+                const ampm = match[3]?.toLowerCase();
+                if (ampm === 'pm' && hrs < 12) hrs += 12;
+                if (ampm === 'am' && hrs === 12) hrs = 0;
+                const d = new Date();
+                d.setHours(hrs, mins, 0, 0);
+                return d;
+            };
+
+            const startTime = parseTime(inTimeStr);
+            if (!startTime) return '--:--';
+
+            let endTime = (outTimeStr && outTimeStr !== '--:--') ? parseTime(outTimeStr) : new Date();
+            if (!endTime) endTime = new Date();
+
+            let diffMs = endTime - startTime;
+            if (diffMs < 0) diffMs = 0;
+            const totalMins = Math.floor(diffMs / 60000);
+            const hrs = Math.floor(totalMins / 60);
+            const mins = totalMins % 60;
+            return `${hrs}h ${mins}m`;
+        } catch (e) {
+            return '--:--';
+        }
     }
 
     // --- ATTENDANCE LOGIC ---
@@ -198,6 +248,8 @@ document.addEventListener('DOMContentLoaded', () => {
             mainActionLabel.textContent = "Check In";
             
             attendanceDetails.classList.add('hidden');
+            if (valDuration) valDuration.textContent = '--:--';
+            if (fitnessRingWrapper) fitnessRingWrapper.className = 'fitness-ring-wrapper ring-not-checked-in';
         } else if (!record.checkOutTime) {
             // Checked in, not checked out
             const isWfh = _isWfhAttendanceStatus(record.status);
@@ -212,6 +264,8 @@ document.addEventListener('DOMContentLoaded', () => {
             attendanceDetails.classList.remove('hidden');
             valCheckIn.textContent = record.checkInTime;
             valCheckOut.textContent = "--:--";
+            if (valDuration) valDuration.textContent = calculateShiftDuration(record.checkInTime, null);
+            if (fitnessRingWrapper) fitnessRingWrapper.className = isWfh ? 'fitness-ring-wrapper ring-wfh' : 'fitness-ring-wrapper ring-checked-in';
         } else if (_isPendingAttendanceStatus(record.status)) {
             // Pending Early Checkout
             if (statusText) {
@@ -228,6 +282,8 @@ document.addEventListener('DOMContentLoaded', () => {
             attendanceDetails.classList.remove('hidden');
             valCheckIn.textContent = record.checkInTime;
             valCheckOut.textContent = record.checkOutTime;
+            if (valDuration) valDuration.textContent = calculateShiftDuration(record.checkInTime, record.checkOutTime);
+            if (fitnessRingWrapper) fitnessRingWrapper.className = 'fitness-ring-wrapper ring-not-checked-in';
         } else {
             // Checked out (day completed)
             const isWfh = _isWfhAttendanceStatus(record.status);
@@ -245,6 +301,8 @@ document.addEventListener('DOMContentLoaded', () => {
             attendanceDetails.classList.remove('hidden');
             valCheckIn.textContent = record.checkInTime;
             valCheckOut.textContent = record.checkOutTime;
+            if (valDuration) valDuration.textContent = calculateShiftDuration(record.checkInTime, record.checkOutTime);
+            if (fitnessRingWrapper) fitnessRingWrapper.className = 'fitness-ring-wrapper ring-completed';
         }
     }
 
@@ -767,6 +825,49 @@ document.addEventListener('DOMContentLoaded', () => {
         currentUser = null;
         showLogin();
     });
+
+    // iOS Profile Action Sheet (Mobile)
+    const fitnessAvatarBtn = document.getElementById('fitness-avatar-btn');
+    const fitnessSheetOverlay = document.getElementById('fitness-sheet-overlay');
+    const fitnessActionSheet = document.getElementById('fitness-action-sheet');
+    const sheetLogoutBtn = document.getElementById('sheet-logout-btn');
+    const sheetCancelBtn = document.getElementById('sheet-cancel-btn');
+
+    function openFitnessProfileSheet() {
+        if (!currentUser) return;
+        const initialEl = document.getElementById('sheet-user-initial');
+        const nameEl = document.getElementById('sheet-user-name');
+        const deptEl = document.getElementById('sheet-user-dept');
+        if (initialEl) initialEl.textContent = (currentUser.name || 'U').charAt(0).toUpperCase();
+        if (nameEl) nameEl.textContent = currentUser.name || 'Team Member';
+        if (deptEl) deptEl.textContent = currentUser.department ? `Flying Pluto Studios · ${currentUser.department}` : 'Flying Pluto Studios · Team';
+
+        if (fitnessSheetOverlay) fitnessSheetOverlay.classList.add('active');
+        if (fitnessActionSheet) fitnessActionSheet.classList.add('active');
+    }
+
+    function closeFitnessProfileSheet() {
+        if (fitnessSheetOverlay) fitnessSheetOverlay.classList.remove('active');
+        if (fitnessActionSheet) fitnessActionSheet.classList.remove('active');
+    }
+
+    if (fitnessAvatarBtn) {
+        fitnessAvatarBtn.addEventListener('click', openFitnessProfileSheet);
+    }
+    if (fitnessSheetOverlay) {
+        fitnessSheetOverlay.addEventListener('click', closeFitnessProfileSheet);
+    }
+    if (sheetCancelBtn) {
+        sheetCancelBtn.addEventListener('click', closeFitnessProfileSheet);
+    }
+    if (sheetLogoutBtn) {
+        sheetLogoutBtn.addEventListener('click', () => {
+            closeFitnessProfileSheet();
+            Auth.logout();
+            currentUser = null;
+            showLogin();
+        });
+    }
 
     navItems.forEach(nav => {
         nav.addEventListener('click', () => {
