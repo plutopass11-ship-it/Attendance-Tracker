@@ -1755,10 +1755,8 @@ app.post('/api/biometric/punch', requireBioApiKey, async (req, res) => {
           );
           await client.query(`INSERT INTO biometric_logs (fingerprint_id, user_id, action, status, hours_worked) VALUES ($1, $2, 'check_out', 'success', $3)`, [fingerprint_id, userId, hoursWorkedDecimal.toFixed(2)]);
           
-          const checkOutMsg = isBirthday
-            ? `🎉 Happy Birthday ${name.split(' ')[0]}!`
-            : (isAdmin ? 'Have a great evening Boss' : 'Goodbye!');
-          responseObj = { success: true, action: 'check_out', name, time: timeIST, is_admin: isAdmin, is_birthday: isBirthday, status: newStatus.replace('wfh_', ''), hours_worked: hoursWorkedStr, message: checkOutMsg };
+          const checkOutMsg = isAdmin ? 'Have a great evening Boss' : 'Goodbye!';
+          responseObj = { success: true, action: 'check_out', name, time: timeIST, is_admin: isAdmin, is_birthday: false, status: newStatus.replace('wfh_', ''), hours_worked: hoursWorkedStr, message: checkOutMsg };
 
           // Send clean Slack notification
           try {

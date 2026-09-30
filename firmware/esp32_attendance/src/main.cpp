@@ -301,9 +301,32 @@ void buzzerEnrollFail() {
 }
 
 void buzzerHappyBirthday() {
-  int notes[] =     { 262, 262, 294, 262, 349, 330,   0, 262, 262, 294, 262, 392, 349 };
-  int durations[] = { 250, 200, 400, 400, 400, 700, 150, 250, 200, 400, 400, 400, 800 };
-  int count = 13;
+  // Complete Happy Birthday to You Melody (Full 4 Phrases)
+  // Notes in Hz: C4=262, D4=294, E4=330, F4=349, G4=392, A4=440, Bb4=466, C5=523, 0=Rest
+  const int notes[] = {
+    // Phrase 1: "Happy Birthday to you"
+    262, 262, 294, 262, 349, 330, 0,
+    // Phrase 2: "Happy Birthday to you"
+    262, 262, 294, 262, 392, 349, 0,
+    // Phrase 3: "Happy Birthday dear [Name]" (Octave jump to C5)
+    262, 262, 523, 440, 349, 330, 294, 0,
+    // Phrase 4: "Happy Birthday to you!" (Grand finale with Bb4)
+    466, 466, 440, 349, 392, 349
+  };
+
+  const int durations[] = {
+    // Phrase 1
+    220, 200, 400, 400, 400, 700, 120,
+    // Phrase 2
+    220, 200, 400, 400, 400, 700, 120,
+    // Phrase 3
+    220, 200, 440, 400, 400, 400, 700, 120,
+    // Phrase 4
+    220, 200, 400, 400, 440, 900
+  };
+
+  const int count = sizeof(notes) / sizeof(notes[0]);
+
   for (int i = 0; i < count; i++) {
     if (notes[i] > 0) {
       tone(PIN_BUZZER, notes[i]);
@@ -312,7 +335,7 @@ void buzzerHappyBirthday() {
     } else {
       delay(durations[i]);
     }
-    delay(40);
+    delay(35); // Crisp articulation pause between notes
   }
 }
 
@@ -1198,16 +1221,18 @@ void postPunch(uint16_t fingerprintId) {
         }
       }
       
-      if (isBirthday) {
-        displayBirthday(name.c_str());
-        buzzerHappyBirthday();
-        Serial.printf("HAPPY BIRTHDAY: %s!\n", name.c_str());
-        displayRestoreTime = millis() + 5000;
-        needsDisplayRestore = true;
-      } else if (action == "check_in") {
-        displayCheckIn(name.c_str(), timeStr.c_str(), fingerprintId, isAdmin);
-        buzzerCheckIn();
-        Serial.printf("CHECK-IN (%s): %s at %s\n", isAdmin ? "BOSS" : "USER", name.c_str(), timeStr.c_str());
+      if (action == "check_in") {
+        if (isBirthday) {
+          displayBirthday(name.c_str());
+          buzzerHappyBirthday();
+          Serial.printf("HAPPY BIRTHDAY CHECK-IN: %s!\n", name.c_str());
+          displayRestoreTime = millis() + 5000;
+          needsDisplayRestore = true;
+        } else {
+          displayCheckIn(name.c_str(), timeStr.c_str(), fingerprintId, isAdmin);
+          buzzerCheckIn();
+          Serial.printf("CHECK-IN (%s): %s at %s\n", isAdmin ? "BOSS" : "USER", name.c_str(), timeStr.c_str());
+        }
       } else if (action == "check_out") {
         String hours = resp["hours_worked"] | "";
         displayCheckOut(name.c_str(), timeStr.c_str(), hours.c_str(), isAdmin);
