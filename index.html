@@ -1779,8 +1779,8 @@
             <!-- PEMDA Sync Status Pill -->
             <div style="display:flex; justify-content:space-between; align-items:center; background:rgba(255,255,255,0.04); border:1px solid rgba(255,255,255,0.08); border-radius:8px; padding:8px 12px; margin-bottom:16px; font-size:12px;">
                 <div style="display:flex; align-items:center; gap:6px; color:#94a3b8;">
-                    <span style="display:inline-block; width:8px; height:8px; border-radius:50%; background:#10b981;"></span>
-                    <span>Synced with PEMDA NAS (Port 7589)</span>
+                    <span id="pemda-status-dot" style="display:inline-block; width:8px; height:8px; border-radius:50%; background:#10b981;"></span>
+                    <span id="pemda-status-text">Synced with PEMDA NAS (Port 7589)</span>
                 </div>
                 <button type="button" class="btn-neutral btn-small" style="padding:3px 8px; font-size:11px;" onclick="window.refreshBirthdays(true)">
                     <ion-icon name="sync-outline"></ion-icon> <span>Sync Now</span>

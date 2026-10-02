@@ -1065,23 +1065,95 @@ window.AdminUI = Object.assign(window.AdminUI || {}, {
     // ==========================================
     fetchBirthdays: async function(forceSync = false) {
         try {
-            const url = forceSync ? '/api/pemda/sync' : '/api/birthdays';
-            const method = forceSync ? 'POST' : 'GET';
-            const res = await fetch(url, { method });
-            if (!res.ok) return;
-            const data = await res.json();
-            this.birthdaysData = data;
+            let data = null;
+
+            // 1. Try local attendance backend proxy endpoint first
+            try {
+                const url = forceSync ? '/api/pemda/sync' : '/api/birthdays';
+                const method = forceSync ? 'POST' : 'GET';
+                const res = await fetch(url, { method });
+                if (res.ok) {
+                    const json = await res.json();
+                    if (json && Array.isArray(json.birthdays) && json.birthdays.length > 0) {
+                        data = json;
+                    }
+                }
+            } catch (e) {
+                // Ignore and try fallback
+            }
+
+            // 2. Direct PEMDA fallback (port 7589 on NAS)
+            if (!data) {
+                try {
+                    const pemdaRes = await fetch('http://192.168.1.60:7589/api/birthdays', { signal: AbortSignal.timeout(4000) });
+                    if (pemdaRes.ok) {
+                        const pemdaJson = await pemdaRes.json();
+                        const list = (pemdaJson.birthdays || []).map(b => ({
+                            ...b,
+                            daysUntilBirthday: b.daysUntilBirthday ?? 999
+                        }));
+                        list.sort((a, b) => a.daysUntilBirthday - b.daysUntilBirthday);
+
+                        const nowIST = new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Kolkata' }));
+                        const curM = nowIST.getMonth() + 1;
+                        const curD = nowIST.getDate();
+
+                        const todayCelebrants = list.filter(b => {
+                            if (!b.dateOfBirth) return false;
+                            const parts = b.dateOfBirth.split('-');
+                            return parts.length >= 3 && parseInt(parts[1], 10) === curM && parseInt(parts[2], 10) === curD;
+                        });
+
+                        data = {
+                            success: true,
+                            count: list.length,
+                            birthdays: list,
+                            today: todayCelebrants,
+                            status: {
+                                connected: true,
+                                pemdaUrl: 'http://192.168.1.60:7589',
+                                birthdaysCount: list.length
+                            }
+                        };
+                    }
+                } catch (e) {
+                    console.warn('[Birthdays] Direct PEMDA fallback failed:', e.message);
+                }
+            }
+
+            if (data) {
+                this.birthdaysData = data;
+            }
             this.updateBirthdayUI();
         } catch (e) {
             console.warn('[Birthdays] Fetch failed:', e.message);
+            this.updateBirthdayUI();
         }
     },
 
     updateBirthdayUI: function() {
         const data = this.birthdaysData;
+
+        // 1. Update Sync Status Pill in Modal
+        const statusText = document.getElementById('pemda-status-text');
+        const statusDot = document.getElementById('pemda-status-dot');
+        if (statusText) {
+            if (data && data.status && data.status.connected) {
+                const count = (data.birthdays && data.birthdays.length) || 0;
+                statusText.textContent = `Synced with PEMDA · ${count} Active Record${count === 1 ? '' : 's'}`;
+                if (statusDot) statusDot.style.background = '#10b981';
+            } else if (data) {
+                statusText.textContent = 'PEMDA Connected';
+                if (statusDot) statusDot.style.background = '#10b981';
+            } else {
+                statusText.textContent = 'PEMDA Disconnected';
+                if (statusDot) statusDot.style.background = '#ef4444';
+            }
+        }
+
         if (!data) return;
 
-        // 1. Update Header Badge
+        // 2. Update Header Badge
         const badge = document.getElementById('birthday-badge');
         if (badge) {
             const todayCount = (data.today && data.today.length) || 0;
@@ -1096,7 +1168,7 @@ window.AdminUI = Object.assign(window.AdminUI || {}, {
             }
         }
 
-        // 2. Update Dashboard Celebration Banner if today has birthdays
+        // 3. Update Dashboard Celebration Banner if today has birthdays
         const banner = document.getElementById('dash-birthday-banner');
         const title = document.getElementById('dash-birthday-title');
         const subtitle = document.getElementById('dash-birthday-subtitle');
@@ -1110,7 +1182,7 @@ window.AdminUI = Object.assign(window.AdminUI || {}, {
             banner.style.display = 'none';
         }
 
-        // 3. Update Modal content if open
+        // 4. Update Modal content if open
         this.renderBirthdaysModal();
     },
 
