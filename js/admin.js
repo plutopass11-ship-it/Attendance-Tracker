@@ -115,7 +115,33 @@ window.AdminUI = Object.assign(window.AdminUI || {}, {
         this.renderDashboard();
     },
 
+    openSidebar: function() {
+        const sidebar = document.querySelector('.admin-sidebar');
+        const overlay = document.getElementById('admin-sidebar-overlay');
+        if (sidebar) sidebar.classList.add('open');
+        if (overlay) overlay.classList.add('active');
+        document.body.classList.add('sidebar-open');
+    },
+
+    closeSidebar: function() {
+        const sidebar = document.querySelector('.admin-sidebar');
+        const overlay = document.getElementById('admin-sidebar-overlay');
+        if (sidebar) sidebar.classList.remove('open');
+        if (overlay) overlay.classList.remove('active');
+        document.body.classList.remove('sidebar-open');
+    },
+
+    toggleSidebar: function() {
+        const sidebar = document.querySelector('.admin-sidebar');
+        if (sidebar && sidebar.classList.contains('open')) {
+            this.closeSidebar();
+        } else {
+            this.openSidebar();
+        }
+    },
+
     switchToSlackTab: function() {
+        this.closeSidebar();
         const slackBtn = document.querySelector('.admin-nav-item[data-target="admin-tab-slack"]');
         if (slackBtn) {
             slackBtn.click();
@@ -131,6 +157,39 @@ window.AdminUI = Object.assign(window.AdminUI || {}, {
     },
     
     setupEventListeners: function() {
+        // Mobile Sidebar Controls
+        const mobileMenuBtn = document.getElementById('mobile-menu-btn');
+        if (mobileMenuBtn) {
+            mobileMenuBtn.onclick = (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                this.toggleSidebar();
+            };
+        }
+
+        const sidebarCloseBtn = document.getElementById('sidebar-close-btn');
+        if (sidebarCloseBtn) {
+            sidebarCloseBtn.onclick = (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                this.closeSidebar();
+            };
+        }
+
+        const sidebarOverlay = document.getElementById('admin-sidebar-overlay');
+        if (sidebarOverlay) {
+            sidebarOverlay.onclick = (e) => {
+                e.preventDefault();
+                this.closeSidebar();
+            };
+        }
+
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 'Escape') {
+                this.closeSidebar();
+            }
+        });
+
         // Nav switching
         const adminNavs = document.querySelectorAll('.admin-nav-item');
         adminNavs.forEach(nav => {
@@ -144,6 +203,9 @@ window.AdminUI = Object.assign(window.AdminUI || {}, {
                 // Hide all tabs
                 document.querySelectorAll('.admin-tab').forEach(t => t.classList.add('hidden'));
                 document.getElementById(target).classList.remove('hidden');
+
+                // Collapse mobile sidebar on navigation selection
+                this.closeSidebar();
                 
                 // Render corresponding tab data
                 if(target === 'admin-tab-dashboard') this.renderDashboard();
@@ -3504,6 +3566,11 @@ window.AdminUI.deleteBiometricMapping = async function(fingerprintId, name) {
         alert('Network error: ' + err.message);
     }
 };
+
+// Global Mobile Sidebar Helpers
+window.openAdminSidebar = function() { window.AdminUI?.openSidebar(); };
+window.closeAdminSidebar = function() { window.AdminUI?.closeSidebar(); };
+window.toggleAdminSidebar = function() { window.AdminUI?.toggleSidebar(); };
 
 // Force Vite cache invalidation
 console.log("AdminUI loaded successfully");

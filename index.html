@@ -9,7 +9,7 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="css/style.css?v=pluto_og_2026_v36">
-    <link rel="stylesheet" href="css/admin.css?v=pluto_og_2026_v36">
+    <link rel="stylesheet" href="css/admin.css?v=pluto_og_2026_v39">
     <!-- Ionicons for modern icons -->
     <script type="module" src="https://unpkg.com/ionicons@7.1.0/dist/ionicons/ionicons.esm.js"></script>
     <script src="https://unpkg.com/ionicons@7.1.0/dist/ionicons/ionicons.js"></script>
@@ -58,6 +58,9 @@
 
         <!-- 2. Admin App View (OnlyGenius Aesthetic) -->
         <div id="admin-view" class="view hidden admin-layout">
+            <!-- Sidebar Backdrop Overlay for Mobile -->
+            <div class="admin-sidebar-overlay" id="admin-sidebar-overlay"></div>
+
             <!-- Sidebar -->
             <aside class="admin-sidebar">
                 <div class="sidebar-header">
@@ -70,6 +73,9 @@
                             <span class="brand-subtitle">Studio Portal</span>
                         </div>
                     </div>
+                    <button type="button" class="sidebar-close-btn" id="sidebar-close-btn" aria-label="Close menu">
+                        <ion-icon name="close-outline"></ion-icon>
+                    </button>
                 </div>
 
                 <nav class="sidebar-nav">
@@ -130,7 +136,7 @@
             <main class="admin-main">
                 <header class="admin-header">
                     <div class="header-left">
-                        <button class="mobile-menu-toggle" id="mobile-menu-btn" onclick="document.querySelector('.admin-sidebar').classList.toggle('open')">
+                        <button class="mobile-menu-toggle" id="mobile-menu-btn" onclick="window.AdminUI ? window.AdminUI.toggleSidebar() : document.querySelector('.admin-sidebar').classList.toggle('open')" aria-label="Toggle navigation menu">
                             <ion-icon name="menu-outline"></ion-icon>
                         </button>
                         <div class="header-title-group">
@@ -139,14 +145,14 @@
                         </div>
                     </div>
                     <div class="header-actions">
-                        <button id="btn-export-data" class="btn-neutral btn-small">
+                        <button id="btn-export-data" class="btn-neutral btn-small" title="Export Backup">
                             <ion-icon name="download-outline"></ion-icon> <span>Export Backup</span>
                         </button>
                         <label class="btn-neutral btn-small" style="cursor:pointer;" title="Import JSON Backup">
                             <ion-icon name="cloud-upload-outline"></ion-icon> <span>Import</span>
                             <input type="file" id="file-import-data" accept=".json" style="display:none;">
                         </label>
-                        <button type="button" class="btn-primary btn-small" onclick="window.switchToSlackTab()">
+                        <button type="button" class="btn-primary btn-small" onclick="window.switchToSlackTab()" title="Slack Settings">
                             <ion-icon name="settings-outline"></ion-icon> <span>Slack Settings</span>
                         </button>
                     </div>
@@ -2047,6 +2053,9 @@
         }
 
         window.switchToSlackTab = function() {
+            if (window.AdminUI && typeof window.AdminUI.closeSidebar === 'function') {
+                window.AdminUI.closeSidebar();
+            }
             const slackBtn = document.querySelector('.admin-nav-item[data-target="admin-tab-slack"]');
             if (slackBtn) {
                 slackBtn.click();
@@ -2364,7 +2373,7 @@
     <script src="js/auth.js?v=pluto_og_2026_v38"></script>
     <script src="js/store.js?v=pluto_og_2026_v38"></script>
     <script src="js/app.js?v=pluto_og_2026_v38"></script>
-    <script src="js/admin.js?v=pluto_og_2026_v38"></script>
+    <script src="js/admin.js?v=pluto_og_2026_v39"></script>
     <script src="js/reports.js?v=pluto_og_2026_v38"></script>
     <script src="js/overtime.js?v=pluto_og_2026_v38"></script>
     
