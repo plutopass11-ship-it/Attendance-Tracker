@@ -1391,7 +1391,6 @@ window.AdminUI = Object.assign(window.AdminUI || {}, {
                     <td><span style="color:var(--text-secondary); font-family:var(--font-mono); font-size:12px;">${email}</span></td>
                     <td><span class="status-pill pill-present">Active</span></td>
                     <td>${accessBadge}</td>
-                    <td><span class="badge" style="background: rgba(255,255,255,0.06); border: 1px solid ${optColor}; color:${optColor}; font-weight:600;">${optRemaining} / 3 Left</span></td>
                     <td>
                         <div style="display:flex; gap:6px; align-items:center;">
                             <button class="btn-neutral btn-small" onclick="window.AdminUI.openUserDetail('${p.id}')">View Details</button>

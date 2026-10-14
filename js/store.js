@@ -394,8 +394,15 @@ const Store = {
         });
     },
     getRemainingQuota: (userId) => {
-        const leaves = Store.getUserLeaves(userId);
-        const claimed = leaves.filter(l => l.type === 'Optional Holiday').length;
+        const allLeaves = Store.getAllLeaves ? Store.getAllLeaves() : Store.getLeaves();
+        const claimed = allLeaves.filter(l => {
+            const matchesUser = l.userId === userId || (l.userEmail && l.userEmail.toLowerCase() === (userId || '').toLowerCase());
+            const typeStr = (l.type || '').trim().toLowerCase();
+            const isOpt = typeStr === 'optional holiday' || typeStr.includes('optional');
+            const statusStr = (l.status || '').trim().toLowerCase();
+            const isApproved = statusStr === 'approved' || statusStr === 'pending';
+            return matchesUser && isOpt && isApproved;
+        }).length;
         return Math.max(0, GLOBAL_QUOTA - claimed);
     },
 
