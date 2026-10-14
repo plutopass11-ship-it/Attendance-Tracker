@@ -1375,6 +1375,9 @@ window.AdminUI = Object.assign(window.AdminUI || {}, {
                 const initials = (fullName.split(' ').map(n=>n[0]).join('') || 'U').substring(0, 2).toUpperCase();
                 const extra = Store.getExtraOff(p.id) || { leaves: 0, wfh: 0 };
                 
+                const optRemaining = Store.getRemainingQuota(p.id);
+                const optColor = optRemaining > 0 ? '#10b981' : '#64748b';
+
                 tr.innerHTML = `
                     <td>
                         <div class="user-cell">
@@ -1388,6 +1391,7 @@ window.AdminUI = Object.assign(window.AdminUI || {}, {
                     <td><span style="color:var(--text-secondary); font-family:var(--font-mono); font-size:12px;">${email}</span></td>
                     <td><span class="status-pill pill-present">Active</span></td>
                     <td>${accessBadge}</td>
+                    <td><span class="badge" style="background: rgba(255,255,255,0.06); border: 1px solid ${optColor}; color:${optColor}; font-weight:600;">${optRemaining} / 3 Left</span></td>
                     <td>
                         <div style="display:flex; gap:6px; align-items:center;">
                             <button class="btn-neutral btn-small" onclick="window.AdminUI.openUserDetail('${p.id}')">View Details</button>
@@ -1469,6 +1473,11 @@ window.AdminUI = Object.assign(window.AdminUI || {}, {
         document.getElementById('user-detail-name').textContent = user.name;
         document.getElementById('user-detail-email').textContent = userId;
 
+        // Optional Holiday balance
+        const optRemaining = Store.getRemainingQuota(userId);
+        const optUsed = Math.max(0, 3 - optRemaining);
+        const optColor = optRemaining > 0 ? '#10b981' : '#64748b';
+
         // Leave balance cards
         const balancesDiv = document.getElementById('user-detail-leave-balances');
         balancesDiv.innerHTML = '';
@@ -1491,6 +1500,22 @@ window.AdminUI = Object.assign(window.AdminUI || {}, {
                 </div>
             `;
         });
+        balancesDiv.innerHTML += `
+                <div style="background:rgba(16,185,129,0.08); border:1px solid rgba(16,185,129,0.25); border-radius:10px; padding:14px;">
+                    <div style="display:flex; justify-content:space-between; margin-bottom:6px;">
+                        <strong style="font-size:13px; color:#10b981;">Optional Holiday</strong>
+                        <span style="font-size:12px; color:var(--text-muted);">Annual</span>
+                    </div>
+                    <div style="display:flex; justify-content:space-between; font-size:12px; color:var(--text-muted); margin-bottom:6px;">
+                        <span>Claimed: <strong style="color:var(--text-main)">${optUsed}</strong></span>
+                        <span>Left: <strong style="color:${optColor}">${optRemaining}</strong> / 3</span>
+                    </div>
+                    <div style="background:rgba(255,255,255,0.08); border-radius:4px; height:6px; overflow:hidden;">
+                        <div style="width:${(optUsed / 3) * 100}%; height:100%; background:${optColor}; border-radius:4px;"></div>
+                    </div>
+                </div>
+            `;
+
         if (extraLeaves > 0) {
             balancesDiv.innerHTML += `
                 <div style="background:var(--glass-bg); border:1px solid var(--glass-border); border-radius:10px; padding:14px;">
@@ -2041,6 +2066,17 @@ window.AdminUI = Object.assign(window.AdminUI || {}, {
                 <td><strong>${h.date}</strong></td>
                 <td>${h.name}</td>
                 <td><span class="badge" style="background: ${h.type==='Optional'?'var(--warning)':'var(--success)'}; color:white">${h.type || 'Public'}</span></td>
+                <td>${(() => {
+                    if (h.type !== 'Optional') return '<span style="color:var(--text-muted); font-size:12px;">All Team</span>';
+                    const allLeaves = Store.getAllLeaves ? Store.getAllLeaves() : Store.getLeaves();
+                    const claims = allLeaves.filter(l => l.type === 'Optional Holiday' && l.startDate === h.date && l.status === 'Approved');
+                    if (claims.length === 0) return '<span style="color:var(--text-muted); font-size:12px;">0 claimed</span>';
+                    const names = claims.map(c => {
+                        const u = window.AdminUI._cachedUsers?.find(usr => usr.id === c.userId);
+                        return u ? u.name : (c.userName || c.userId);
+                    }).join(', ');
+                    return `<span class="badge approved" title="${names}" style="cursor:help;">${claims.length} Claimed</span> <small style="color:var(--text-muted); font-size:11px;">(${names})</small>`;
+                })()}</td>
                 <td>
                     <div class="action-row">
                         <button class="btn-small btn-primary" onclick="window.AdminUI.openEditHolidayModal('${h.date}', '${h.name.replace(/'/g, "\\'")}', '${h.type}')">Edit</button>
