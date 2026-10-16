@@ -250,12 +250,24 @@ async function syncKitsuDepartments() {
         });
         const personData = detailRes.ok ? await detailRes.json() : p;
         const dept = resolveDepartmentName(personData, deptMap);
-        await pool.query('UPDATE users SET department = $1 WHERE user_id = $2', [dept, p.email]);
+        const canonicalEmail = p.email.trim().toLowerCase();
+        const fullName = `${p.first_name || ''} ${p.last_name || ''}`.trim() || canonicalEmail;
+        const role = ['admin', 'studio_manager'].includes(p.role) ? 'admin' : 'user';
+        const phone = p.phone || null;
+        const slackId = p.notifications_slack_userid || null;
+
+        await pool.query(
+          `INSERT INTO users (user_id, name, password, role, phone, slack_id, department, kitsu_id, is_active)
+           VALUES ($1, $2, 'synced_from_kitsu', $3, $4, $5, $6, $7, $8)
+           ON CONFLICT (user_id) 
+           DO UPDATE SET name = $2, role = $3, department = $6, kitsu_id = COALESCE($7, users.kitsu_id), phone = COALESCE($4, users.phone), slack_id = COALESCE($5, users.slack_id), is_active = $8`,
+          [canonicalEmail, fullName, role, phone, slackId, dept, p.id, p.active !== false]
+        );
       } catch (e) {
-        console.error(`Error updating dept for ${p.email}:`, e.message);
+        console.error(`Error syncing user ${p.email}:`, e.message);
       }
     }
-    console.log(`[Kitsu Sync] Synced departments for ${persons.length} user(s).`);
+    console.log(`[Kitsu Sync] Synced departments and users for ${persons.length} user(s).`);
   } catch (err) {
     console.error('[Kitsu Sync] Error syncing departments:', err.message);
   }
@@ -279,7 +291,8 @@ async function getKitsuUser(email) {
       return null;
     }
     const persons = await response.json(); 
-    const summary = persons.find(p => p.email === email);
+    const searchEmail = (email || '').trim().toLowerCase();
+    const summary = persons.find(p => p.email && p.email.trim().toLowerCase() === searchEmail);
     if (!summary) return null;
 
     try {
@@ -300,18 +313,117 @@ async function getKitsuUser(email) {
   }
 }
 
+// Robust user resolver: guarantees returned user_id exists in users table and satisfies foreign keys
+async function resolveUserId(rawUserId) {
+  if (!rawUserId) return null;
+  const cleanId = String(rawUserId).trim();
+  const lowerId = cleanId.toLowerCase();
+
+  // 1. Direct match in users table
+  let uRes = await pool.query('SELECT user_id FROM users WHERE user_id = $1', [cleanId]);
+  if (uRes.rowCount > 0) return uRes.rows[0].user_id;
+
+  // 2. Case-insensitive match in users table
+  uRes = await pool.query('SELECT user_id FROM users WHERE LOWER(user_id) = $1', [lowerId]);
+  if (uRes.rowCount > 0) return uRes.rows[0].user_id;
+
+  // 3. Super admin bypass support
+  if (lowerId === 'admin1') {
+    await pool.query(`
+      INSERT INTO users (user_id, name, password, role, department)
+      VALUES ('admin1', 'Super Admin', 'password', 'admin', 'Management')
+      ON CONFLICT (user_id) DO NOTHING
+    `);
+    return 'admin1';
+  }
+
+  // 4. Match by kitsu_id, phone, or name in existing users
+  uRes = await pool.query(`
+    SELECT user_id FROM users 
+    WHERE kitsu_id = $1 OR LOWER(phone) = $1 OR LOWER(name) = $1
+    LIMIT 1
+  `, [lowerId]);
+  if (uRes.rowCount > 0) return uRes.rows[0].user_id;
+
+  // 5. Query Kitsu to see if user exists in Kitsu directory
+  try {
+    const kitsuUser = await getKitsuUser(lowerId);
+    if (kitsuUser) {
+      const canonicalEmail = (kitsuUser.email || lowerId).trim().toLowerCase();
+      const fullName = `${kitsuUser.first_name || ''} ${kitsuUser.last_name || ''}`.trim() || canonicalEmail;
+      const role = ['admin', 'studio_manager'].includes(kitsuUser.role) ? 'admin' : 'user';
+      const phone = kitsuUser.phone || null;
+      const slackId = kitsuUser.notifications_slack_userid || null;
+      const deptMap = await getKitsuDepartments();
+      const department = resolveDepartmentName(kitsuUser, deptMap);
+
+      const hasDeptCol = await columnExists('users', 'department');
+      if (hasDeptCol) {
+        await pool.query(
+          `INSERT INTO users (user_id, name, password, role, phone, slack_id, department, kitsu_id, is_active)
+           VALUES ($1, $2, 'synced_from_kitsu', $3, $4, $5, $6, $7, $8)
+           ON CONFLICT (user_id) DO UPDATE SET name = $2, role = $3, department = $6, kitsu_id = COALESCE($7, users.kitsu_id)`,
+          [canonicalEmail, fullName, role, phone, slackId, department, kitsuUser.id, kitsuUser.active !== false]
+        );
+      } else {
+        await pool.query(
+          `INSERT INTO users (user_id, name, password, role, phone, slack_id)
+           VALUES ($1, $2, 'synced_from_kitsu', $3, $4, $5)
+           ON CONFLICT (user_id) DO UPDATE SET name = $2, role = $3`,
+          [canonicalEmail, fullName, role, phone, slackId]
+        );
+      }
+      return canonicalEmail;
+    }
+  } catch (err) {
+    console.error('[resolveUserId Kitsu lookup error]:', err.message);
+  }
+
+  // 6. Absolute safety net: ensure user exists in users table so foreign key constraint NEVER throws
+  try {
+    const fallbackName = cleanId.split('@')[0].replace(/[^a-zA-Z0-9]/g, ' ').trim() || cleanId;
+    const hasDeptCol = await columnExists('users', 'department');
+    if (hasDeptCol) {
+      await pool.query(
+        `INSERT INTO users (user_id, name, password, role, department)
+         VALUES ($1, $2, 'auto_generated', 'user', 'Production')
+         ON CONFLICT (user_id) DO NOTHING`,
+        [lowerId, fallbackName]
+      );
+    } else {
+      await pool.query(
+        `INSERT INTO users (user_id, name, password, role)
+         VALUES ($1, $2, 'auto_generated', 'user')
+         ON CONFLICT (user_id) DO NOTHING`,
+        [lowerId, fallbackName]
+      );
+    }
+    return lowerId;
+  } catch(e) {
+    console.error('[resolveUserId fallback error]:', e.message);
+  }
+
+  return cleanId;
+}
+
 // 1. Authentication Endpoint (Kitsu Proxy)
 app.post('/api/auth/login', async (req, res) => {
-  const { userId: email, password } = req.body;
+  const { userId: rawEmail, password } = req.body;
+  const email = (rawEmail || '').trim().toLowerCase();
 
   // --- Bypass for SuperAdmin default ---
   if(email === 'admin1' && password === 'password') {
+       await pool.query(`
+         INSERT INTO users (user_id, name, password, role, department)
+         VALUES ('admin1', 'Super Admin', 'password', 'admin', 'Management')
+         ON CONFLICT (user_id) DO NOTHING
+       `);
        return res.json({ success: true, user: { id: 'admin1', name: 'Super Admin', role: 'admin', department: 'Management' }});
   }
 
   // Check if user is deactivated locally
   try {
-    const localUser = await pool.query('SELECT is_active FROM users WHERE user_id = $1', [email]);
+    const localUser = await pool.query('SELECT is_active FROM users WHERE LOWER(user_id) = $1', [email]);
     if (localUser.rowCount > 0 && localUser.rows[0].is_active === false) {
       return res.status(403).json({ success: false, message: 'Account has been deactivated.' });
     }
@@ -330,7 +442,8 @@ app.post('/api/auth/login', async (req, res) => {
   }
 
   // Format the user
-  const fullName = `${kitsuUser.first_name || ''} ${kitsuUser.last_name || ''}`.trim();
+  const canonicalEmail = (kitsuUser.email || email).trim().toLowerCase();
+  const fullName = `${kitsuUser.first_name || ''} ${kitsuUser.last_name || ''}`.trim() || canonicalEmail;
   const role = ['admin', 'studio_manager'].includes(kitsuUser.role) ? 'admin' : 'user';
   const phone = kitsuUser.phone || null; // Sync phone from Kitsu for WhatsApp identity
   const slackId = kitsuUser.notifications_slack_userid || null; // Sync Slack Member ID
@@ -345,12 +458,12 @@ app.post('/api/auth/login', async (req, res) => {
     let result;
     if (hasDeptCol) {
       result = await pool.query(
-        `INSERT INTO users (user_id, name, password, role, phone, slack_id, department) 
-         VALUES ($1, $2, 'synced_from_kitsu', $3, $4, $5, $6)
+        `INSERT INTO users (user_id, name, password, role, phone, slack_id, department, kitsu_id, is_active) 
+         VALUES ($1, $2, 'synced_from_kitsu', $3, $4, $5, $6, $7, $8)
          ON CONFLICT (user_id) 
-         DO UPDATE SET name = $2, role = $3, phone = COALESCE($4, users.phone), slack_id = COALESCE($5, users.slack_id), department = $6
+         DO UPDATE SET name = $2, role = $3, phone = COALESCE($4, users.phone), slack_id = COALESCE($5, users.slack_id), department = $6, kitsu_id = COALESCE($7, users.kitsu_id), is_active = $8
          RETURNING id, user_id, name, role, department`,
-        [email, fullName, role, phone, slackId, department]
+        [canonicalEmail, fullName, role, phone, slackId, department, kitsuUser.id, kitsuUser.active !== false]
       );
     } else {
       result = await pool.query(
@@ -359,7 +472,7 @@ app.post('/api/auth/login', async (req, res) => {
          ON CONFLICT (user_id) 
          DO UPDATE SET name = $2, role = $3, phone = COALESCE($4, users.phone), slack_id = COALESCE($5, users.slack_id)
          RETURNING id, user_id, name, role`,
-        [email, fullName, role, phone, slackId]
+        [canonicalEmail, fullName, role, phone, slackId]
       );
     }
 
@@ -377,6 +490,7 @@ app.post('/api/auth/login', async (req, res) => {
     res.status(500).json({ success: false, message: 'Database sync error' });
   }
 });
+
 
 
 // 2. Data Retrieval endpoints (Admin Dashboard / Load Store)
@@ -455,8 +569,12 @@ app.get('/api/sync/store', async (req, res) => {
 
 // 3. Mark Attendance (Check in/out)
 app.post('/api/attendance', async (req, res) => {
-  const { userId, date, time, isCheckOut } = req.body;
+  let { userId, date, time, isCheckOut } = req.body;
   try {
+    userId = await resolveUserId(userId);
+    if (!userId) {
+      return res.status(400).json({ success: false, message: 'Invalid or missing user ID.' });
+    }
     if (!isCheckOut) {
       const wfhRes = await pool.query(
         `SELECT 1
@@ -477,15 +595,33 @@ app.post('/api/attendance', async (req, res) => {
         [userId, date, checkInStatus]
       );
 
-      // Send clean Slack notification
+      // Check employee details & birthday status from PEMDA
+      let isBirthday = false;
+      let userName = userId;
       try {
         const uRes = await pool.query('SELECT name FROM users WHERE user_id = $1', [userId]);
-        const userName = uRes.rows[0]?.name || userId;
+        userName = uRes.rows[0]?.name || userId;
         const timeIST = new Date().toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Kolkata' });
-        slackNotifier.notifyCheckIn({ pool, name: userName, userId, timeIST, method: 'Mobile Web App', isWfh: checkInStatus === 'wfh_working' });
+
+        const bdayCheck = birthdayService.isBirthdayToday(userId, userName);
+        isBirthday = bdayCheck.isBirthday;
+        if (isBirthday) {
+          console.log(`[Mobile Web App Check-In] 🎉 Birthday detected for ${userName} (${userId})! Triggering celebration.`);
+        }
+
+        slackNotifier.notifyCheckIn({ pool, name: userName, userId, timeIST, method: 'Mobile Web App', isWfh: checkInStatus === 'wfh_working', isBirthday });
       } catch (sErr) {
         console.error('[Slack] Notify check-in error:', sErr.message);
       }
+
+      io.emit('attendance:update', { userId });
+      return res.json({
+        success: true,
+        action: 'check_in',
+        is_birthday: isBirthday,
+        name: userName,
+        message: isBirthday ? `🎉 Happy Birthday ${userName.split(' ')[0]}! 🎂` : 'Welcome!'
+      });
     } else {
       const client = await pool.connect();
       try {
@@ -552,7 +688,7 @@ app.post('/api/attendance', async (req, res) => {
       }
     }
     io.emit('attendance:update', { userId });
-    res.json({ success: true });
+    res.json({ success: true, action: 'check_out', is_birthday: false });
   } catch (err) {
     console.error(err);
     res.status(500).json({ success: false });
@@ -596,7 +732,8 @@ app.put('/api/attendance/approve', async (req, res) => {
 });
 
 // Helper: Calculate accurate user leave balances across all leave policies
-async function getUserLeaveBalances(userId, excludeLeaveId = null) {
+async function getUserLeaveBalances(rawUserId, excludeLeaveId = null) {
+  const userId = await resolveUserId(rawUserId);
   const hasPolicyLabel = await columnExists('leave_policies', 'label');
   const hasPolicyQuota = await columnExists('leave_policies', 'quota');
   const hasPolicyCycle = await columnExists('leave_policies', 'cycle');
@@ -688,10 +825,15 @@ async function getUserLeaveBalances(userId, excludeLeaveId = null) {
 
 // 4. Submit Leave Request (enforces balance validation)
 app.post('/api/leaves', async (req, res) => {
-    let { userId, type, startDate, endDate, reason, status, isHalfDay } = req.body;
+    let { userId: rawUserId, type, startDate, endDate, reason, status, isHalfDay } = req.body;
     try {
-        if (!userId || !type || !startDate || !endDate) {
+        if (!rawUserId || !type || !startDate || !endDate) {
             return res.status(400).json({ success: false, message: 'Missing required leave fields.' });
+        }
+
+        const userId = await resolveUserId(rawUserId);
+        if (!userId) {
+            return res.status(400).json({ success: false, message: 'Invalid or missing user ID.' });
         }
 
         if (new Date(startDate) > new Date(endDate)) {
@@ -2282,6 +2424,13 @@ async function runMigrations() {
               ALTER TABLE leave_requests ADD CONSTRAINT leave_requests_user_id_fkey FOREIGN KEY (user_id) REFERENCES users(user_id) ON UPDATE CASCADE ON DELETE CASCADE;
               ALTER TABLE biometric_users DROP CONSTRAINT IF EXISTS biometric_users_user_id_fkey;
               ALTER TABLE biometric_users ADD CONSTRAINT biometric_users_user_id_fkey FOREIGN KEY (user_id) REFERENCES users(user_id) ON UPDATE CASCADE ON DELETE CASCADE;
+            `);
+
+            // Ensure SuperAdmin default account exists in users table
+            await pool.query(`
+              INSERT INTO users (user_id, name, password, role, department)
+              VALUES ('admin1', 'Super Admin', 'password', 'admin', 'Management')
+              ON CONFLICT (user_id) DO NOTHING;
             `);
         }
 

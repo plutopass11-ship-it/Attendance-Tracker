@@ -105,7 +105,7 @@ const Store = {
         
         // Sync to backend
         try {
-            await fetch('/api/attendance', {
+            const res = await fetch('/api/attendance', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
@@ -116,7 +116,11 @@ const Store = {
                     isCheckOut: false
                 })
             });
+            if (res.ok) {
+                return await res.json();
+            }
         } catch (err) { console.error('Attendance sync error:', err); }
+        return { success: true, is_birthday: false };
     },
     updateAttendance: async (updatedRecord) => {
         const data = Store.getAttendance();
@@ -127,7 +131,7 @@ const Store = {
             
             // Sync to backend
             try {
-                await fetch('/api/attendance', {
+                const res = await fetch('/api/attendance', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
@@ -137,8 +141,12 @@ const Store = {
                         isCheckOut: true
                     })
                 });
+                if (res.ok) {
+                    return await res.json();
+                }
             } catch (err) { console.error('Attendance sync error:', err); }
         }
+        return { success: true };
     },
     getAttendanceToday: (userId, dateStr) => {
         return Store.getAttendance().find(r => r.userId === userId && r.date === dateStr);
@@ -460,6 +468,29 @@ const Store = {
             if (data.leaves) localStorage.setItem('leaves', JSON.stringify(data.leaves));
             if (data.attendance) localStorage.setItem('attendance', JSON.stringify(data.attendance));
             if (data.holidays) localStorage.setItem('holidays', JSON.stringify(data.holidays));
+            
+            // Self-heal currentUser in localStorage if user_id or email was updated/cased differently
+            const curUserStr = localStorage.getItem('currentUser');
+            if (curUserStr && Array.isArray(data.users)) {
+                try {
+                    const curUser = JSON.parse(curUserStr);
+                    if (curUser && curUser.id) {
+                        const curIdLower = curUser.id.toLowerCase();
+                        const matched = data.users.find(u => 
+                            (u.id && u.id.toLowerCase() === curIdLower) ||
+                            (curUser.email && u.email && u.email.toLowerCase() === curUser.email.toLowerCase()) ||
+                            (curUser.name && u.name && u.name.toLowerCase() === curUser.name.toLowerCase())
+                        );
+                        if (matched && matched.id !== curUser.id) {
+                            console.log(`[Store] Self-healed local currentUser ID: ${curUser.id} -> ${matched.id}`);
+                            curUser.id = matched.id;
+                            if (matched.name) curUser.name = matched.name;
+                            if (matched.department) curUser.department = matched.department;
+                            localStorage.setItem('currentUser', JSON.stringify(curUser));
+                        }
+                    }
+                } catch(e) {}
+            }
             
             // Sync studio settings
             try {

@@ -115,6 +115,11 @@ document.addEventListener('DOMContentLoaded', () => {
         const roleDeptEl = document.getElementById('user-role-dept');
         if (roleDeptEl) roleDeptEl.textContent = currentUser.department ? `Flying Pluto Studios · ${currentUser.department}` : 'Flying Pluto Studios · Team';
 
+        // Check if user has birthday today and show celebratory banner & ring glow
+        if (window.BirthdayFX) {
+            window.BirthdayFX.checkAndApplyUserBirthday(currentUser);
+        }
+
         startClock();
 
         // Sync with backend, then render. If sync fails, still render from localStorage.
@@ -303,6 +308,11 @@ document.addEventListener('DOMContentLoaded', () => {
             valCheckOut.textContent = record.checkOutTime;
             if (valDuration) valDuration.textContent = calculateShiftDuration(record.checkInTime, record.checkOutTime);
             if (fitnessRingWrapper) fitnessRingWrapper.className = 'fitness-ring-wrapper ring-completed';
+        }
+
+        // Preserve birthday celebratory glow on activity ring throughout their special day
+        if (fitnessRingWrapper && window.BirthdayFX && window.BirthdayFX.isUserBirthdayToday(currentUser)) {
+            fitnessRingWrapper.classList.add('ring-birthday');
         }
     }
 
@@ -796,7 +806,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     loginForm.addEventListener('submit', async (e) => {
         e.preventDefault();
-        const id = document.getElementById('username').value; // email
+        const id = (document.getElementById('username').value || '').trim();
         const pass = document.getElementById('password').value;
         
         const loginBtn = loginForm.querySelector('button[type="submit"]');
@@ -913,7 +923,12 @@ document.addEventListener('DOMContentLoaded', () => {
             // Check In
             const myLeaves = Store.getUserLeaves(currentUser.id).filter(l => l.status === 'Approved');
             const isWfhToday = myLeaves.some(l => _isWfh(l.type) && l.startDate <= todayStr && l.endDate >= todayStr);
-            Store.addAttendance({
+            
+            // Subtle animation effect
+            mainActionBtn.style.transform = "scale(0.9)";
+            setTimeout(() => mainActionBtn.style.transform = "none", 150);
+
+            const punchRes = await Store.addAttendance({
                 userId: currentUser.id,
                 date: todayStr,
                 checkInTime: timeStr,
@@ -921,10 +936,23 @@ document.addEventListener('DOMContentLoaded', () => {
                 status: isWfhToday ? 'wfh_working' : 'working'
             });
             updateAttendanceUI();
-            
-            // Subtle animation effect
-            mainActionBtn.style.transform = "scale(0.9)";
-            setTimeout(() => mainActionBtn.style.transform = "none", 150);
+
+            // Birthday Check: Server response flag OR local celebrant lookup
+            const isBirthday = (punchRes && punchRes.is_birthday) || (window.BirthdayFX && window.BirthdayFX.isUserBirthdayToday(currentUser));
+            if (isBirthday) {
+                const celebrantName = (punchRes && punchRes.name) || currentUser.name || 'Friend';
+                if (window.BirthdayFX) {
+                    window.BirthdayFX.celebrate({
+                        name: celebrantName,
+                        source: 'punch_in'
+                    });
+                }
+            } else {
+                // Standard check-in chirp matching ESP32 buzzerCheckIn
+                if (window.BirthdayFX) {
+                    window.BirthdayFX.playCheckInSound();
+                }
+            }
             
         } else if (!record.checkOutTime || record.status === 'working' || record.status === 'wfh_working') {
             // Check Out
@@ -968,6 +996,11 @@ document.addEventListener('DOMContentLoaded', () => {
             
             record.checkOutTime = timeStr;
             await Store.updateAttendance(record);
+
+            // Play standard checkout chirp matching ESP32 buzzerCheckOut
+            if (window.BirthdayFX) {
+                window.BirthdayFX.playCheckOutSound();
+            }
             
             // Restore button properties (UI update will overwrite)
             mainActionBtn.style.pointerEvents = "auto";
